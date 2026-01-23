@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+
+{% block title %}Checkout - {{ plan.name }}{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-900 font-sans flex flex-col items-center justify-center p-6 relative overflow-hidden">
+
+    <div class="absolute top-6 left-6">
+        <button onclick="history.back()" class="text-white hover:text-gray-400 font-bold text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            Back
+        </button>
+    </div>
+
+    <div class="w-full max-w-sm bg-gray-800 rounded-2xl border border-white/10 p-6 mb-8 shadow-2xl relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-32 h-32 bg-{{ plan.color }} opacity-10 rounded-full blur-3xl -mr-10 -mt-10"></div>
+        
+        <p class="text-gray-400 text-[10px] uppercase tracking-widest mb-2 font-bold">You are purchasing</p>
+        
+        <div class="flex justify-between items-end border-b border-white/10 pb-4 mb-4">
+            <h1 class="text-3xl font-black text-{{ plan.color }} italic uppercase tracking-tighter">{{ plan.name }}</h1>
+            <div class="text-right">
+                <span class="text-xs text-gray-500 block font-bold">TOTAL</span>
+                <span class="text-2xl font-black text-white">₦{{ plan.price }}</span>
+            </div>
+        </div>
+        
+        <div class="flex justify-between text-sm text-gray-300 font-medium">
+            <span>Duration</span>
+            <span class="font-bold text-white">{{ plan.days }} Days Access</span>
+        </div>
+    </div>
+
+    <div class="w-full max-w-sm space-y-4">
+        
+        <button onclick="payWithPaystack()" class="w-full py-4 bg-[#09A5DB] text-white font-black uppercase tracking-widest rounded-xl shadow-lg hover:brightness-110 transition flex items-center justify-center gap-2 transform active:scale-95">
+            <span>Pay with Paystack</span>
+        </button>
+
+        <button onclick="payWithFlutterwave()" class="w-full py-4 bg-[#F5A623] text-white font-black uppercase tracking-widest rounded-xl shadow-lg hover:brightness-110 transition flex items-center justify-center gap-2 transform active:scale-95">
+            <span>Pay with Flutterwave</span>
+        </button>
+
+        <p class="text-center text-gray-500 text-[10px] mt-4 uppercase tracking-wider">
+            Secured by Paystack & Flutterwave
+        </p>
+    </div>
+</div>
+
+<script src="https://js.paystack.co/v1/inline.js"></script>
+<script src="https://checkout.flutterwave.com/v3.js"></script>
+
+<script>
+    // Clean data handoff to avoid syntax errors
+    const USER_EMAIL = "{{ user_email }}";
+    const AMOUNT = "{{ plan.price }}"; 
+    const PLAN_TYPE = "{{ plan_type }}";
+    const PAYSTACK_KEY = "{{ paystack_key }}";
+    const FLUTTERWAVE_KEY = "{{ flutterwave_key }}";
+    const CSRF_TOKEN = "{{ csrf_token }}";
+
+    // --- PAYSTACK LOGIC ---
+    function payWithPaystack() {
+        let handler = PaystackPop.setup({
+            key: PAYSTACK_KEY,
+            email: USER_EMAIL,
+            amount: AMOUNT * 100, // Convert Naira to Kobo
+            currency: "NGN",
+            callback: function(response) {
+                verifyAndUpgrade(response.reference, 'paystack');
+            },
+            onClose: function() {
+                alert('Transaction cancelled.');
+            }
+        });
+        handler.openIframe();
+    }
+
+    // --- FLUTTERWAVE LOGIC ---
+    function payWithFlutterwave() {
+        FlutterwaveCheckout({
+            public_key: FLUTTERWAVE_KEY,
+            tx_ref: "LOVENY_" + Date.now(),
+            amount: AMOUNT,
+            currency: "NGN",
+            payment_options: "card, mobilemoney, ussd",
+            customer: {
+                email: USER_EMAIL,
+                name: "{{ user.username }}",
+            },
+            customizations: {
+                title: "LOVENY " + PLAN_TYPE,
+                description: "Payment for " + PLAN_TYPE + " Plan",
+                logo: "https://via.placeholder.com/150", 
+            },
+            callback: function (data) {
+                verifyAndUpgrade(data.tx_ref, 'flutterwave');
+            },
+            onclose: function() {
+                // close modal
+            }
+        });
+    }
+
+    // --- BACKEND VERIFICATION ---
+    function verifyAndUpgrade(reference, provider) {
+        // Show loading state could go here
+        
+        fetch("{% url 'verify_payment' %}", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': CSRF_TOKEN
+            },
+            body: JSON.stringify({
+                plan_type: PLAN_TYPE,
+                reference: reference,
+                provider: provider
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.status === 'success') {
+                window.location.href = "{% url 'premium_success' %}";
+            } else {
+                alert("Verification failed. Please contact support.");
+            }
+        })
+        .catch(err => console.error("Error:", err));
+    }
+</script>
+{% endblock %}

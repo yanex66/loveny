@@ -1,0 +1,462 @@
+{% extends 'base.html' %}
+
+{% block title %}LOVENY - Edit Profile{% endblock %}
+
+{% block content %}
+<div class="min-h-screen relative overflow-hidden bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 font-sans pb-32">
+
+    <div id="edit-config" 
+         data-media-limit="{{ media_limit }}" 
+         data-current-count="{{ current_count }}" 
+         class="hidden"></div>
+
+    <div class="absolute -z-10 w-96 h-96 bg-pink-600 rounded-full mix-blend-overlay filter blur-[100px] opacity-20 top-0 right-0 animate-blob"></div>
+
+    <header class="sticky top-0 z-40 bg-black/80 backdrop-blur-md border-b border-white/10 px-4 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <a href="{% url 'profile' %}" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+            </a>
+            <h1 class="text-xl font-black italic tracking-tighter text-white">EDIT MODE</h1>
+        </div>
+        <div class="text-[10px] font-bold uppercase tracking-widest text-pink-400 border border-pink-400/30 px-2 py-1 rounded">
+            {{ current_count }} / {{ media_limit }} Media
+        </div>
+    </header>
+
+    <div class="max-w-xl mx-auto p-4">
+        
+        <div id="image-modal" class="fixed inset-0 bg-black/95 hidden items-center justify-center z-50 backdrop-blur-xl transition-all">
+            <div class="relative w-full max-w-sm m-4 bg-gray-900 rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
+                <button onclick="closeImageModal()" class="absolute top-4 right-4 bg-black/60 text-white p-2 rounded-full hover:bg-red-500 transition z-20">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                </button>
+                
+                <div class="aspect-[3/4] w-full bg-black flex items-center justify-center relative">
+                    <img id="modal-img" src="" class="w-full h-full object-cover hidden">
+                    <video id="modal-video" src="" class="w-full h-full object-cover hidden" controls playsinline loop></video>
+                </div>
+                
+                <div class="p-6 bg-gray-900 border-t border-white/10">
+                    <div id="actions-existing" class="flex gap-3 w-full hidden">
+                        <form method="post" class="flex-1">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="set_main">
+                            <input type="hidden" name="photo_id" id="modal-set-main-id">
+                            <button type="submit" class="w-full py-3 bg-yellow-400 text-black font-black uppercase tracking-wider rounded-xl hover:bg-yellow-300 transition text-sm">
+                                Make Main
+                            </button>
+                        </form>
+                        
+                        <form method="post" class="flex-1">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="photo_id" id="modal-delete-id">
+                            <button type="submit" class="w-full py-3 bg-red-600/20 text-red-500 border border-red-500/50 font-black uppercase tracking-wider rounded-xl hover:bg-red-600 hover:text-white transition text-sm">
+                                Delete
+                            </button>
+                        </form>
+                    </div>
+
+                    <div id="actions-new" class="flex flex-col gap-3 w-full hidden">
+                        <button onclick="setNewPhotoAsMain()" class="w-full py-3 bg-yellow-400 text-black font-black uppercase tracking-wider rounded-xl hover:bg-yellow-300 transition text-sm">
+                            Set as Main Photo
+                        </button>
+                        <p class="text-[10px] text-center text-gray-500 uppercase tracking-widest">Only applies after saving</p>
+                        <button onclick="removeNewPhoto()" class="w-full py-3 bg-red-600/20 text-red-500 border border-red-500/50 font-black uppercase tracking-wider rounded-xl hover:bg-red-600 hover:text-white transition text-sm">
+                            Remove Upload
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <form method="post" enctype="multipart/form-data" class="space-y-8">
+            {% csrf_token %}
+            <input type="hidden" name="new_main_index" id="new-main-index" value="">
+            <input type="file" name="more_photos" id="file-input" multiple accept="image/*,video/*" class="hidden">
+
+            <section>
+                <h3 class="text-pink-300 font-bold uppercase tracking-widest text-xs mb-3 ml-1">Profile Media</h3>
+                
+                <div id="photo-grid" class="grid grid-cols-3 gap-3">
+                    
+                    {% for media in existing_photos %}
+                    <div class="relative group aspect-[3/4] cursor-pointer overflow-hidden rounded-xl bg-black border border-white/10 hover:border-yellow-400 transition existing-photo"
+                         data-url="{{ media.image.url }}"
+                         data-id="{{ media.id }}"
+                         data-is-video="{{ media.is_video|yesno:'true,false' }}"
+                         onclick="handleMediaClick(this)">
+                        
+                        {% if media.is_video %}
+                            <video src="{{ media.image.url }}" class="w-full h-full object-cover pointer-events-none opacity-80 group-hover:opacity-100 transition"></video>
+                            <div class="absolute inset-0 flex items-center justify-center">
+                                <div class="bg-black/40 backdrop-blur-sm rounded-full p-2 border border-white/20">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>
+                                </div>
+                            </div>
+                        {% else %}
+                            <img src="{{ media.image.url }}" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition" onerror="this.parentElement.style.display='none'">
+                        {% endif %}
+
+                        {% if media.is_main %}
+                        <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-yellow-500 to-yellow-400 text-black text-[9px] font-black uppercase tracking-wider text-center py-1">
+                            MAIN PHOTO
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+
+                    <label id="add-photo-btn" class="aspect-[3/4] flex flex-col items-center justify-center border-2 border-dashed border-white/20 rounded-xl cursor-pointer hover:border-pink-500 hover:bg-pink-500/10 transition group">
+                        <div class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center mb-2 group-hover:scale-110 transition">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400 group-hover:text-pink-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                            </svg>
+                        </div>
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400 group-hover:text-pink-400">Add New</span>
+                    </label>
+                </div>
+            </section>
+
+            <hr class="border-white/10">
+
+            <section class="space-y-5">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="form-group">
+                        <label>Age</label>
+                        {{ form.age }}
+                    </div>
+                    <div class="form-group">
+                        <label>WhatsApp</label>
+                        {{ form.whatsapp_number }}
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="form-group">
+                        <label>City</label>
+                        {{ form.location }}
+                    </div>
+                    <div class="form-group">
+                        <label>Job Title</label>
+                        {{ form.job_title }}
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Bio</label>
+                    {{ form.bio }}
+                    <p class="text-[10px] text-gray-500 mt-1 uppercase tracking-wider">Keep it real.</p>
+                </div>
+                
+                <div class="form-group">
+                    <label class="text-yellow-400">Mission / Date Idea</label>
+                    {{ form.first_date_idea }}
+                </div>
+            </section>
+
+            <section class="bg-black/20 rounded-2xl p-5 border border-white/5">
+                <h3 class="text-pink-300 font-bold uppercase tracking-widest text-xs mb-4">Targeting Parameters</h3>
+                
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="form-group">
+                        <label>I am...</label>
+                        {{ form.gender }}
+                    </div>
+                    <div class="form-group">
+                        <label>Seeking...</label>
+                        {{ form.preferred_gender }}
+                    </div>
+                </div>
+
+                <div class="bg-black/30 rounded-xl p-3 border border-white/5">
+                    <label class="block text-[10px] font-bold text-gray-400 uppercase mb-2 text-center">Age Range</label>
+                    <div class="flex items-center gap-3">
+                        {{ form.min_age_pref }}
+                        <span class="text-gray-500">-</span>
+                        {{ form.max_age_pref }}
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Passions</label>
+                <div class="grid grid-cols-2 gap-2">
+                    {% for checkbox in form.tags %}
+                    <label class="cursor-pointer group">
+                        <div class="relative flex items-center p-3 rounded-lg border border-white/10 bg-black/20 hover:border-pink-500 hover:bg-pink-500/10 transition">
+                            <div class="absolute opacity-0">
+                                {{ checkbox.tag }}
+                            </div>
+                            <div class="w-4 h-4 border-2 border-gray-500 rounded-sm mr-3 flex items-center justify-center transition group-hover:border-pink-400 custom-check">
+                                <div class="w-2 h-2 bg-pink-500 rounded-[1px] opacity-0 transition"></div>
+                            </div>
+                            <span class="text-xs font-bold text-gray-300 group-hover:text-white uppercase tracking-wide">{{ checkbox.choice_label }}</span>
+                        </div>
+                    </label>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <div class="fixed bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-gray-900 to-transparent pointer-events-none">
+                <button type="submit" class="pointer-events-auto w-full max-w-xl mx-auto py-4 bg-pink-600 text-white font-black text-lg uppercase tracking-wider rounded-xl shadow-[0_0_20px_rgba(219,39,119,0.5)] hover:bg-pink-500 hover:scale-[1.02] transition-all border border-pink-400">
+                    Save Updates
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    /* Dark Theme Input Overrides */
+    .form-group label {
+        display: block;
+        font-size: 0.65rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #9CA3AF;
+        margin-bottom: 0.25rem;
+        margin-left: 0.25rem;
+    }
+
+    input[type="text"], input[type="number"], textarea, select {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        background-color: rgba(0, 0, 0, 0.3) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-radius: 0.75rem;
+        color: white !important;
+        font-weight: 600;
+        outline: none;
+        transition: all 0.3s ease;
+    }
+
+    input[type="text"]:focus, input[type="number"]:focus, textarea:focus, select:focus {
+        border-color: #FACC15 !important; /* Yellow-400 */
+        background-color: rgba(0, 0, 0, 0.5) !important;
+        box-shadow: 0 0 10px rgba(250, 204, 21, 0.2);
+    }
+    
+    /* Hide scrollbar for cleaner look */
+    textarea { resize: none; min-height: 80px; }
+
+    /* Custom Checkbox Logic via CSS */
+    input[type="checkbox"]:checked + div {
+        border-color: #EC4899; /* Pink-500 */
+        background-color: rgba(236, 72, 153, 0.2);
+    }
+    
+    /* Target the parent label when checkbox inside is checked */
+    label:has(input[type="checkbox"]:checked) div {
+        border-color: #EC4899;
+    }
+    
+    label:has(input[type="checkbox"]:checked) .custom-check {
+        border-color: #EC4899;
+    }
+
+    label:has(input[type="checkbox"]:checked) .custom-check div {
+        opacity: 1;
+    }
+
+    @keyframes blob {
+        0% { transform: translate(0px, 0px) scale(1); }
+        33% { transform: translate(-30px, 30px) scale(1.1); }
+        66% { transform: translate(20px, -20px) scale(0.9); }
+        100% { transform: translate(0px, 0px) scale(1); }
+    }
+    .animate-blob {
+        animation: blob 10s infinite;
+    }
+</style>
+
+<script>
+    const fileInput = document.getElementById('file-input');
+    const dt = new DataTransfer();
+    const configEl = document.getElementById('edit-config');
+    const MEDIA_LIMIT = parseInt(configEl.dataset.mediaLimit);
+    const CURRENT_COUNT = parseInt(configEl.dataset.currentCount);
+    // Calculate remaining slots
+    const MAX_FILES = MEDIA_LIMIT - CURRENT_COUNT;
+    const mainIndexInput = document.getElementById('new-main-index');
+    
+    let currentPreviewIndex = -1;
+
+    // --- Media Grid Logic ---
+
+    function handleMediaClick(element) {
+        const url = element.dataset.url;
+        const id = element.dataset.id;
+        const isVideo = element.dataset.isVideo === 'true';
+        
+        document.getElementById('actions-existing').classList.remove('hidden');
+        document.getElementById('actions-new').classList.add('hidden');
+        document.getElementById('modal-set-main-id').value = id;
+        document.getElementById('modal-delete-id').value = id;
+        
+        openModal(url, isVideo);
+    }
+
+    function handleNewPreviewClick(url, isVideo, index) {
+        currentPreviewIndex = index;
+        document.getElementById('actions-existing').classList.add('hidden');
+        document.getElementById('actions-new').classList.remove('hidden');
+        openModal(url, isVideo);
+    }
+    
+    function setNewPhotoAsMain() {
+        if (currentPreviewIndex === -1) return;
+        mainIndexInput.value = currentPreviewIndex;
+        renderPreviews();
+        closeImageModal();
+    }
+    
+    function removeNewPhoto() {
+         if (currentPreviewIndex === -1) return;
+         removeFileFromBuffer(currentPreviewIndex);
+         closeImageModal();
+    }
+
+    function openModal(url, isVideo) {
+        const modal = document.getElementById('image-modal');
+        const img = document.getElementById('modal-img');
+        const video = document.getElementById('modal-video');
+
+        if (isVideo) {
+            img.classList.add('hidden');
+            video.classList.remove('hidden');
+            video.src = url;
+            video.load();
+            video.play();
+        } else {
+            video.classList.add('hidden');
+            video.pause();
+            img.classList.remove('hidden');
+            img.src = url;
+        }
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+
+    function closeImageModal() {
+        const modal = document.getElementById('image-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        document.getElementById('modal-video').pause();
+    }
+
+    // --- File Input Handling ---
+
+    document.getElementById('add-photo-btn').addEventListener('click', function(e) {
+        // Recalculate remaining slots dynamically based on pending uploads
+        const remainingSlots = MEDIA_LIMIT - (CURRENT_COUNT + dt.items.length);
+        
+        if (remainingSlots <= 0) {
+            alert("Media limit reached. Delete existing photos to add more.");
+            e.preventDefault();
+            return;
+        }
+        document.getElementById('file-input').click();
+        e.preventDefault(); 
+    });
+
+    fileInput.addEventListener('change', function() {
+        const remainingSlots = MEDIA_LIMIT - (CURRENT_COUNT + dt.items.length);
+        
+        if (this.files.length > remainingSlots) {
+            alert(`You can only add ${remainingSlots} more items.`);
+            this.value = ''; // Reset input
+            return;
+        }
+        
+        for (let i = 0; i < this.files.length; i++) {
+            dt.items.add(this.files[i]);
+        }
+        this.files = dt.files;
+        renderPreviews();
+    });
+
+    function renderPreviews() {
+        const grid = document.getElementById('photo-grid');
+        const addBtn = document.getElementById('add-photo-btn');
+        // Clear old previews
+        const oldPreviews = grid.querySelectorAll('.preview-img');
+        oldPreviews.forEach(el => el.remove());
+        
+        const selectedMainIndex = parseInt(mainIndexInput.value);
+
+        for (let i = 0; i < dt.files.length; i++) {
+            const file = dt.files[i];
+            const reader = new FileReader();
+            
+            (function(index) {
+                reader.onload = function(e) {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = "relative aspect-[3/4] rounded-xl overflow-hidden shadow-sm border border-green-500 preview-img group bg-black cursor-pointer hover:scale-[1.02] transition";
+                    
+                    let content;
+                    let isVideo = false;
+                    
+                    if (file.type.startsWith('video/')) {
+                        isVideo = true;
+                        content = document.createElement('video');
+                        content.src = e.target.result;
+                        content.className = "w-full h-full object-cover opacity-80 pointer-events-none";
+                    } else {
+                        content = document.createElement('img');
+                        content.src = e.target.result;
+                        content.className = "w-full h-full object-cover opacity-80";
+                    }
+
+                    wrapper.onclick = function(evt) {
+                        if(evt.target.closest('button')) return;
+                        handleNewPreviewClick(e.target.result, isVideo, index);
+                    };
+
+                    const badge = document.createElement('div');
+                    badge.className = "absolute top-2 right-2 pointer-events-none";
+                    badge.innerHTML = '<span class="bg-green-500 text-black text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider shadow">New</span>';
+
+                    const removeBtn = document.createElement('button');
+                    removeBtn.type = "button";
+                    removeBtn.className = "absolute top-2 left-2 bg-red-500/80 text-white p-1 rounded-full hover:bg-red-600 z-10 backdrop-blur-sm";
+                    removeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>';
+                    removeBtn.onclick = function(e) {
+                        e.stopPropagation(); 
+                        removeFileFromBuffer(index);
+                    };
+
+                    wrapper.appendChild(content);
+                    wrapper.appendChild(badge);
+                    wrapper.appendChild(removeBtn);
+                    
+                    if (!isNaN(selectedMainIndex) && selectedMainIndex === index) {
+                         const mainBadge = document.createElement('div');
+                         mainBadge.className = "absolute bottom-0 inset-x-0 bg-gradient-to-t from-yellow-500 to-yellow-400 text-black text-[9px] font-black uppercase tracking-wider text-center py-1 z-20";
+                         mainBadge.innerText = "Set as Main";
+                         wrapper.appendChild(mainBadge);
+                         wrapper.classList.add("ring-2", "ring-yellow-400");
+                    }
+                    
+                    grid.insertBefore(wrapper, addBtn);
+                };
+            })(i);
+            reader.readAsDataURL(file);
+        }
+    }
+
+    function removeFileFromBuffer(index) {
+        let currentMain = parseInt(mainIndexInput.value);
+        if (!isNaN(currentMain)) {
+            if (index < currentMain) mainIndexInput.value = currentMain - 1;
+            else if (index === currentMain) mainIndexInput.value = "";
+        }
+        dt.items.remove(index);
+        fileInput.files = dt.files;
+        renderPreviews();
+    }
+</script>
+{% endblock %}

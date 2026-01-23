@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}LOVENY - ANSWER THE CALL{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 text-white font-sans overflow-hidden relative flex flex-col">
+
+    <nav class="relative z-50 w-full px-6 py-6 flex justify-between items-center">
+        <div class="text-3xl font-black tracking-tighter italic transform -skew-x-12 text-yellow-400 drop-shadow-[4px_4px_0_rgba(0,0,0,1)]">
+            LOVENY
+        </div>
+        <a href="{% url 'login' %}" class="font-bold text-white uppercase tracking-widest hover:text-yellow-400 transition">Log In</a>
+    </nav>
+
+    <div class="flex-grow flex flex-col lg:flex-row items-center justify-center relative z-10 w-full max-w-7xl mx-auto px-4">
+        
+        <div class="w-full lg:w-1/2 flex justify-center items-center order-2 lg:order-1 mt-10 lg:mt-0">
+            <div class="relative w-80 h-[550px] bg-black rounded-[3rem] border-8 border-gray-800 shadow-2xl overflow-hidden transform rotate-[-5deg] hover:rotate-0 transition-transform duration-500">
+                
+                <div class="absolute inset-0">
+                    <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=400&q=80" class="w-full h-full object-cover opacity-60 filter blur-sm">
+                    <div class="absolute inset-0 bg-black/40"></div>
+                </div>
+
+                <div class="relative z-10 flex flex-col justify-between h-full p-6 text-center">
+                    <div class="mt-12">
+                        <div class="w-24 h-24 mx-auto rounded-full p-1 bg-gradient-to-tr from-yellow-400 to-pink-500 mb-4 animate-pulse-fast">
+                            <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80" class="w-full h-full object-cover rounded-full border-4 border-black">
+                        </div>
+                        <p class="text-gray-300 text-sm font-semibold tracking-widest uppercase mb-1">LOVENY Video Match...</p>
+                        <h3 class="text-3xl font-bold text-white drop-shadow-md">Sarah</h3>
+                        <p class="text-white/80 text-sm">New York, NY</p>
+                    </div>
+
+                    <div class="mb-12 grid grid-cols-2 gap-6">
+                        <div class="flex flex-col items-center gap-2 opacity-50">
+                            <div class="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center shadow-lg">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </div>
+                            <span class="text-xs font-bold">Pass</span>
+                        </div>
+                        
+                        <a href="{% url 'signup' %}" class="flex flex-col items-center gap-2 cursor-pointer group">
+                            <div class="relative w-16 h-16">
+                                <div class="absolute inset-0 bg-green-500 rounded-full animate-ping opacity-75"></div>
+                                <div class="relative w-16 h-16 rounded-full bg-green-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white fill-current" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654z"/></svg>
+                                </div>
+                            </div>
+                            <span class="text-xs font-bold text-green-400">WHATSAPP</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="absolute -z-10 w-96 h-96 bg-pink-600 rounded-full mix-blend-screen filter blur-[100px] opacity-50 animate-blob"></div>
+            <div class="absolute -z-10 w-96 h-96 bg-blue-600 rounded-full mix-blend-screen filter blur-[100px] opacity-50 animate-blob animation-delay-2000 top-0 right-0"></div>
+        </div>
+
+        <div class="w-full lg:w-1/2 text-center lg:text-left order-1 lg:order-2 space-y-6">
+            
+            <h1 class="text-6xl lg:text-8xl font-black italic uppercase leading-none transform -skew-x-6 drop-shadow-2xl">
+                <span class="block text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-500">Stop</span>
+                <span class="block text-white">Playing.</span>
+                <span class="block text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-blue-500">Start</span>
+                <span class="block text-white">Talking.</span>
+            </h1>
+
+            <p class="text-xl lg:text-2xl font-bold text-gray-200 max-w-lg mx-auto lg:mx-0 border-l-8 border-yellow-400 pl-6 py-2 bg-black/20 backdrop-blur-sm rounded-r-xl">
+                The only dating app that gets straight to the point. Match & get their <span class="text-green-400 underline decoration-4 underline-offset-4">WhatsApp</span> immediately.
+            </p>
+
+            <div class="pt-8 flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+                <a href="{% url 'signup' %}" class="relative inline-flex items-center justify-center px-10 py-5 text-xl font-black text-black transition-all duration-200 bg-yellow-400 border-4 border-transparent focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-400 hover:bg-white hover:text-pink-600 transform hover:-translate-y-2 rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.6)]">
+                    GET STARTED
+                    <svg class="w-6 h-6 ml-2 -mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
+                </a>
+            </div>
+
+            <div class="pt-6 text-sm font-bold text-pink-300 uppercase tracking-widest animate-pulse">
+                ⚡ 324 New Yorkers Online Now
+            </div>
+        </div>
+    </div>
+    
+    <div class="absolute bottom-0 w-full bg-yellow-400 text-black py-3 overflow-hidden transform skew-y-1">
+        <div class="whitespace-nowrap animate-marquee font-black text-xl uppercase tracking-tighter">
+            Don't be shy • Shoot your shot • Get the number • Real Connections • No Ghosting • Don't be shy • Shoot your shot • Get the number • Real Connections •
+        </div>
+    </div>
+
+</div>
+
+<style>
+    @keyframes blob {
+        0% { transform: translate(0px, 0px) scale(1); }
+        33% { transform: translate(30px, -50px) scale(1.1); }
+        66% { transform: translate(-20px, 20px) scale(0.9); }
+        100% { transform: translate(0px, 0px) scale(1); }
+    }
+    .animate-blob {
+        animation: blob 7s infinite;
+    }
+    .animation-delay-2000 {
+        animation-delay: 2s;
+    }
+    .animate-pulse-fast {
+        animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes marquee {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
+    }
+    .animate-marquee {
+        animation: marquee 15s linear infinite;
+    }
+</style>
+{% endblock %}

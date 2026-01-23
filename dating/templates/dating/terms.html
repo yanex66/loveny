@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+
+{% block title %}LOVENY - Terms of Service{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-900 font-sans pb-24 px-6 py-12 text-gray-300">
+
+    <header class="mb-8">
+        <button onclick="history.back()" class="text-pink-500 hover:text-white transition flex items-center gap-2 font-bold mb-4">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            Back
+        </button>
+        <h1 class="text-4xl font-black text-white italic tracking-tighter uppercase mb-2">Terms of Service</h1>
+        <p class="text-xs font-mono text-gray-500">Last Updated: January 2026</p>
+    </header>
+
+    <div class="space-y-8 max-w-2xl">
+        
+        <section>
+            <h2 class="text-xl font-bold text-white mb-2">1. Acceptance of Terms</h2>
+            <p class="text-sm leading-relaxed">
+                By creating a LOVENY account, you agree to be bound by these Terms. If you do not agree, you must not use our service. LOVENY is intended for users 18 years of age or older.
+            </p>
+        </section>
+
+        <section>
+            <h2 class="text-xl font-bold text-white mb-2">2. Community Rules</h2>
+            <p class="text-sm leading-relaxed mb-2">You agree to treat other users with dignity and respect. You will not:</p>
+            <ul class="list-disc list-inside text-sm space-y-1 pl-2 text-gray-400">
+                <li>Send unsolicited sexual content or harassment.</li>
+                <li>Impersonate any person or entity.</li>
+                <li>Use the service for solicitation or prostitution.</li>
+                <li>Scam or defraud other users.</li>
+            </ul>
+            <p class="text-xs mt-2 text-red-400">Violation of these rules will result in an immediate ban without refund.</p>
+        </section>
+
+        <section>
+            <h2 class="text-xl font-bold text-white mb-2">3. Purchases & Subscriptions</h2>
+            <p class="text-sm leading-relaxed">
+                <strong>No Refunds:</strong> All purchases (Silver, Gold, Platinum) are final and non-refundable. 
+                Payments are processed securely via Paystack or Flutterwave. LOVENY does not store your credit card details.
+            </p>
+        </section>
+
+        <section>
+            <h2 class="text-xl font-bold text-white mb-2">4. Safety Disclaimer</h2>
+            <p class="text-sm leading-relaxed">
+                LOVENY does not conduct criminal background checks on its users. You are solely responsible for your interactions. Always meet in public places and inform a friend of your plans.
+            </p>
+        </section>
+
+        <section>
+            <h2 class="text-xl font-bold text-white mb-2">5. Governing Law</h2>
+            <p class="text-sm leading-relaxed">
+                These terms are governed by the laws of the Federal Republic of Nigeria.
+            </p>
+        </section>
+
+    </div>
+</div>
+{% endblock %}

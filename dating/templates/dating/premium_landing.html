@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+
+{% block title %}LOVENY - Choose Your Plan{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-900 font-sans pb-24 px-4 py-8 relative overflow-hidden">
+
+    <header class="flex justify-between items-center mb-8 relative z-10">
+        <button onclick="history.back()" class="text-white hover:text-gray-400 transition">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+        <div class="text-white font-black italic tracking-tighter text-xl">UPGRADE</div>
+    </header>
+
+    <div class="text-center mb-10 relative z-10">
+        <h1 class="text-4xl font-black text-white italic mb-2 uppercase tracking-tight">Unlock Access</h1>
+        <p class="text-gray-400 text-sm font-medium">Choose your plan. Prices in Naira (NGN).</p>
+    </div>
+
+    <div class="space-y-6 max-w-sm mx-auto relative z-10">
+        
+        <div class="bg-gray-800/80 backdrop-blur-md rounded-2xl p-6 border border-gray-600 relative overflow-hidden group hover:border-gray-400 transition shadow-lg">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h2 class="text-2xl font-black text-gray-300 italic uppercase">Silver</h2>
+                    <p class="text-gray-500 text-[10px] font-bold uppercase tracking-widest mt-1">The Weekend Pass</p>
+                </div>
+                <div class="text-3xl font-black text-white">₦200</div>
+            </div>
+            <ul class="text-gray-400 text-sm space-y-2 mb-6 font-medium">
+                <li class="flex items-center gap-2"><span class="text-gray-300">✓</span> 3 Days Access</li>
+            </ul>
+            <a href="{% url 'premium_checkout' %}?plan=SILVER" class="block w-full py-3 bg-gray-600 text-white font-bold text-center rounded-xl hover:bg-gray-500 transition uppercase tracking-wider text-xs">
+                Select Silver
+            </a>
+        </div>
+
+        <div class="bg-gray-800 rounded-2xl p-6 border-2 border-yellow-400 relative overflow-hidden transform scale-105 shadow-[0_0_40px_rgba(250,204,21,0.15)] z-20">
+            <div class="absolute top-0 right-0 bg-yellow-400 text-black text-[10px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-wider">
+                Most Popular
+            </div>
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h2 class="text-3xl font-black text-yellow-400 italic uppercase drop-shadow-sm">Gold</h2>
+                    <p class="text-yellow-200/60 text-[10px] font-bold uppercase tracking-widest mt-1">The Weekly Flex</p>
+                </div>
+                <div class="text-4xl font-black text-white">₦500</div>
+            </div>
+            <ul class="text-gray-300 text-sm space-y-2 mb-6 font-medium">
+                <li class="flex items-center gap-2"><span class="text-yellow-400">✓</span> 7 Days Access</li>
+                <li class="flex items-center gap-2"><span class="text-yellow-400">✓</span> Unlimited Swipes</li>
+            </ul>
+            <a href="{% url 'premium_checkout' %}?plan=GOLD" class="block w-full py-3 bg-yellow-400 text-black font-black text-center rounded-xl hover:bg-yellow-300 transition shadow-lg uppercase tracking-wider text-sm">
+                Get Gold
+            </a>
+        </div>
+
+        <div class="bg-gray-800/80 backdrop-blur-md rounded-2xl p-6 border border-pink-500 relative overflow-hidden group hover:border-pink-400 transition shadow-lg">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h2 class="text-2xl font-black text-pink-500 italic uppercase">Platinum</h2>
+                    <p class="text-pink-500/60 text-[10px] font-bold uppercase tracking-widest mt-1">Full Month Status</p>
+                </div>
+                <div class="text-3xl font-black text-white">₦1,000</div>
+            </div>
+            <ul class="text-gray-400 text-sm space-y-2 mb-6 font-medium">
+                <li class="flex items-center gap-2"><span class="text-pink-500">✓</span> 30 Days Access</li>
+                <li class="flex items-center gap-2"><span class="text-pink-500">✓</span> Priority Matching</li>
+            </ul>
+            <a href="{% url 'premium_checkout' %}?plan=PLATINUM" class="block w-full py-3 bg-pink-600 text-white font-bold text-center rounded-xl hover:bg-pink-500 transition uppercase tracking-wider text-xs">
+                Select Platinum
+            </a>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

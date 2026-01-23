@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+
+{% block title %}LOVENY - Control Panel{% endblock %}
+
+{% block content %}
+<div class="min-h-screen relative overflow-hidden bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 font-sans pb-32">
+
+    <div id="settings-config" class="hidden"></div>
+
+    <div class="absolute -z-10 w-96 h-96 bg-purple-600 rounded-full mix-blend-overlay filter blur-[100px] opacity-20 top-20 left-[-100px] animate-blob"></div>
+
+    <header class="sticky top-0 z-40 bg-black/80 backdrop-blur-md border-b border-white/10 px-4 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <a href="{% url 'profile' %}" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+            </a>
+            <h1 class="text-xl font-black italic tracking-tighter text-white">SYSTEM</h1>
+        </div>
+    </header>
+
+    <div class="max-w-md mx-auto p-4 space-y-8">
+        
+        <section>
+            <h2 class="text-xs font-bold text-pink-300 uppercase tracking-widest mb-4 ml-1">Search Parameters</h2>
+            
+            <form method="post" class="space-y-4">
+                {% csrf_token %}
+                
+                <div class="bg-black/30 border border-white/10 rounded-2xl p-5 space-y-5">
+                    
+                    <div>
+                        <label class="block text-[10px] font-bold text-gray-400 uppercase mb-2">I want to see</label>
+                        <div class="relative group">
+                            {{ form.preferred_gender }}
+                            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-white/50 group-hover:text-yellow-400 transition">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-[10px] font-bold text-gray-400 uppercase mb-2">Age Bracket</label>
+                        <div class="flex items-center gap-4">
+                            <div class="flex-1 relative group">
+                                <span class="absolute top-2 left-3 text-[9px] text-gray-500 font-bold uppercase">Min</span>
+                                {{ form.min_age_pref }}
+                            </div>
+                            <div class="text-gray-500 font-black">/</div>
+                            <div class="flex-1 relative group">
+                                <span class="absolute top-2 left-3 text-[9px] text-gray-500 font-bold uppercase">Max</span>
+                                {{ form.max_age_pref }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="w-full py-3 bg-white text-black font-black uppercase tracking-wider rounded-xl shadow-[0_0_15px_rgba(255,255,255,0.2)] hover:bg-yellow-400 hover:scale-[1.02] transition-all">
+                        Update Radar
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <section>
+            <h2 class="text-xs font-bold text-pink-300 uppercase tracking-widest mb-4 ml-1">Account Access</h2>
+            
+            <div class="space-y-3">
+                <a href="{% url 'password_change' %}" class="flex items-center justify-between p-4 bg-black/30 border border-white/10 rounded-xl hover:border-yellow-400/50 hover:bg-black/50 transition group cursor-pointer">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-yellow-400 transition">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <span class="block text-sm font-bold text-white group-hover:text-yellow-400 transition">Change Password</span>
+                            <span class="block text-[10px] text-gray-500">Update security key</span>
+                        </div>
+                    </div>
+                    <svg class="h-4 w-4 text-gray-600 group-hover:text-white transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </a>
+
+                <a href="{% url 'contact' %}" class="flex items-center justify-between p-4 bg-black/30 border border-white/10 rounded-xl hover:border-pink-500/50 hover:bg-black/50 transition group cursor-pointer">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-pink-500 transition">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <span class="block text-sm font-bold text-white group-hover:text-pink-500 transition">Help & Support</span>
+                            <span class="block text-[10px] text-gray-500">Contact us, FAQs</span>
+                        </div>
+                    </div>
+                    <svg class="h-4 w-4 text-gray-600 group-hover:text-white transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </a>
+
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="w-full flex items-center justify-between p-4 bg-black/30 border border-white/10 rounded-xl hover:border-red-500/50 hover:bg-red-500/10 transition group cursor-pointer text-left">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-red-500 transition">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                </svg>
+                            </div>
+                            <div>
+                                <span class="block text-sm font-bold text-white group-hover:text-red-400 transition">Log Out</span>
+                                <span class="block text-[10px] text-gray-500">End current session</span>
+                            </div>
+                        </div>
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <section class="grid grid-cols-1 gap-8 pt-4">
+            
+            <div class="text-center space-y-4">
+                <div class="inline-block p-4 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-sm">
+                    <h3 class="font-black italic text-2xl tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-500">LOVENY</h3>
+                    <p class="text-[10px] font-mono text-gray-500 mt-1">BUILD v1.0.0 // NEW YORK</p>
+                </div>
+                
+                <div class="flex justify-center gap-6 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                    <a href="{% url 'privacy' %}" class="hover:text-white transition">Privacy Protocol</a>
+                    <a href="{% url 'terms' %}" class="hover:text-white transition">Terms of Service</a>
+                </div>
+            </div>
+
+            <div>
+                <button onclick="alert('Account deletion is disabled for safety. Contact admin.')" class="w-full py-4 border border-red-500/30 text-red-500/50 font-black uppercase tracking-widest text-[10px] rounded-xl hover:bg-red-500/10 hover:text-red-500 hover:border-red-500 transition">
+                    Delete Account Protocol
+                </button>
+            </div>
+        </section>
+
+    </div>
+</div>
+
+<style>
+    /* Input Styling Override */
+    select, input[type="number"] {
+        width: 100%;
+        padding: 1rem 1rem 0.5rem 1rem; /* Extra top padding for floating label effect */
+        background-color: rgba(0, 0, 0, 0.4) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 0.75rem;
+        color: white;
+        font-weight: 700;
+        font-size: 1rem;
+        appearance: none; 
+        transition: all 0.3s;
+    }
+    
+    select:focus, input[type="number"]:focus {
+        border-color: #FACC15;
+        background-color: rgba(0, 0, 0, 0.6) !important;
+        box-shadow: 0 0 15px rgba(250, 204, 21, 0.2);
+        outline: none;
+    }
+
+    /* Input specific fix for the Age fields where I added custom labels */
+    input[type="number"] {
+        padding-top: 1.2rem;
+        padding-bottom: 0.5rem;
+        height: 3.5rem;
+    }
+
+    @keyframes blob {
+        0% { transform: translate(0px, 0px) scale(1); }
+        33% { transform: translate(30px, -50px) scale(1.1); }
+        66% { transform: translate(-20px, 20px) scale(0.9); }
+        100% { transform: translate(0px, 0px) scale(1); }
+    }
+    .animate-blob {
+        animation: blob 10s infinite;
+    }
+</style>
+{% endblock %}

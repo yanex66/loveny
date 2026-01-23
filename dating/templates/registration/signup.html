@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+
+{% block title %}LOVENY - Join the Club{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 font-sans py-12">
+
+    <div class="absolute -z-10 w-96 h-96 bg-green-400 rounded-full mix-blend-overlay filter blur-[120px] opacity-40 top-[-10%] left-[-10%] animate-blob"></div>
+    <div class="absolute -z-10 w-96 h-96 bg-purple-600 rounded-full mix-blend-overlay filter blur-[120px] opacity-40 bottom-[-10%] right-[-10%] animate-blob animation-delay-2000"></div>
+
+    <div class="w-full max-w-md px-6 relative z-10">
+        
+        <div class="text-center mb-8">
+            <h1 class="text-5xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-500 drop-shadow-[4px_4px_0_rgba(0,0,0,0.5)] transform -rotate-2">
+                JOIN LOVENY
+            </h1>
+            <p class="text-gray-300 font-bold uppercase tracking-widest text-xs mt-4">
+                Stop Swiping. Start Texting.
+            </p>
+        </div>
+
+        <div class="bg-white/10 backdrop-blur-xl border-2 border-white/20 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+            
+            <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 via-yellow-400 to-pink-500"></div>
+
+            <form method="post" class="space-y-5">
+                {% csrf_token %}
+                
+                {% for field in form %}
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-pink-300 uppercase tracking-widest ml-1">
+                        {{ field.label }}
+                    </label>
+                    
+                    <input type="{{ field.field.widget.input_type }}" 
+                           name="{{ field.name }}" 
+                           value="{{ field.value|default:'' }}"
+                           required
+                           class="block w-full px-4 py-3 bg-black/40 border-2 border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-yellow-400 focus:bg-black/60 transition-all font-bold tracking-wide shadow-inner">
+                    
+                    {% if field.help_text %}
+                    <p class="text-[10px] text-gray-400 uppercase tracking-wide font-semibold mt-1 ml-1 opacity-70">
+                        {{ field.help_text }}
+                    </p>
+                    {% endif %}
+
+                    {% if field.errors %}
+                    <div class="mt-1 flex items-center gap-2 text-red-300 text-xs font-bold bg-red-900/30 p-2 rounded">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        {{ field.errors.0 }}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+
+                <button type="submit" 
+                        class="w-full relative group mt-6 overflow-hidden rounded-xl bg-yellow-400 px-8 py-4 font-black text-black text-lg uppercase tracking-wider shadow-[0_0_20px_rgba(250,204,21,0.5)] transition-all hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(250,204,21,0.8)]">
+                    <span class="relative z-10 flex items-center justify-center gap-2">
+                        Create Account
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                    </span>
+                    <div class="absolute inset-0 -translate-x-full group-hover:translate-x-0 bg-white transition-transform duration-300 mix-blend-screen"></div>
+                </button>
+            </form>
+        </div>
+        
+        <p class="text-center text-sm text-gray-400 mt-6 font-medium">
+            Already have an account? <a href="{% url 'login' %}" class="text-yellow-400 font-bold hover:text-white underline decoration-2 underline-offset-4 transition">Log In</a>
+        </p>
+    </div>
+</div>
+
+<style>
+    @keyframes blob {
+        0% { transform: translate(0px, 0px) scale(1); }
+        33% { transform: translate(30px, -50px) scale(1.1); }
+        66% { transform: translate(-20px, 20px) scale(0.9); }
+        100% { transform: translate(0px, 0px) scale(1); }
+    }
+    .animate-blob {
+        animation: blob 7s infinite;
+    }
+    .animation-delay-2000 {
+        animation-delay: 2s;
+    }
+</style>
+{% endblock %}

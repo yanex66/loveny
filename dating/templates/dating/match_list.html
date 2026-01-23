@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+
+{% block title %}LOVENY - Active Connections{% endblock %}
+
+{% block content %}
+<div class="min-h-screen relative overflow-hidden bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 font-sans px-4 py-8">
+
+    <div class="absolute -z-10 w-96 h-96 bg-green-500 rounded-full mix-blend-overlay filter blur-[100px] opacity-20 top-20 right-[-100px] animate-blob"></div>
+    <div class="absolute -z-10 w-96 h-96 bg-pink-600 rounded-full mix-blend-overlay filter blur-[100px] opacity-20 bottom-40 left-[-100px] animate-blob animation-delay-2000"></div>
+
+    <header class="max-w-4xl mx-auto mb-10 text-center">
+        <h1 class="text-5xl md:text-6xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-500 transform -rotate-1 drop-shadow-sm">
+            YOUR HITS
+        </h1>
+        <p class="text-gray-300 font-bold uppercase tracking-widest text-xs mt-3 flex items-center justify-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+            Connections expire. Move fast.
+        </p>
+    </header>
+
+    <main class="max-w-md mx-auto md:max-w-4xl pb-24">
+        {% if matches %}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {% for match in matches %}
+                <div class="relative group bg-black/40 backdrop-blur-xl border-2 border-white/10 rounded-3xl p-6 transition-all duration-300 hover:border-pink-500 hover:shadow-[0_0_30px_rgba(236,72,153,0.3)] hover:-translate-y-1">
+                    
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h2 class="text-3xl font-black text-white leading-none">
+                                {{ match.username }}
+                            </h2>
+                            <span class="text-pink-400 font-bold text-lg">{{ match.age|default:'??' }}</span>
+                        </div>
+                        
+                        <div class="bg-red-500/20 border border-red-500 text-red-300 px-3 py-1 rounded-full text-xs font-mono font-bold flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 animate-pulse" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
+                            </svg>
+                            {{ match.expires_in }} DAY{{ match.expires_in|pluralize }} LEFT
+                        </div>
+                    </div>
+
+                    <div class="bg-white/5 rounded-xl p-4 mb-6 border-l-4 border-yellow-400">
+                        <p class="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-1">Mission / Date Idea</p>
+                        <p class="text-gray-200 italic font-medium">
+                            "{{ match.first_date_idea|default:'Let\'s figure it out on WhatsApp.' }}"
+                        </p>
+                    </div>
+
+                    <a href="{{ match.whatsapp_url }}" target="_blank" class="block w-full group/btn relative overflow-hidden rounded-xl bg-green-500 p-4 text-center transition-transform active:scale-95">
+                        <div class="relative z-10 flex items-center justify-center gap-2 font-black text-black uppercase tracking-wider text-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path d="M13.601 2.326A7.854 7.854 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.933 7.933 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.898 7.898 0 0 0 13.6 2.326zM7.994 14.521a6.573 6.573 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.557 6.557 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592z"/></svg>
+                            Open WhatsApp
+                        </div>
+                        <div class="absolute inset-0 -translate-x-full group-hover/btn:translate-x-0 bg-white/30 transition-transform duration-300"></div>
+                    </a>
+
+                </div>
+                {% endfor %}
+            </div>
+
+        {% else %}
+            <div class="flex flex-col items-center justify-center py-20 text-center">
+                <div class="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center border-2 border-dashed border-gray-600 mb-6">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                    </svg>
+                </div>
+                <h2 class="text-2xl font-bold text-white mb-2">Zero Signals Found</h2>
+                <p class="text-gray-400 max-w-xs mx-auto mb-8">
+                    Your inbox is ghost town. Go swipe to start some fires.
+                </p>
+                <a href="{% url 'swipe_card' %}" class="px-8 py-3 bg-pink-600 text-white font-bold rounded-full shadow-lg shadow-pink-600/30 hover:bg-pink-500 transition-all">
+                    Start Swiping
+                </a>
+            </div>
+        {% endif %}
+    </main>
+</div>
+
+<style>
+    @keyframes blob {
+        0% { transform: translate(0px, 0px) scale(1); }
+        33% { transform: translate(30px, -50px) scale(1.1); }
+        66% { transform: translate(-20px, 20px) scale(0.9); }
+        100% { transform: translate(0px, 0px) scale(1); }
+    }
+    .animate-blob {
+        animation: blob 7s infinite;
+    }
+    .animation-delay-2000 {
+        animation-delay: 2s;
+    }
+</style>
+{% endblock %}
