@@ -550,12 +550,16 @@ class DatingPlatformTests(TestCase):
         )
         self.assertEqual(self.client.get(reverse('chat_room', args=[match.pk])).status_code, 200)
 
-    def test_support_page_has_no_external_contact_routing(self):
+    def test_support_page_offers_whatsapp_as_the_only_support_channel(self):
         response = self.client.get(reverse('contact'))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Support requests are not available from this page yet.')
-        self.assertNotContains(response, 'wa.me')
-        self.assertNotContains(response, 'WhatsApp')
+        self.assertContains(
+            response,
+            'https://wa.me/2349130273282?text=Hello%20Loveny%20Support,%20I%20need%20help%20with%20my%20account',
+        )
+        self.assertContains(response, 'target="_blank" rel="noopener noreferrer"')
+        self.assertContains(response, 'Chat on WhatsApp')
+        self.assertContains(response, 'Having trouble with your account or payment? Our support team in Lagos is ready to assist.')
         self.assertNotContains(response, 'Email Support')
         self.assertNotContains(response, 'mailto:')
 
