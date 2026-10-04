@@ -3,6 +3,7 @@ import random
 from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand, CommandError
+from django.core.files.storage import default_storage
 from django.db import transaction
 from django.utils import timezone
 
@@ -68,6 +69,16 @@ class Command(BaseCommand):
         created_profiles = 0
         created_photos = 0
         now = timezone.now()
+        avatar_names = {}
+
+        for gender in ('F', 'M'):
+            avatar_name = f'profile_media/staff_test_{gender.lower()}.svg'
+            if not default_storage.exists(avatar_name):
+                avatar_name = default_storage.save(
+                    avatar_name,
+                    ContentFile(make_avatar(TEST_USER_START, gender).encode('utf-8')),
+                )
+            avatar_names[gender] = avatar_name
 
         with transaction.atomic():
             for offset in range(TEST_USER_COUNT):
@@ -134,12 +145,12 @@ class Command(BaseCommand):
                 profile.tags.set(rng.sample(tags, 5))
 
                 if not profile.photos.exists():
-                    photo = ProfilePhoto(profile=profile, is_main=True)
-                    photo.image.save(
-                        f'{username}.svg',
-                        ContentFile(make_avatar(number, gender).encode('utf-8')),
-                        save=True,
+                    photo = ProfilePhoto(
+                        profile=profile,
+                        image=avatar_names[gender],
+                        is_main=True,
                     )
+                    photo.save()
                     created_photos += 1
 
         total_test_profiles = Profile.objects.filter(is_test_profile=True).count()

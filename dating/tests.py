@@ -169,6 +169,11 @@ class DatingPlatformTests(TestCase):
                 self.assertFalse(first_profile.is_verified)
                 self.assertTrue(first_profile.show_in_discovery)
                 self.assertTrue(first_profile.photos.filter(is_main=True).exists())
+                photos = ProfilePhoto.objects.filter(profile__in=profiles)
+                self.assertEqual(photos.count(), 200)
+                image_names = set(photos.values_list('image', flat=True))
+                self.assertEqual(len(image_names), 2)
+                self.assertTrue(all(default_storage.exists(name) for name in image_names))
                 self.assertIn('Total isolated test profiles: 200', output.getvalue())
 
     def test_hookup_discovery_applies_distance_filter(self):
