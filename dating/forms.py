@@ -92,7 +92,6 @@ class ProfileForm(forms.ModelForm):
             'longitude',
             'max_distance_km',
             'job_title', 
-            'whatsapp_number', 
             'bio', 
             'first_date_idea', 
             'tags',
@@ -122,7 +121,6 @@ class ProfileForm(forms.ModelForm):
             'bio': forms.Textarea(attrs={'rows': 3, 'maxlength': '200', 'class': 'form-input'}),
             'tags': forms.CheckboxSelectMultiple(),
             'location': forms.TextInput(attrs={'placeholder': 'e.g. Lagos, Nigeria', 'class': 'form-input'}),
-            'whatsapp_number': forms.TextInput(attrs={'placeholder': '+234...', 'class': 'form-input'}),
         }
         labels = {
             'name': 'Name',

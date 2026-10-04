@@ -76,7 +76,13 @@ class Profile(models.Model):
     )
     job_title = models.CharField(max_length=100, blank=True)
 
-    whatsapp_number = models.CharField(max_length=20, unique=True, help_text="Required for sharing upon a match.")
+    whatsapp_number = models.CharField(
+        max_length=20,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text='Private legacy contact field; not shown or used for external contact.',
+    )
     first_date_idea = models.CharField(max_length=255, blank=True, help_text="My ideal first date is...")
     
     # Tags
@@ -86,6 +92,7 @@ class Profile(models.Model):
     last_active = models.DateTimeField(default=timezone.now)
     show_in_discovery = models.BooleanField(default=True)
     allow_messages = models.BooleanField(default=True)
+    is_test_profile = models.BooleanField(default=False, editable=False)
 
     # --- PREMIUM FEATURES ---
     premium_tier = models.CharField(max_length=20, blank=True, null=True) 

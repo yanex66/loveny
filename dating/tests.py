@@ -8,7 +8,7 @@ from unittest.mock import patch
 from django import forms
 from django.contrib.auth.models import User
 from django.core import mail
-from django.core.management import call_command
+from django.core.management import call_command, CommandError
 from django.core.files.storage import default_storage
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -89,6 +89,7 @@ class DatingPlatformTests(TestCase):
         )
         self.assertNotIn('premium_tier', form.fields)
         self.assertNotIn('premium_expiry', form.fields)
+        self.assertNotIn('whatsapp_number', form.fields)
 
     def test_discovery_excludes_self_acted_profiles_and_other_modes(self):
         self.client.force_login(self.alice)
@@ -102,6 +103,73 @@ class DatingPlatformTests(TestCase):
             'hookup', mode='HOOKUP', latitude=0, longitude=0
         )
         self.assertNotIn(hookup_profile, get_profile_batch(self.alice))
+
+    def test_test_profiles_are_hidden_from_members_and_staff_preview_is_explicit(self):
+        self.bob_profile.is_test_profile = True
+        self.bob_profile.is_verified = False
+        self.bob_profile.save(update_fields=['is_test_profile', 'is_verified'])
+        self.bob.is_active = False
+        self.bob.save(update_fields=['is_active'])
+
+        self.client.force_login(self.alice)
+        response = self.client.get(reverse('get_profiles_json'))
+        self.assertEqual(response.json()['profiles'], [])
+
+        staff, _ = self.make_profile(
+            'staff-preview',
+            age=30,
+            gender='F',
+            preferred_gender='M',
+        )
+        staff.is_staff = True
+        staff.save(update_fields=['is_staff'])
+        self.client.force_login(staff)
+        session = self.client.session
+        session['staff_test_profile_preview'] = True
+        session.save()
+
+        response = self.client.get(reverse('get_profiles_json'))
+        self.assertEqual(len(response.json()['profiles']), 1)
+        self.assertEqual(response.json()['profiles'][0]['id'], self.bob.pk)
+        self.assertTrue(response.json()['profiles'][0]['is_test_profile'])
+        self.assertFalse(response.json()['profiles'][0]['is_verified'])
+
+    def test_seed_200_users_creates_disabled_staff_only_profiles_and_avatars(self):
+        with self.assertRaises(CommandError):
+            call_command('seed_200_users', stdout=StringIO())
+
+        User.objects.create_superuser(
+            username='seed-admin',
+            email='seed-admin@example.com',
+            password='safe-admin-password',
+        )
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                output = StringIO()
+                call_command('seed_200_users', staff_only=True, stdout=output)
+
+                profiles = Profile.objects.filter(is_test_profile=True)
+                self.assertEqual(profiles.count(), 200)
+                self.assertEqual(
+                    profiles.filter(relationship_mode='DATING').count(),
+                    80,
+                )
+                self.assertEqual(
+                    profiles.filter(relationship_mode='HOOKUP').count(),
+                    60,
+                )
+                self.assertEqual(
+                    profiles.filter(relationship_mode='SEX_CALL').count(),
+                    60,
+                )
+                first_user = User.objects.get(username='test_user_1001')
+                self.assertFalse(first_user.is_active)
+                self.assertFalse(first_user.has_usable_password())
+                first_profile = first_user.profile
+                self.assertFalse(first_profile.is_verified)
+                self.assertTrue(first_profile.show_in_discovery)
+                self.assertTrue(first_profile.photos.filter(is_main=True).exists())
+                self.assertIn('Total isolated test profiles: 200', output.getvalue())
 
     def test_hookup_discovery_applies_distance_filter(self):
         self.alice_profile.relationship_mode = 'HOOKUP'
@@ -423,6 +491,7 @@ class DatingPlatformTests(TestCase):
         self.assertContains(profile_page, 'backdrop-filter: blur(16px)')
         self.assertEqual(self.client.get(reverse('edit_profile')).status_code, 200)
         self.assertNotContains(self.client.get(reverse('edit_profile')), 'Connection mode')
+        self.assertNotContains(self.client.get(reverse('edit_profile')), 'WhatsApp')
         self.assertContains(self.client.get(reverse('edit_profile')), 'Latitude (decimal degrees)')
         settings_page = self.client.get(reverse('settings'))
         self.assertEqual(settings_page.status_code, 200)

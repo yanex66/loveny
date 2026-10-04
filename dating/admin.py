@@ -26,7 +26,7 @@ class ProfileAdminForm(forms.ModelForm):
 
     class Meta:
         model = Profile
-        exclude = ('premium_tier', 'premium_expiry')
+        exclude = ('premium_tier', 'premium_expiry', 'whatsapp_number')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -70,10 +70,14 @@ class ProfileAdmin(VersionAdmin): # Inherit from VersionAdmin
     form = ProfileAdminForm
     list_display = (
         'user', 'relationship_mode', 'gender', 'preferred_gender',
-        'age', 'is_verified', 'is_vip', 'whatsapp_number', 'last_active',
+        'age', 'is_verified', 'is_vip', 'is_test_profile', 'last_active',
     )
     search_fields = ('user__username', 'bio')
-    list_filter = ('relationship_mode', 'gender', 'preferred_gender', 'is_verified', 'is_vip')
+    list_filter = (
+        'relationship_mode', 'gender', 'preferred_gender',
+        'is_verified', 'is_vip', 'is_test_profile',
+    )
+    readonly_fields = ('is_test_profile',)
     filter_horizontal = ('tags',) # Nicer interface for ManyToMany field
     inlines = [ProfilePhotoInline] # Include photo management inline
 

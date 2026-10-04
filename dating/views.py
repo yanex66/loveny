@@ -98,32 +98,38 @@ def subscription_plans_api(request):
     return JsonResponse(_subscription_plans_payload(profile.relationship_mode))
 
 
-def _candidate_queryset(user):
+def _candidate_queryset(user, include_test_profiles=False):
     current_profile = Profile.objects.filter(user=user).first()
     if not current_profile or not current_profile.age or current_profile.age < 18:
         return Profile.objects.none()
 
     active_limit = timezone.now() - timedelta(days=60)
     swiped_ids = Swipe.objects.filter(swiper=user).values('swiped_id')
+    filters = {
+        'show_in_discovery': True,
+        'is_test_profile': include_test_profiles,
+        'relationship_mode': current_profile.relationship_mode,
+        'last_active__gte': active_limit,
+    }
+    if not include_test_profiles:
+        filters.update({
+            'gender': current_profile.preferred_gender,
+            'preferred_gender': current_profile.gender,
+            'age__gte': max(18, current_profile.min_age_pref),
+            'age__lte': current_profile.max_age_pref,
+            'min_age_pref__lte': current_profile.age,
+            'max_age_pref__gte': current_profile.age,
+        })
+
     candidates = (
         Profile.objects.exclude(user=user)
         .exclude(user_id__in=Subquery(swiped_ids))
-        .filter(
-            show_in_discovery=True,
-            relationship_mode=current_profile.relationship_mode,
-            gender=current_profile.preferred_gender,
-            preferred_gender=current_profile.gender,
-            age__gte=max(18, current_profile.min_age_pref),
-            age__lte=current_profile.max_age_pref,
-            min_age_pref__lte=current_profile.age,
-            max_age_pref__gte=current_profile.age,
-            last_active__gte=active_limit,
-        )
+        .filter(**filters)
         .select_related('user')
         .prefetch_related('photos', 'tags')
     )
 
-    if current_profile.relationship_mode == 'HOOKUP':
+    if current_profile.relationship_mode == 'HOOKUP' and not include_test_profiles:
         if current_profile.latitude is not None and current_profile.longitude is not None:
             latitude = float(current_profile.latitude)
             longitude = float(current_profile.longitude)
@@ -168,12 +174,15 @@ def _distance_km(latitude_a, longitude_a, latitude_b, longitude_b):
     return 6371 * 2 * math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine))
 
 
-def get_profile_batch(user, limit=10):
+def get_profile_batch(user, limit=10, include_test_profiles=False):
     current_profile = Profile.objects.filter(user=user).first()
     if not current_profile:
         return []
 
-    candidate_queryset = _candidate_queryset(user)
+    candidate_queryset = _candidate_queryset(
+        user,
+        include_test_profiles=include_test_profiles,
+    )
     if (
         current_profile.is_premium()
         and current_profile.premium_tier_for() == 'PLATINUM'
@@ -181,7 +190,11 @@ def get_profile_batch(user, limit=10):
         candidates = candidate_queryset.order_by('-is_verified', '-last_active')
     else:
         candidates = candidate_queryset.order_by('?')
-    if current_profile.relationship_mode != 'HOOKUP' or current_profile.latitude is None:
+    if (
+        current_profile.relationship_mode != 'HOOKUP'
+        or current_profile.latitude is None
+        or include_test_profiles
+    ):
         return list(candidates[:limit])
 
     origin = (float(current_profile.latitude), float(current_profile.longitude))
@@ -219,13 +232,22 @@ def _profile_payload(profile):
         'relationship_mode': profile.relationship_mode,
         'is_verified': profile.is_verified,
         'is_vip': profile.is_vip,
+        'is_test_profile': profile.is_test_profile,
         'is_online': profile.last_active >= timezone.now() - timedelta(minutes=10),
     }
 
 # --- API: Get Profiles JSON for Swipe UI ---
 @login_required
 def get_profiles_json(request):
-    profiles = get_profile_batch(request.user, limit=10)
+    include_test_profiles = bool(
+        request.user.is_staff
+        and request.session.get('staff_test_profile_preview')
+    )
+    profiles = get_profile_batch(
+        request.user,
+        limit=10,
+        include_test_profiles=include_test_profiles,
+    )
     profile = Profile.objects.filter(user=request.user).only('relationship_mode').first()
     logger.info(
         'Discovery feed returned %d profiles for user_id=%s mode=%s',
@@ -259,7 +281,11 @@ def public_profile(request, pk):
     if request.user.id == pk:
         return redirect('profile')
     profile = get_object_or_404(
-        Profile.objects.filter(age__gte=18, show_in_discovery=True),
+        Profile.objects.filter(
+            age__gte=18,
+            show_in_discovery=True,
+            is_test_profile=False,
+        ),
         user_id=pk,
     )
     main_photo = profile.photos.filter(is_main=True).first() or profile.photos.first()
@@ -347,6 +373,12 @@ def edit_profile(request):
 # --- ACTION: Swiping ---
 @login_required
 def swipe_view(request):
+    if request.GET.get('test_profiles') in {'on', 'off'}:
+        request.session['staff_test_profile_preview'] = bool(
+            request.user.is_staff and request.GET['test_profiles'] == 'on'
+        )
+        return redirect('swipe_card')
+
     profile = Profile.objects.filter(user=request.user).first()
     if not profile:
         return redirect('create_profile')
@@ -363,6 +395,11 @@ def swipe_view(request):
         'relationship_mode': profile.get_relationship_mode_display(),
         'product_type': product_type,
         'is_premium': profile.is_premium(),
+        'staff_test_profile_preview': bool(
+            request.user.is_staff
+            and request.session.get('staff_test_profile_preview')
+        ),
+        'is_staff': request.user.is_staff,
     })
 
 @login_required
@@ -387,7 +424,17 @@ def swipe_action(request):
     if Swipe.objects.filter(swiper=request.user, swiped_id=target_id).exists():
         return JsonResponse({'status': 'error', 'message': 'already_swiped'}, status=409)
 
-    target_profile = get_object_or_404(_candidate_queryset(request.user), user_id=target_id)
+    include_test_profiles = bool(
+        request.user.is_staff
+        and request.session.get('staff_test_profile_preview')
+    )
+    target_profile = get_object_or_404(
+        _candidate_queryset(
+            request.user,
+            include_test_profiles=include_test_profiles,
+        ),
+        user_id=target_id,
+    )
     current_profile = get_object_or_404(Profile, user=request.user)
     swipe_type = 'PASS' if action == 'PASS' else 'LIKE'
     is_direct = action == 'DIRECT'
@@ -458,6 +505,11 @@ def match_list(request):
         other = m.user2 if m.user1 == request.user else m.user1
         profile = Profile.objects.filter(user=other).first()
         if not profile:
+            continue
+        if profile.is_test_profile and not (
+            request.user.is_staff
+            and request.session.get('staff_test_profile_preview')
+        ):
             continue
         data.append({
             'id': m.pk,
