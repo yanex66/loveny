@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}LOVENY - Discover{% endblock %}
 
@@ -7,13 +8,18 @@
     /* Card Container Dimensions */
     .dating-card-wrapper {
         position: relative;
-        width: 90vw;          
-        max-width: 400px;     
-        height: 65vh;        
-        min-height: 500px;    
-        max-height: 700px;    
+        width: min(90vw, 400px);
+        height: min(68svh, 680px);
+        min-height: 420px;
+        max-height: calc(100svh - 245px);
         margin: 0 auto;       
         perspective: 1000px;
+    }
+    @media (max-height: 640px) {
+        .dating-card-wrapper {
+            height: calc(100svh - 230px);
+            min-height: 360px;
+        }
     }
     
     /* Individual Card Logic */
@@ -47,7 +53,7 @@
     /* Loading Spinner */
     .loading-pulse {
         width: 60px; height: 60px;
-        background-color: rgba(255,255,255,0.1);
+        background-color: rgba(236,72,153,0.16);
         border-radius: 50%;
         animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
     }
@@ -58,49 +64,51 @@
 {% endblock %}
 
 {% block content %}
-<div class="min-h-screen relative overflow-hidden bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 font-sans flex flex-col items-center pb-24">
+<div class="min-h-screen relative overflow-hidden bg-gradient-to-br from-rose-50 via-white to-orange-50 font-sans flex flex-col items-center pb-24 text-slate-900">
 
     <div id="config-data" 
          data-swipe-url="{{ SWIPE_URL }}" 
          data-card-url="{{ PROFILES_URL }}"
+         data-csrf-token="{{ csrf_token }}"
          data-rewind-url="{% url 'rewind_swipe' %}"
-         data-premium-url="{% url 'premium_landing' %}"
+         data-premium-url="{{ PREMIUM_URL }}"
          class="hidden"></div>
 
-    <div class="absolute -z-10 w-96 h-96 bg-yellow-400 rounded-full mix-blend-overlay filter blur-[100px] opacity-20 top-[-100px] left-[-100px] animate-blob"></div>
-    <div class="absolute -z-10 w-96 h-96 bg-pink-600 rounded-full mix-blend-overlay filter blur-[100px] opacity-20 bottom-0 right-0 animate-blob animation-delay-2000"></div>
+    <div class="absolute -z-10 w-96 h-96 bg-pink-300 rounded-full mix-blend-multiply filter blur-[100px] opacity-40 top-[-100px] left-[-100px] animate-blob"></div>
+    <div class="absolute -z-10 w-96 h-96 bg-orange-200 rounded-full mix-blend-multiply filter blur-[100px] opacity-50 bottom-0 right-0 animate-blob animation-delay-2000"></div>
     
-    <div id="match-overlay" class="fixed inset-0 bg-black/90 hidden items-center justify-center z-[100] backdrop-blur-md transition-opacity duration-300 opacity-0">
-        <div class="bg-gray-900 border border-white/10 p-8 rounded-3xl shadow-2xl text-center max-w-sm w-full mx-4 transform transition-all duration-300 scale-90 relative overflow-hidden" id="match-modal">
+    <div id="match-overlay" class="fixed inset-0 bg-pink-950/45 hidden items-center justify-center z-[100] backdrop-blur-md transition-opacity duration-300 opacity-0">
+        <div class="bg-white border border-pink-100 p-8 rounded-3xl shadow-2xl text-center max-w-sm w-full mx-4 transform transition-all duration-300 scale-90 relative overflow-hidden" id="match-modal">
             
             <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-400 via-pink-500 to-purple-500"></div>
-            <div class="absolute -z-10 inset-0 bg-gradient-to-b from-pink-500/20 to-transparent"></div>
+            <div class="absolute -z-10 inset-0 bg-gradient-to-b from-pink-100/80 to-transparent"></div>
 
-            <div class="text-6xl mb-4 animate-bounce">🔥</div>
+            <div class="text-4xl mb-4 animate-bounce">🔥</div>
             
-            <h2 class="text-4xl font-black italic tracking-tighter text-white mb-2 uppercase transform -rotate-2">
+            <h2 class="text-2xl font-black italic tracking-tighter text-pink-700 mb-2 uppercase transform -rotate-2 sm:text-3xl">
                 It's a Match!
             </h2>
             
-            <p class="text-gray-300 mb-8 font-medium">
-                You and <span id="matched-username" class="text-yellow-400 font-bold uppercase tracking-wider"></span> clicked.
+            <p class="text-slate-600 mb-8 font-medium">
+                You and <span id="matched-username" class="text-pink-600 font-bold uppercase tracking-wider"></span> clicked.
             </p>
             
             <a href="{% url 'match_list' %}" class="block w-full py-4 bg-green-500 text-black font-black uppercase tracking-widest rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.6)] hover:bg-green-400 transition transform hover:-translate-y-1 mb-4">
                 Launch WhatsApp
             </a>
             
-            <button onclick="hideMatchModal(); loadNextProfile();" class="text-xs font-bold text-gray-500 hover:text-white uppercase tracking-widest transition">
+            <button onclick="hideMatchModal(); loadNextProfile();" class="text-xs font-bold text-slate-500 hover:text-pink-700 uppercase tracking-widest transition">
                 Keep Swiping
             </button>
         </div>
     </div>
     
     <header class="w-full pt-4 pb-2 z-10 flex justify-between items-center px-6 max-w-md">
-        <h1 class="text-2xl font-black italic tracking-tighter text-white">
+        <h1 class="text-2xl font-black italic tracking-tighter text-pink-800">
             DISCOVER
         </h1>
-        <a href="{% url 'settings' %}" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition backdrop-blur-md border border-white/10">
+        <span class="text-[9px] font-black uppercase tracking-widest text-pink-600">{{ relationship_mode }}</span>
+        <a href="{% url 'settings' %}" aria-label="Discovery settings" class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-pink-700 hover:bg-pink-50 transition border border-pink-100 shadow-sm">
              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
         </a>
     </header>
@@ -108,32 +116,37 @@
     <main class="w-full flex-grow flex flex-col justify-center items-center p-4 relative">
         
         <div id="card-container" class="dating-card-wrapper">
-            <div id="initial-loading-message" class="h-full w-full flex flex-col justify-center items-center text-center bg-black/20 backdrop-blur-md rounded-3xl border border-white/10">
+            <div id="initial-loading-message" class="h-full w-full flex flex-col justify-center items-center text-center bg-white/80 backdrop-blur-md rounded-3xl border border-pink-100 shadow-lg">
                 <div class="loading-pulse mb-6"></div>
-                <h2 class="text-xl font-bold text-white uppercase tracking-widest">Scanning...</h2>
-                <p class="text-pink-300 text-xs mt-2 font-mono">LOCATING NEARBY SIGNALS</p>
+                <h2 class="text-xl font-bold text-pink-800 uppercase tracking-widest">Scanning...</h2>
+                <p class="text-rose-500 text-xs mt-2 font-mono">LOCATING NEARBY SIGNALS</p>
             </div>
         </div>
         
         <div id="action-buttons" class="flex justify-center items-center gap-6 mt-6 hidden">
             
             <button onclick="rewindSwipe()" 
-                    class="action-btn w-12 h-12 bg-black/40 border border-yellow-500/50 text-yellow-500 rounded-full shadow-[0_0_15px_rgba(234,179,8,0.2)] hover:bg-yellow-500 hover:text-black hover:shadow-[0_0_20px_rgba(234,179,8,0.6)] flex items-center justify-center backdrop-blur-md">
+                    class="action-btn w-12 h-12 bg-white border border-orange-200 text-orange-500 rounded-full shadow-lg hover:bg-orange-400 hover:text-white flex items-center justify-center">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
             </button>
 
             <button onclick="animateAndSwipe('PASS')" 
-                    class="action-btn w-16 h-16 bg-black/40 border-2 border-red-500 text-red-500 rounded-full shadow-[0_0_20px_rgba(239,68,68,0.3)] hover:bg-red-500 hover:text-white hover:shadow-[0_0_30px_rgba(239,68,68,0.6)] flex items-center justify-center backdrop-blur-md">
+                    class="action-btn w-16 h-16 bg-white border-2 border-rose-200 text-rose-500 rounded-full shadow-lg hover:bg-rose-500 hover:text-white flex items-center justify-center">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
             </button>
             
             <button onclick="animateAndSwipe('LIKE')" 
-                    class="action-btn w-20 h-20 bg-gradient-to-tr from-green-400 to-emerald-600 text-black rounded-full shadow-[0_0_20px_rgba(74,222,128,0.5)] hover:scale-105 hover:shadow-[0_0_40px_rgba(74,222,128,0.8)] flex items-center justify-center border-4 border-black/20">
+                    class="action-btn w-20 h-20 bg-gradient-to-tr from-pink-500 to-rose-500 text-white rounded-full shadow-[0_12px_30px_rgba(236,72,153,0.35)] hover:scale-105 flex items-center justify-center border-4 border-white">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 fill-current" viewBox="0 0 24 24">
                     <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
                 </svg>
+            </button>
+
+            <button onclick="animateAndSwipe('DIRECT')" title="Send direct interest"
+                    class="action-btn w-12 h-12 bg-white border border-orange-200 text-orange-500 rounded-full shadow-lg hover:bg-orange-400 hover:text-white flex items-center justify-center">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.539 1.118l-2.8-2.034a1 1 0 00-1.176 0l-2.8 2.034c-.783.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118l-2.8-2.034c-.783-.57-.38-1.81.588-1.81h3.462a1 1 0 00.95-.69l1.07-3.292z"/></svg>
             </button>
         </div>
     </main>
@@ -146,7 +159,7 @@
     const PROFILES_URL = configData.dataset.cardUrl; 
     const REWIND_URL = configData.dataset.rewindUrl; 
     const PREMIUM_URL = configData.dataset.premiumUrl;
-    const csrftoken = getCookie('csrftoken');
+    const csrftoken = configData.dataset.csrfToken;
     
     // --- Elements ---
     const matchedUsernameSpan = document.getElementById('matched-username');
@@ -155,7 +168,7 @@
     const loadingMsg = document.getElementById('initial-loading-message');
     
     // --- State ---
-    let profileQueue = []; 
+    let profileQueue = [];
     let currentCardEl = null;
     let isFetching = false;
     let isDragging = false;
@@ -171,6 +184,9 @@
         try {
             const response = await fetch(PROFILES_URL);
             const data = await response.json();
+            if (!response.ok || !Array.isArray(data.profiles)) {
+                throw new Error(data.message || 'Could not load profiles right now.');
+            }
             
             if (data.profiles && data.profiles.length > 0) {
                 const currentId = currentCardEl ? currentCardEl.dataset.targetId : null;
@@ -188,6 +204,9 @@
             }
         } catch (err) {
             console.error("Batch fetch error:", err);
+            if (loadingMsg && !currentCardEl) {
+                loadingMsg.textContent = err.message || 'Could not load profiles right now. Please try again.';
+            }
         } finally {
             isFetching = false;
         }
@@ -213,17 +232,16 @@
         newCard.dataset.targetId = profile.id;
         
         let mediaHtml = '';
+        const imageUrl = escapeHTML(profile.image_url || '');
         if (profile.is_video) {
-            mediaHtml = `<video src="${profile.image_url}" class="media-content opacity-90" autoplay muted loop playsinline></video>`;
-        } else if (profile.image_url) {
-            mediaHtml = `<img src="${profile.image_url}" class="media-content opacity-90">`;
+            mediaHtml = `<video src="${imageUrl}" class="media-content opacity-90" autoplay muted loop playsinline></video>`;
         } else {
-            mediaHtml = `<div class="w-full h-full bg-gray-800 flex items-center justify-center"><span class="text-gray-500 font-bold uppercase tracking-widest">No Signal</span></div>`;
+            mediaHtml = `<img src="${imageUrl}" class="media-content opacity-90" alt="">`;
         }
 
         let tagsHtml = '';
         profile.tags.forEach(tag => {
-            tagsHtml += `<span class="bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded border border-white/20 mr-1 uppercase tracking-wider shadow-sm">#${tag}</span>`;
+            tagsHtml += `<span class="bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded border border-white/20 mr-1 uppercase tracking-wider shadow-sm">#${escapeHTML(tag)}</span>`;
         });
 
         // --- NEW: ONLINE INDICATOR HTML ---
@@ -238,21 +256,29 @@
             </div>`;
         }
 
+        const verifiedBadge = profile.is_verified
+            ? '<span class="ml-2 rounded-full bg-blue-500/80 px-2 py-1 text-[9px] font-black uppercase">Verified</span>'
+            : '';
+        const vipBadge = profile.is_vip
+            ? '<span class="ml-1 rounded-full bg-yellow-400 px-2 py-1 text-[9px] font-black uppercase text-black">VIP</span>'
+            : '';
+
         newCard.innerHTML = `
             ${mediaHtml}
             <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
             
             <div onclick="viewProfile(${profile.id})" class="absolute bottom-0 left-0 right-0 p-6 cursor-pointer z-10">
-                <h2 class="text-4xl font-black text-white leading-none mb-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] italic uppercase">
-                    ${profile.username} <span class="text-pink-500 not-italic text-3xl font-bold ml-1">${profile.age}</span>
+                <h2 class="break-words text-2xl font-black text-white leading-tight mb-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] italic uppercase sm:text-3xl">
+                    ${escapeHTML(profile.username)} <span class="text-pink-500 not-italic text-3xl font-bold ml-1">${escapeHTML(profile.age)}</span>
                 </h2>
-                ${profile.job_title ? `<p class="text-gray-300 text-xs font-bold uppercase tracking-widest mb-3 opacity-80">${profile.job_title}</p>` : ''}
+                ${verifiedBadge}${vipBadge}
+                ${profile.job_title ? `<p class="text-gray-300 text-xs font-bold uppercase tracking-widest mb-3 opacity-80">${escapeHTML(profile.job_title)}</p>` : ''}
                 <div class="flex flex-wrap gap-1 mb-4">${tagsHtml}</div>
-                <p class="text-sm text-gray-200 line-clamp-2 mb-4 font-medium leading-relaxed opacity-90 border-l-2 border-yellow-400 pl-3">${profile.bio}</p>
+                <p class="text-sm text-gray-200 line-clamp-2 mb-4 font-medium leading-relaxed opacity-90 border-l-2 border-yellow-400 pl-3">${escapeHTML(profile.bio)}</p>
                 ${profile.first_date_idea ? `
                 <div class="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/10">
                     <p class="text-[9px] font-bold text-yellow-400 uppercase tracking-widest mb-1">Mission / Date Idea</p>
-                    <p class="text-xs text-white italic">"${profile.first_date_idea}"</p>
+                    <p class="text-xs text-white italic">"${escapeHTML(profile.first_date_idea)}"</p>
                 </div>` : ''}
             </div>
             
@@ -261,6 +287,25 @@
             </div>
             
             ${onlineBadge} `;
+
+        const mediaElement = newCard.querySelector('.media-content');
+        const fallbackImage = "{% static 'dating/images/profile-placeholder.svg' %}";
+        if (mediaElement) {
+            mediaElement.addEventListener('error', () => {
+                if (mediaElement instanceof HTMLVideoElement) {
+                    const fallback = document.createElement('img');
+                    fallback.className = mediaElement.className;
+                    fallback.alt = 'Profile photo unavailable';
+                    fallback.src = fallbackImage;
+                    mediaElement.replaceWith(fallback);
+                } else {
+                    mediaElement.src = fallbackImage;
+                }
+            }, { once: true });
+            if (!imageUrl && mediaElement instanceof HTMLImageElement) {
+                mediaElement.src = fallbackImage;
+            }
+        }
 
         cardContainer.innerHTML = '';
         cardContainer.appendChild(newCard);
@@ -279,15 +324,16 @@
 
     function showNoMoreProfiles() {
          cardContainer.innerHTML = `
-            <div class="h-full w-full flex flex-col justify-center items-center text-center bg-black/30 backdrop-blur-xl rounded-3xl border border-white/10 p-8">
-                <div class="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mb-6 shadow-xl border-4 border-gray-700">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div class="h-full w-full flex flex-col justify-center items-center text-center bg-white/95 backdrop-blur-xl rounded-3xl border border-pink-100 p-8 shadow-xl">
+                <div class="w-20 h-20 bg-pink-50 rounded-full flex items-center justify-center mb-6 shadow-sm border-4 border-pink-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-pink-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                 </div>
-                <h1 class="text-2xl font-black text-white uppercase italic tracking-tighter mb-2">Sector Clear</h1>
-                <p class="text-gray-400 text-sm mb-8 font-medium max-w-[200px]">No more signals in your area. Check back later.</p>
-                <a href="{% url 'match_list' %}" class="px-8 py-4 bg-pink-600 text-white font-black uppercase tracking-widest rounded-xl shadow-lg hover:bg-pink-500 transition border-2 border-transparent hover:border-white">View Matches</a>
+                <h1 class="text-2xl font-black text-slate-900 uppercase italic tracking-tighter mb-2">You're all caught up</h1>
+                <p class="text-slate-500 text-sm mb-8 font-medium max-w-[220px]">No new people fit your current mode and preferences. Check back later or adjust your settings.</p>
+                <a href="{% url 'settings' %}" class="mb-3 w-full rounded-xl border border-pink-200 bg-white px-5 py-3 font-bold text-pink-700">Update preferences</a>
+                <a href="{% url 'match_list' %}" class="w-full rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 px-5 py-3 font-black uppercase tracking-widest text-white shadow-lg">View matches</a>
             </div>`;
         actionButtons.style.display = 'none';
         currentCardEl = null;
@@ -297,27 +343,50 @@
          renderNextCard();
     }
 
+    function escapeHTML(value) {
+        return String(value).replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+        })[char]);
+    }
+
     async function performSwipe(action, targetId, targetUsername) {
         if (!targetId) return;
-        fetch(SWIPE_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
-            body: JSON.stringify({ 'target_user_id': targetId, 'action': action })
-        })
-        .then(r => r.json())
-        .then(data => {
+        try {
+            const response = await fetch(SWIPE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
+                body: JSON.stringify({ 'target_user_id': targetId, 'action': action })
+            });
+            const data = await response.json();
+            if (response.ok && data.status === 'success') {
             if (data.is_match) {
                 showMatchModal(targetUsername);
+            }
+            loadNextProfile();
             } else if (data.message === 'limit_reached_likes') {
                 if(confirm("Daily Like Limit Reached (100). Upgrade to Premium for Unlimited Likes?")) {
                     window.location.href = PREMIUM_URL;
                 }
-                // Don't advance card if failed
-                return; 
+                restoreCurrentCard();
+            } else {
+                alert(data.message === 'already_swiped' ? 'This profile has already been actioned.' : 'Unable to save that action. Please try again.');
+                restoreCurrentCard();
             }
-        })
-        .catch(err => console.error(err));
-        loadNextProfile();
+        } catch (err) {
+            console.error('Swipe request failed:', err);
+            restoreCurrentCard();
+        }
+    }
+
+    function restoreCurrentCard() {
+        if (!currentCardEl) return;
+        currentCardEl.classList.remove('dating-card-animate');
+        currentCardEl.style.transform = '';
+        currentCardEl.style.opacity = '1';
     }
 
     function rewindSwipe() {
@@ -348,7 +417,7 @@
         const tname = currentCardEl.dataset.targetUsername;
         
         currentCardEl.classList.add('dating-card-animate');
-        const translate = action === 'LIKE' ? 'translateX(150%) rotate(30deg)' : 'translateX(-150%) rotate(-30deg)';
+        const translate = action === 'PASS' ? 'translateX(-150%) rotate(-30deg)' : 'translateX(150%) rotate(30deg)';
         currentCardEl.style.transform = translate;
         currentCardEl.style.opacity = '0'; 
         
@@ -403,21 +472,6 @@
         document.addEventListener('touchmove', dragMove, { passive: false });
         document.addEventListener('mouseup', dragEnd);
         document.addEventListener('touchend', dragEnd);
-    }
-
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                let cookie = cookies[i].trim();
-                if (cookie.startsWith(name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
-            }
-        }
-        return cookieValue;
     }
 
     function showMatchModal(username) {

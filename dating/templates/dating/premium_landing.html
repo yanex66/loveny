@@ -1,77 +1,99 @@
 {% extends 'base.html' %}
 
-{% block title %}LOVENY - Choose Your Plan{% endblock %}
+{% block title %}Choose your {{ mode_name }} Pass | LOVENY{% endblock %}
 
 {% block content %}
-<div class="min-h-screen bg-gray-900 font-sans pb-24 px-4 py-8 relative overflow-hidden">
+<main class="min-h-screen bg-gradient-to-br from-rose-50 via-white to-orange-50 px-4 py-6 pb-32 text-slate-900">
+    <div class="mx-auto max-w-5xl">
+        <header class="mb-8 flex items-center justify-between">
+            <a href="{% url 'swipe_card' %}" aria-label="Back to discovery" class="flex h-11 w-11 items-center justify-center rounded-full border border-pink-100 bg-white text-pink-700 shadow-sm transition hover:bg-white hover:text-slate-900">←</a>
+            <a href="{% url 'profile' %}" class="rounded-full px-4 py-2 text-sm font-bold text-slate-600 transition hover:bg-white hover:text-slate-900">My profile</a>
+        </header>
 
-    <header class="flex justify-between items-center mb-8 relative z-10">
-        <button onclick="history.back()" class="text-white hover:text-gray-400 transition">
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-        </button>
-        <div class="text-white font-black italic tracking-tighter text-xl">UPGRADE</div>
-    </header>
+        <div class="mx-auto mb-8 max-w-2xl text-center">
+            <p class="mb-3 text-xs font-black uppercase tracking-[0.2em] text-pink-600">{{ mode_name }} access</p>
+            <h1 class="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+                Choose your {{ mode_name }} Pass
+            </h1>
+            <p class="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-slate-600">Unlock unlimited features, priority matching, and instant access for your chosen mode.</p>
+        </div>
 
-    <div class="text-center mb-10 relative z-10">
-        <h1 class="text-4xl font-black text-white italic mb-2 uppercase tracking-tight">Unlock Access</h1>
-        <p class="text-gray-400 text-sm font-medium">Choose your plan. Prices in Naira (NGN).</p>
+        <div class="mx-auto mb-6 max-w-xl rounded-2xl border border-pink-100 bg-white/90 px-4 py-3 text-center shadow-sm">
+            <p class="text-sm font-semibold text-slate-700">
+                {{ status_name }} ·
+                {% if is_premium %}<span class="text-emerald-700">Active</span>{% else %}<span class="text-slate-500">Not currently active</span>{% endif %}
+            </p>
+            {% if is_premium and premium_tier %}
+            <p class="mt-1 text-xs text-slate-500">{{ premium_tier }}{% if premium_expiry %} · renews {{ premium_expiry|date:"M j, Y" }}{% endif %}</p>
+            {% endif %}
+        </div>
+
+        <p id="plans-status" class="mb-4 min-h-5 text-center text-sm font-semibold text-slate-500" role="status"></p>
+        <section id="plan-grid" aria-label="{{ mode_name }} passes" aria-live="polite" class="mx-auto grid max-w-5xl grid-cols-1 gap-4 px-1 sm:grid-cols-3"></section>
+
+        <p class="mx-auto mt-7 max-w-2xl text-center text-xs leading-relaxed text-slate-500">
+            Plan prices and benefits are maintained by LOVENY. Payments are confirmed by the selected provider before access is granted.
+        </p>
     </div>
+</main>
+{% endblock %}
 
-    <div class="space-y-6 max-w-sm mx-auto relative z-10">
-        
-        <div class="bg-gray-800/80 backdrop-blur-md rounded-2xl p-6 border border-gray-600 relative overflow-hidden group hover:border-gray-400 transition shadow-lg">
-            <div class="flex justify-between items-start mb-4">
-                <div>
-                    <h2 class="text-2xl font-black text-gray-300 italic uppercase">Silver</h2>
-                    <p class="text-gray-500 text-[10px] font-bold uppercase tracking-widest mt-1">The Weekend Pass</p>
-                </div>
-                <div class="text-3xl font-black text-white">₦200</div>
-            </div>
-            <ul class="text-gray-400 text-sm space-y-2 mb-6 font-medium">
-                <li class="flex items-center gap-2"><span class="text-gray-300">✓</span> 3 Days Access</li>
-            </ul>
-            <a href="{% url 'premium_checkout' %}?plan=SILVER" class="block w-full py-3 bg-gray-600 text-white font-bold text-center rounded-xl hover:bg-gray-500 transition uppercase tracking-wider text-xs">
-                Select Silver
-            </a>
-        </div>
+{% block extra_scripts %}
+<script>
+    const plansApiUrl = "{{ plans_api_url|escapejs }}";
+    const checkoutUrl = "{% url 'premium_checkout' %}";
+    const planGrid = document.getElementById('plan-grid');
+    const plansStatus = document.getElementById('plans-status');
+    const selectedModeKey = "{{ product_type|lower|escapejs }}";
 
-        <div class="bg-gray-800 rounded-2xl p-6 border-2 border-yellow-400 relative overflow-hidden transform scale-105 shadow-[0_0_40px_rgba(250,204,21,0.15)] z-20">
-            <div class="absolute top-0 right-0 bg-yellow-400 text-black text-[10px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-wider">
-                Most Popular
-            </div>
-            <div class="flex justify-between items-start mb-4">
-                <div>
-                    <h2 class="text-3xl font-black text-yellow-400 italic uppercase drop-shadow-sm">Gold</h2>
-                    <p class="text-yellow-200/60 text-[10px] font-bold uppercase tracking-widest mt-1">The Weekly Flex</p>
-                </div>
-                <div class="text-4xl font-black text-white">₦500</div>
-            </div>
-            <ul class="text-gray-300 text-sm space-y-2 mb-6 font-medium">
-                <li class="flex items-center gap-2"><span class="text-yellow-400">✓</span> 7 Days Access</li>
-                <li class="flex items-center gap-2"><span class="text-yellow-400">✓</span> Unlimited Swipes</li>
-            </ul>
-            <a href="{% url 'premium_checkout' %}?plan=GOLD" class="block w-full py-3 bg-yellow-400 text-black font-black text-center rounded-xl hover:bg-yellow-300 transition shadow-lg uppercase tracking-wider text-sm">
-                Get Gold
-            </a>
-        </div>
+    function escapeHtml(value) {
+        const element = document.createElement('span');
+        element.textContent = String(value);
+        return element.innerHTML;
+    }
 
-        <div class="bg-gray-800/80 backdrop-blur-md rounded-2xl p-6 border border-pink-500 relative overflow-hidden group hover:border-pink-400 transition shadow-lg">
-            <div class="flex justify-between items-start mb-4">
-                <div>
-                    <h2 class="text-2xl font-black text-pink-500 italic uppercase">Platinum</h2>
-                    <p class="text-pink-500/60 text-[10px] font-bold uppercase tracking-widest mt-1">Full Month Status</p>
-                </div>
-                <div class="text-3xl font-black text-white">₦1,000</div>
-            </div>
-            <ul class="text-gray-400 text-sm space-y-2 mb-6 font-medium">
-                <li class="flex items-center gap-2"><span class="text-pink-500">✓</span> 30 Days Access</li>
-                <li class="flex items-center gap-2"><span class="text-pink-500">✓</span> Priority Matching</li>
-            </ul>
-            <a href="{% url 'premium_checkout' %}?plan=PLATINUM" class="block w-full py-3 bg-pink-600 text-white font-bold text-center rounded-xl hover:bg-pink-500 transition uppercase tracking-wider text-xs">
-                Select Platinum
-            </a>
-        </div>
+    function renderPlans(plans) {
+        planGrid.replaceChildren();
+        if (!plans.length) {
+            plansStatus.textContent = 'No active passes are available right now. Please check back soon.';
+            return;
+        }
+        plansStatus.textContent = '';
+        for (const plan of plans) {
+            const article = document.createElement('article');
+            article.className = `relative flex min-w-0 flex-col rounded-3xl border bg-white px-4 pb-5 pt-14 shadow-[0_18px_50px_rgba(190,24,93,0.09)] ${plan.is_popular ? 'border-pink-300 ring-2 ring-pink-100' : 'border-rose-100'}`;
+            const popular = plan.is_popular
+                ? '<span class="absolute left-1/2 top-3 -translate-x-1/2 whitespace-nowrap rounded-full bg-pink-600 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-white">Most popular</span>'
+                : '';
+            const features = (Array.isArray(plan.features) ? plan.features : [])
+                .map(feature => `<li class="flex gap-2"><span class="font-black text-pink-500">✓</span><span>${escapeHtml(feature)}</span></li>`)
+                .join('');
+            const price = Number(plan.price).toLocaleString('en-NG', {minimumFractionDigits: 0, maximumFractionDigits: 2});
+            article.innerHTML = `${popular}
+                <p class="text-xs font-black uppercase tracking-[0.18em] text-pink-600">${plan.duration_days}-day pass</p>
+                <h2 class="mt-2 text-2xl font-black text-slate-900">${escapeHtml(plan.tier_name)}</h2>
+                <p class="mt-4 inline-flex items-baseline gap-1 whitespace-nowrap text-2xl font-black leading-tight text-slate-900"><span class="text-base text-pink-600">₦</span><span>${price}</span></p>
+                <ul class="my-5 flex-1 space-y-3 text-sm text-slate-600">${features}</ul>
+                <a href="${checkoutUrl}?plan_id=${encodeURIComponent(plan.id)}" class="block rounded-xl bg-pink-600 px-4 py-3 text-center text-sm font-black uppercase tracking-wider text-white shadow-lg shadow-pink-200 transition hover:bg-white hover:text-slate-900 hover:ring-1 hover:ring-slate-200">Choose ${escapeHtml(plan.tier_name)}</a>`;
+            planGrid.appendChild(article);
+        }
+    }
 
-    </div>
-</div>
+    async function loadPlans() {
+        plansStatus.textContent = 'Loading available passes…';
+        try {
+            const response = await fetch(plansApiUrl, {headers: {'Accept': 'application/json'}});
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.message || 'Could not load passes. Please try again.');
+            if (Object.keys(payload).some(key => key !== selectedModeKey)) {
+                throw new Error('The returned passes do not match your selected mode.');
+            }
+            renderPlans(payload[selectedModeKey] || []);
+        } catch (error) {
+            plansStatus.textContent = error.message;
+        }
+    }
+
+    loadPlans();
+</script>
 {% endblock %}

@@ -1,113 +1,130 @@
 {% extends 'base.html' %}
+{% load static %}
 
-{% block title %}LOVENY - Control Panel{% endblock %}
+{% block title %}Settings | LOVENY{% endblock %}
 
 {% block content %}
-<div class="min-h-screen relative overflow-hidden bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 font-sans pb-32">
+<div class="min-h-screen relative overflow-hidden bg-gradient-to-br from-rose-50 via-white to-orange-50 font-sans pb-32 text-slate-900">
 
-    <div id="settings-config" class="hidden"></div>
+    <div class="absolute -z-10 w-96 h-96 bg-pink-200/70 rounded-full filter blur-[120px] top-20 left-[-100px] animate-blob"></div>
 
-    <div class="absolute -z-10 w-96 h-96 bg-purple-600 rounded-full mix-blend-overlay filter blur-[100px] opacity-20 top-20 left-[-100px] animate-blob"></div>
-
-    <header class="sticky top-0 z-40 bg-black/80 backdrop-blur-md border-b border-white/10 px-4 py-4 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <a href="{% url 'profile' %}" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                </svg>
+    <header class="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-pink-100 px-4 py-4 sm:px-6 sm:py-5">
+        <div class="flex items-center gap-4">
+            <a href="{% url 'profile' %}" class="w-10 h-10 rounded-full bg-white flex items-center justify-center border border-pink-100 text-pink-700 hover:bg-pink-50 transition">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" /></svg>
             </a>
-            <h1 class="text-xl font-black italic tracking-tighter text-white">SYSTEM</h1>
+            <h1 class="text-2xl font-black italic tracking-tighter uppercase">Settings</h1>
         </div>
     </header>
 
-    <div class="max-w-md mx-auto p-4 space-y-8">
+    <div class="max-w-lg mx-auto px-4 py-6 sm:px-6 space-y-8">
         
         <section>
-            <h2 class="text-xs font-bold text-pink-300 uppercase tracking-widest mb-4 ml-1">Search Parameters</h2>
+            <h2 class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 ml-1">Discovery preferences</h2>
             
             <form method="post" class="space-y-4">
                 {% csrf_token %}
+                {% if form.non_field_errors %}
+                    <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{{ form.non_field_errors }}</div>
+                {% endif %}
+                {% if form.errors %}
+                    <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                        <p class="font-bold">Please review the highlighted settings.</p>
+                    </div>
+                {% endif %}
                 
-                <div class="bg-black/30 border border-white/10 rounded-2xl p-5 space-y-5">
-                    
-                    <div>
-                        <label class="block text-[10px] font-bold text-gray-400 uppercase mb-2">I want to see</label>
-                        <div class="relative group">
+                <div class="soft-card rounded-3xl p-5 sm:p-7">
+                    <div class="space-y-5">
+                        <div class="form-group">
+                            <label for="{{ form.preferred_gender.id_for_label }}">I want to see</label>
                             {{ form.preferred_gender }}
-                            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-white/50 group-hover:text-yellow-400 transition">
-                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                            </div>
+                            {{ form.preferred_gender.errors }}
+                        </div>
+                        <div class="form-group">
+                            <label for="{{ form.relationship_mode.id_for_label }}">Connection mode</label>
+                            {{ form.relationship_mode }}
+                            {{ form.relationship_mode.errors }}
+                            <p class="mt-2 text-xs text-slate-500">Choose Dating, Hookup, or Sex Call to shape your discovery feed.</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="{{ form.min_age_pref.id_for_label }}">Minimum age (18+)</label>
+                            {{ form.min_age_pref }}
+                            {{ form.min_age_pref.errors }}
+                        </div>
+                        <div class="form-group">
+                            <label for="{{ form.max_age_pref.id_for_label }}">Maximum age</label>
+                            {{ form.max_age_pref }}
+                            {{ form.max_age_pref.errors }}
+                        </div>
+                        <div class="form-group">
+                            <label for="{{ form.max_distance_km.id_for_label }}">Maximum distance (km)</label>
+                            {{ form.max_distance_km }}
+                            {{ form.max_distance_km.errors }}
+                        </div>
+                        <p class="text-xs leading-relaxed text-slate-500">Coordinates are only used for nearby Hookup discovery and are never shown to other members.</p>
+                        <div class="form-group">
+                            <label for="{{ form.latitude.id_for_label }}">Latitude (optional)</label>
+                            {{ form.latitude }}
+                            {{ form.latitude.errors }}
+                        </div>
+                        <div class="form-group">
+                            <label for="{{ form.longitude.id_for_label }}">Longitude (optional)</label>
+                            {{ form.longitude }}
+                            {{ form.longitude.errors }}
                         </div>
                     </div>
-
-                    <div>
-                        <label class="block text-[10px] font-bold text-gray-400 uppercase mb-2">Age Bracket</label>
-                        <div class="flex items-center gap-4">
-                            <div class="flex-1 relative group">
-                                <span class="absolute top-2 left-3 text-[9px] text-gray-500 font-bold uppercase">Min</span>
-                                {{ form.min_age_pref }}
-                            </div>
-                            <div class="text-gray-500 font-black">/</div>
-                            <div class="flex-1 relative group">
-                                <span class="absolute top-2 left-3 text-[9px] text-gray-500 font-bold uppercase">Max</span>
-                                {{ form.max_age_pref }}
-                            </div>
-                        </div>
+                    <div class="mt-6 space-y-3">
+                        <label class="toggle-row">{{ form.show_in_discovery }} <span>Show my profile in discovery</span></label>
+                        <label class="toggle-row">{{ form.allow_messages }} <span>Allow messages from matches</span></label>
                     </div>
 
-                    <button type="submit" class="w-full py-3 bg-white text-black font-black uppercase tracking-wider rounded-xl shadow-[0_0_15px_rgba(255,255,255,0.2)] hover:bg-yellow-400 hover:scale-[1.02] transition-all">
-                        Update Radar
+                    <button type="submit" class="w-full mt-7 py-4 brand-gradient text-white font-black uppercase tracking-widest rounded-2xl shadow-lg transition-transform hover:scale-[1.01]">
+                        Update Discovery
                     </button>
                 </div>
             </form>
         </section>
 
         <section>
-            <h2 class="text-xs font-bold text-pink-300 uppercase tracking-widest mb-4 ml-1">Account Access</h2>
+            <h2 class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 ml-1">Account & security</h2>
             
             <div class="space-y-3">
-                <a href="{% url 'password_change' %}" class="flex items-center justify-between p-4 bg-black/30 border border-white/10 rounded-xl hover:border-yellow-400/50 hover:bg-black/50 transition group cursor-pointer">
+                <a href="{% url 'password_change' %}" class="soft-card flex items-center justify-between p-5 rounded-2xl hover:border-pink-300 transition group">
                     <div class="flex items-center gap-4">
-                        <div class="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-yellow-400 transition">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                            </svg>
+                        <div class="w-12 h-12 rounded-xl bg-rose-50 flex items-center justify-center text-slate-500 group-hover:text-pink-600 transition border border-rose-100">
+                            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                         </div>
                         <div>
-                            <span class="block text-sm font-bold text-white group-hover:text-yellow-400 transition">Change Password</span>
-                            <span class="block text-[10px] text-gray-500">Update security key</span>
+                            <span class="block text-sm font-black text-slate-800 group-hover:text-pink-600 transition uppercase tracking-tight">Security</span>
+                            <span class="block text-[9px] text-slate-500 font-bold uppercase mt-0.5">Change your password</span>
                         </div>
                     </div>
-                    <svg class="h-4 w-4 text-gray-600 group-hover:text-white transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                    <svg class="h-4 w-4 text-slate-400 group-hover:text-pink-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </a>
 
-                <a href="{% url 'contact' %}" class="flex items-center justify-between p-4 bg-black/30 border border-white/10 rounded-xl hover:border-pink-500/50 hover:bg-black/50 transition group cursor-pointer">
+                <a href="{% url 'contact' %}" class="soft-card flex items-center justify-between p-5 rounded-2xl hover:border-orange-200 transition group">
                     <div class="flex items-center gap-4">
-                        <div class="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-pink-500 transition">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
-                            </svg>
+                        <div class="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center text-slate-500 group-hover:text-orange-600 transition border border-orange-100">
+                            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
                         </div>
                         <div>
-                            <span class="block text-sm font-bold text-white group-hover:text-pink-500 transition">Help & Support</span>
-                            <span class="block text-[10px] text-gray-500">Contact us, FAQs</span>
+                            <span class="block text-sm font-black text-slate-800 group-hover:text-orange-600 transition uppercase tracking-tight">Support desk</span>
+                            <span class="block text-[9px] text-slate-500 font-bold uppercase mt-0.5">Contact us, FAQs</span>
                         </div>
                     </div>
-                    <svg class="h-4 w-4 text-gray-600 group-hover:text-white transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                    <svg class="h-4 w-4 text-slate-400 group-hover:text-orange-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </a>
 
                 <form method="post" action="{% url 'logout' %}">
                     {% csrf_token %}
-                    <button type="submit" class="w-full flex items-center justify-between p-4 bg-black/30 border border-white/10 rounded-xl hover:border-red-500/50 hover:bg-red-500/10 transition group cursor-pointer text-left">
+                    <button type="submit" class="w-full flex items-center justify-between p-5 bg-white border border-rose-100 rounded-2xl hover:bg-red-50 hover:border-red-200 transition group">
                         <div class="flex items-center gap-4">
-                            <div class="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-red-500 transition">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                                </svg>
+                            <div class="w-12 h-12 rounded-xl bg-rose-50 flex items-center justify-center text-slate-500 group-hover:text-red-500 transition border border-rose-100">
+                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
                             </div>
                             <div>
-                                <span class="block text-sm font-bold text-white group-hover:text-red-400 transition">Log Out</span>
-                                <span class="block text-[10px] text-gray-500">End current session</span>
+                                <span class="block text-sm font-black text-slate-800 group-hover:text-red-500 transition uppercase tracking-tight text-left">Log out</span>
+                                <span class="block text-[9px] text-slate-500 font-bold uppercase mt-0.5 text-left">End current session</span>
                             </div>
                         </div>
                     </button>
@@ -115,58 +132,62 @@
             </div>
         </section>
 
-        <section class="grid grid-cols-1 gap-8 pt-4">
-            
-            <div class="text-center space-y-4">
-                <div class="inline-block p-4 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-sm">
-                    <h3 class="font-black italic text-2xl tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-500">LOVENY</h3>
-                    <p class="text-[10px] font-mono text-gray-500 mt-1">BUILD v1.0.0 // NEW YORK</p>
-                </div>
-                
-                <div class="flex justify-center gap-6 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                    <a href="{% url 'privacy' %}" class="hover:text-white transition">Privacy Protocol</a>
-                    <a href="{% url 'terms' %}" class="hover:text-white transition">Terms of Service</a>
+        <section class="space-y-6 pt-10">
+            <div class="text-center">
+                <div class="inline-block p-5 rounded-3xl bg-white border border-pink-100 shadow-sm">
+                    <img src="{% static 'dating/images/loveny-logo.png' %}" alt="LOVENY" class="mx-auto h-10 w-auto max-w-full object-contain">
+                    <p class="text-[9px] font-black text-slate-500 mt-1 uppercase tracking-widest">Build v1.0.1</p>
                 </div>
             </div>
 
-            <div>
-                <button onclick="alert('Account deletion is disabled for safety. Contact admin.')" class="w-full py-4 border border-red-500/30 text-red-500/50 font-black uppercase tracking-widest text-[10px] rounded-xl hover:bg-red-500/10 hover:text-red-500 hover:border-red-500 transition">
-                    Delete Account Protocol
-                </button>
-            </div>
+            <a href="{% url 'delete_account' %}" class="block w-full py-4 text-center border border-red-200 text-red-500/70 font-black uppercase tracking-widest text-[9px] rounded-2xl hover:bg-red-50 hover:text-red-600 transition">
+                Deactivate Account Forever
+            </a>
         </section>
 
     </div>
 </div>
 
 <style>
-    /* Input Styling Override */
-    select, input[type="number"] {
+    .form-group label { display: block; font-size: 0.72rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em; color: #6b5870; margin-bottom: 0.5rem; }
+    .form-group select,
+    .form-group input:not([type="checkbox"]),
+    .form-group textarea {
         width: 100%;
-        padding: 1rem 1rem 0.5rem 1rem; /* Extra top padding for floating label effect */
-        background-color: rgba(0, 0, 0, 0.4) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 0.75rem;
-        color: white;
-        font-weight: 700;
+        min-height: 3rem;
+        background: #fff !important;
+        border: 1px solid #f3c8df !important;
+        border-radius: 0.9rem;
+        color: #35162f;
+        font-family: inherit;
         font-size: 1rem;
-        appearance: none; 
-        transition: all 0.3s;
-    }
-    
-    select:focus, input[type="number"]:focus {
-        border-color: #FACC15;
-        background-color: rgba(0, 0, 0, 0.6) !important;
-        box-shadow: 0 0 15px rgba(250, 204, 21, 0.2);
+        font-weight: 600;
+        line-height: 1.45;
+        padding: 0.8rem 0.95rem;
         outline: none;
+        transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
     }
-
-    /* Input specific fix for the Age fields where I added custom labels */
-    input[type="number"] {
-        padding-top: 1.2rem;
-        padding-bottom: 0.5rem;
-        height: 3.5rem;
+    .form-group textarea { min-height: 6rem; resize: vertical; }
+    .form-group select { appearance: auto; }
+    .form-group :is(select, input, textarea):focus {
+        border-color: #ec4899 !important;
+        background: #fff7fb !important;
+        box-shadow: 0 0 0 3px rgba(236, 72, 153, 0.12);
     }
+    .toggle-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.9rem 1rem;
+        border: 1px solid #fce7f3;
+        border-radius: 0.9rem;
+        background: #fffafd;
+        color: #49384d;
+        font-size: 0.9rem;
+        font-weight: 700;
+    }
+    .toggle-row input { width: 1.1rem; height: 1.1rem; accent-color: #db2777; flex: none; }
+    .form-group ul { margin-top: 0.4rem; color: #be123c; font-size: 0.8rem; }
 
     @keyframes blob {
         0% { transform: translate(0px, 0px) scale(1); }
@@ -175,7 +196,7 @@
         100% { transform: translate(0px, 0px) scale(1); }
     }
     .animate-blob {
-        animation: blob 10s infinite;
+        animation: blob 15s infinite;
     }
 </style>
 {% endblock %}

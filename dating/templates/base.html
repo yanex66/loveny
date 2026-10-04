@@ -3,76 +3,246 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <link rel="icon" type="image/png" href="{% static 'dating/images/loveny-logo.png' %}">
     <title>{% block title %}LOVENY{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Global Reset for Dark Theme */
+        :root {
+            color-scheme: light;
+            --loveny-rose: #ec4899;
+            --loveny-coral: #fb7185;
+            --loveny-orange: #fb923c;
+            --loveny-ink: #35162f;
+            --loveny-muted: #80677d;
+        }
+        html {
+            width: 100%;
+            min-height: 100%;
+            overflow-x: hidden;
+            font-size: 15px;
+        }
         body {
-            background-color: #111827; /* Gray-900 */
-            color: white;
+            width: 100%;
+            min-height: 100vh;
+            min-height: 100svh;
+            overflow-x: hidden;
+            background-color: #fff8fc;
+            color: var(--loveny-ink);
             -webkit-tap-highlight-color: transparent;
         }
-        
-        /* Smooth Icon Transition */
-        .nav-icon { 
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+        .device-frame {
+            width: min(100%, 64rem);
+            min-height: 100svh;
+            margin-inline: auto;
+            overflow-x: clip;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: 6rem;
+            background-color: #fff8fc;
+            box-shadow: 0 0 48px rgba(53, 22, 47, 0.08);
         }
-        
-        /* Active Nav Glow */
+        .device-frame :where(p, a, h1, h2, h3, h4, h5, h6, li, label, button) {
+            overflow-wrap: anywhere;
+        }
+        .device-frame :where(.flex > *, .grid > *) {
+            min-width: 0;
+        }
+        .device-frame img,
+        .device-frame video {
+            max-width: 100%;
+        }
+        .device-frame form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="submit"]),
+        .device-frame form select,
+        .device-frame form textarea {
+            width: 100%;
+            max-width: 100%;
+            min-height: 44px;
+            box-sizing: border-box;
+            font-size: 16px !important;
+        }
+        .device-frame form .flex > input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="submit"]) {
+            width: auto;
+            min-width: 0;
+            flex: 1 1 0%;
+        }
+        button,
+        input[type="submit"] {
+            text-align: center;
+        }
+        button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        input[type="submit"] {
+            margin-inline: auto;
+        }
+        .italic-refined {
+            font-style: italic;
+            letter-spacing: -0.02em;
+        }
+        .nav-icon {
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
         .nav-active {
-            color: #FACC15; /* Yellow-400 */
-            filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.6));
-            transform: translateY(-4px);
+            color: #be185d;
         }
-
-        /* Safe area handling */
-        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+        .bottom-tabs {
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.82);
+            -webkit-backdrop-filter: blur(16px);
+            backdrop-filter: blur(16px);
+            box-shadow: 0 10px 36px rgba(53, 22, 47, 0.14);
+        }
+        .bottom-tab {
+            position: relative;
+            min-width: 3.75rem;
+            padding: 0.25rem 0.5rem;
+            color: #94a3b8;
+        }
+        .bottom-tab.nav-active::before {
+            position: absolute;
+            top: -0.8rem;
+            left: 50%;
+            width: 1.5rem;
+            height: 0.2rem;
+            border-radius: 9999px;
+            background: linear-gradient(90deg, #ec4899, #fb7185);
+            content: "";
+            transform: translateX(-50%);
+        }
+        .bottom-tab.nav-active svg {
+            color: #be185d;
+        }
+        .bottom-tab.nav-active span {
+            color: #be185d;
+        }
+        .bottom-nav-container {
+            position: fixed;
+            z-index: 50;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            padding: 1rem 1rem max(16px, env(safe-area-inset-bottom));
+            pointer-events: none;
+        }
+        .soft-card {
+            background: rgba(255, 255, 255, 0.92);
+            border: 1px solid #fce7f3;
+            box-shadow: 0 24px 60px rgba(180, 48, 112, 0.1);
+        }
+        .brand-gradient {
+            background-image: linear-gradient(115deg, #ec4899 0%, #fb7185 48%, #fb923c 100%);
+        }
+        .brand-text {
+            background: linear-gradient(115deg, #db2777 0%, #f43f5e 52%, #ea580c 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        button:not(:disabled):hover,
+        input[type="submit"]:hover,
+        a[class*="bg-"]:hover,
+        a[class*="brand-gradient"]:hover {
+            background-image: none !important;
+            background-color: #fff !important;
+            border-color: #f9a8d4 !important;
+            color: var(--loveny-ink) !important;
+            box-shadow: 0 8px 22px rgba(190, 24, 93, 0.16);
+        }
+        button:not(:disabled):hover :is(span, svg),
+        a[class*="bg-"]:hover :is(span, svg),
+        a[class*="brand-gradient"]:hover :is(span, svg) {
+            color: var(--loveny-ink) !important;
+        }
+        button:disabled { cursor: not-allowed; }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                scroll-behavior: auto !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
 <body class="min-h-screen font-sans antialiased selection:bg-pink-500 selection:text-white {% block body_class %}{% endblock %}">
     
-    <div class="min-h-screen w-full overflow-x-hidden {% if user.is_authenticated %}pb-32{% endif %}">
+    <div class="device-frame w-full overflow-x-hidden {% if user.is_authenticated %}pb-36{% endif %}">
         {% block content %}{% endblock %}
     </div>
 
     {% if user.is_authenticated %}
-    <div class="fixed bottom-0 left-0 right-0 p-4 pb-6 z-50 pointer-events-none">
+    <div id="call-config"
+         data-initiate-url="{% url 'call_initiate_api' %}"
+         data-incoming-url="{% url 'incoming_calls_api' %}"
+         data-call-api-prefix="/api/calls/"
+         data-subscribe-url="{% url 'premium_landing' %}"
+         class="hidden"></div>
+    <div id="incoming-call-sheet" class="fixed inset-0 z-[120] hidden items-end justify-center bg-slate-950/60 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:items-center" role="dialog" aria-modal="true" aria-labelledby="incoming-call-title">
+        <section class="w-full max-w-sm animate-pulse rounded-[2rem] border border-white/70 bg-white p-6 text-center shadow-2xl">
+            <div class="mx-auto mb-4 h-24 w-24 overflow-hidden rounded-full border-4 border-emerald-100 bg-rose-50 shadow-lg">
+                <img id="incoming-caller-photo" src="{% static 'dating/images/profile-placeholder.svg' %}" alt="" class="h-full w-full object-cover">
+            </div>
+            <p class="text-xs font-bold uppercase tracking-[0.2em] text-emerald-600">Incoming video call</p>
+            <h2 id="incoming-call-title" class="mt-2 text-2xl font-bold text-slate-900">Someone is calling</h2>
+            <p class="mb-6 mt-1 text-sm text-slate-500">Answer when you're ready.</p>
+            <div class="grid grid-cols-2 gap-3">
+                <button type="button" id="accept-call" class="min-h-14 rounded-2xl bg-emerald-600 px-4 py-4 text-sm font-bold text-white shadow-lg">Accept</button>
+                <button type="button" id="decline-call" class="min-h-14 rounded-2xl bg-red-600 px-4 py-4 text-sm font-bold text-white shadow-lg">Decline</button>
+            </div>
+        </section>
+    </div>
+    <div id="video-call-room" class="fixed inset-0 z-[130] hidden bg-slate-950 text-white" role="dialog" aria-modal="true" aria-label="Video call">
+        <video id="remote-call-video" class="absolute inset-0 h-full w-full object-cover" autoplay playsinline></video>
+        <div class="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/50 pointer-events-none"></div>
+        <video id="local-call-video" class="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-10 aspect-[3/4] w-28 touch-none rounded-2xl border-2 border-white/80 bg-slate-800 object-cover shadow-xl sm:w-36" autoplay muted playsinline></video>
+        <p id="call-feedback" class="absolute left-1/2 top-8 z-10 -translate-x-1/2 rounded-full bg-black/50 px-4 py-2 text-center text-sm font-semibold" role="status" aria-live="polite"></p>
+        <div class="absolute inset-x-0 bottom-0 z-10 flex justify-center pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+            <div class="flex items-center gap-3 rounded-full border border-white/20 bg-slate-950/65 px-4 py-3 shadow-xl backdrop-blur-xl">
+                <button type="button" id="mute-call" aria-label="Mute audio" class="h-12 w-12 rounded-full bg-white/15 text-sm font-semibold text-white">Mute</button>
+                <button type="button" id="toggle-camera" aria-label="Turn camera off" class="h-12 w-12 rounded-full bg-white/15 text-sm font-semibold text-white">Cam</button>
+                <button type="button" id="flip-camera" aria-label="Flip camera" class="h-12 w-12 rounded-full bg-white/15 text-sm font-semibold text-white">Flip</button>
+                <button type="button" id="end-call" aria-label="End call" class="h-12 w-12 rounded-full bg-red-600 text-sm font-bold text-white">End</button>
+            </div>
+        </div>
+    </div>
+    <div class="bottom-nav-container">
         
-        <nav class="pointer-events-auto max-w-md mx-auto bg-black/80 backdrop-blur-xl border-2 border-white/10 rounded-3xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.8)] px-2 py-3 flex justify-around items-center relative overflow-hidden">
+        <nav class="bottom-tabs pointer-events-auto mx-auto flex max-w-sm items-center justify-around rounded-[1.75rem] px-3 py-3">
             
-            <div class="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
-
-            <a href="{% url 'swipe_card' %}" class="flex flex-col items-center p-2 rounded-xl group nav-icon {% if request.resolver_match.url_name == 'swipe_card' %}nav-active{% else %}text-gray-500 hover:text-white{% endif %}">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor">
+            <a href="{% url 'swipe_card' %}" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'swipe_card' %}nav-active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
                 </svg>
-                <span class="text-[10px] font-bold mt-1 tracking-wider uppercase">Home</span>
+                <span class="text-[8px] font-black mt-1.5 tracking-[0.2em] uppercase">Home</span>
             </a>
 
-            <a href="{% url 'match_list' %}" class="flex flex-col items-center p-2 rounded-xl group nav-icon {% if request.resolver_match.url_name == 'match_list' %}nav-active{% else %}text-gray-500 hover:text-white{% endif %}">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor">
+            <a href="{% url 'match_list' %}" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'match_list' %}nav-active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
                     <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" />
                 </svg>
-                <span class="text-[10px] font-bold mt-1 tracking-wider uppercase">Match</span>
+                <span class="text-[8px] font-black mt-1.5 tracking-[0.2em] uppercase">Match</span>
             </a>
 
-            <a href="{% url 'likes_list' %}" class="flex flex-col items-center p-2 rounded-xl group nav-icon {% if request.resolver_match.url_name == 'likes_list' %}nav-active{% else %}text-gray-500 hover:text-white{% endif %}">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12.917 13A6.002 6.002 0 0119 19H5a6.002 6.002 0 016.083-6h1.834z" />
-                    <path fill-rule="evenodd" d="M12 3a4 4 0 00-4 4v3h8V7a4 4 0 00-4-4z" clip-rule="evenodd" />
-                </svg>
-                <span class="absolute top-2 right-4 w-2 h-2 bg-pink-500 rounded-full animate-ping hidden"></span> 
-                
-                <span class="text-[10px] font-bold mt-1 tracking-wider uppercase">Likes</span>
+            <a href="{% url 'likes_list' %}" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'likes_list' %}nav-active{% endif %}">
+                <div class="relative">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12.917 13A6.002 6.002 0 0119 19H5a6.002 6.002 0 016.083-6h1.834z" />
+                        <path fill-rule="evenodd" d="M12 3a4 4 0 00-4 4v3h8V7a4 4 0 00-4-4z" clip-rule="evenodd" />
+                    </svg>
+                    <span class="absolute -top-1 -right-1 w-2 h-2 bg-pink-500 rounded-full ring-2 ring-white animate-pulse"></span>
+                </div>
+                <span class="text-[8px] font-black mt-1.5 tracking-[0.2em] uppercase">Likes</span>
             </a>
 
-            <a href="{% url 'profile' %}" class="flex flex-col items-center p-2 rounded-xl group nav-icon {% if request.resolver_match.url_name == 'profile' or request.resolver_match.url_name == 'settings' or request.resolver_match.url_name == 'edit_profile' %}nav-active{% else %}text-gray-500 hover:text-white{% endif %}">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor">
+            <a href="{% url 'profile' %}" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'profile' or request.resolver_match.url_name == 'edit_profile' %}nav-active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
                     <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
                 </svg>
-                <span class="text-[10px] font-bold mt-1 tracking-wider uppercase">Me</span>
+                <span class="text-[8px] font-black mt-1.5 tracking-[0.2em] uppercase">Me</span>
             </a>
 
         </nav>
@@ -80,5 +250,8 @@
     {% endif %}
     
     {% block extra_scripts %}{% endblock %}
+    {% if user.is_authenticated %}
+    <script src="{% static 'dating/js/video-calls.js' %}" defer></script>
+    {% endif %}
 </body>
 </html>

@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+
+{% block title %}Account Deleted | LOVENY{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-gradient-to-br from-indigo-950 via-slate-950 to-black font-sans px-6">
+
+    <div class="absolute -z-10 w-[500px] h-[500px] bg-pink-500/10 rounded-full filter blur-[120px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+
+    <div class="w-full max-w-md text-center relative z-10">
+        
+        <div class="inline-flex items-center justify-center w-24 h-24 rounded-full bg-white/5 border border-white/10 mb-8 shadow-2xl">
+            <svg class="w-12 h-12 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 13l4 4L19 7"></path>
+            </svg>
+        </div>
+
+        <h1 class="text-2xl font-black italic tracking-tighter text-white uppercase mb-4 sm:text-3xl">
+            Account Closed
+        </h1>
+        
+        <div class="bg-white/5 backdrop-blur-xl border border-white/10 rounded-[2.5rem] p-8 mb-8">
+            <p class="text-gray-400 leading-relaxed font-medium">
+                Your profile and data have been permanently removed from the LOVENY database. We're sorry to see you go, but we hope you found what you were looking for.
+            </p>
+        </div>
+
+        <a href="{% url 'index' %}" 
+           class="inline-block w-full py-4 bg-gradient-to-r from-pink-600 to-purple-600 text-white font-black uppercase tracking-widest rounded-2xl shadow-lg hover:scale-[1.02] transition-transform">
+            Return to Home
+        </a>
+
+        <p class="mt-12 text-[10px] text-gray-600 font-bold uppercase tracking-[0.3em]">
+            LOVENY Social Club • Finalized 2026
+        </p>
+    </div>
+</div>
+{% endblock %}

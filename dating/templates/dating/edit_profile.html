@@ -1,276 +1,198 @@
 {% extends 'base.html' %}
+{% load static %}
 
-{% block title %}LOVENY - Edit Profile{% endblock %}
+{% block title %}Edit Profile | LOVENY{% endblock %}
 
 {% block content %}
-<div class="min-h-screen relative overflow-hidden bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 font-sans pb-32">
-
-    <div id="edit-config" 
-         data-media-limit="{{ media_limit }}" 
-         data-current-count="{{ current_count }}" 
-         class="hidden"></div>
-
-    <div class="absolute -z-10 w-96 h-96 bg-pink-600 rounded-full mix-blend-overlay filter blur-[100px] opacity-20 top-0 right-0 animate-blob"></div>
-
-    <header class="sticky top-0 z-40 bg-black/80 backdrop-blur-md border-b border-white/10 px-4 py-4 flex items-center justify-between">
+<main class="min-h-screen bg-gradient-to-br from-rose-50 via-white to-orange-50 pb-44 text-slate-900">
+    <div id="edit-config" data-media-limit="{{ media_limit }}" data-current-count="{{ current_count }}" class="hidden"></div>
+    <header class="sticky top-0 z-30 flex items-center justify-between border-b border-pink-100 bg-white/90 px-4 py-3 backdrop-blur-xl">
         <div class="flex items-center gap-3">
-            <a href="{% url 'profile' %}" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                </svg>
+            <a href="{% url 'profile' %}" aria-label="Back to profile" class="flex h-10 w-10 items-center justify-center rounded-full border border-pink-100 bg-white text-pink-700 hover:bg-pink-50">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="m15 19-7-7 7-7"/></svg>
             </a>
-            <h1 class="text-xl font-black italic tracking-tighter text-white">EDIT MODE</h1>
+            <div><h1 class="text-xl font-bold tracking-tight">Edit profile</h1><p class="text-xs text-slate-500">Make it feel like you.</p></div>
         </div>
-        <div class="text-[10px] font-bold uppercase tracking-widest text-pink-400 border border-pink-400/30 px-2 py-1 rounded">
-            {{ current_count }} / {{ media_limit }} Media
-        </div>
+        <span id="media-counter" class="rounded-full border border-pink-200 bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-700">{{ current_count }} / {{ media_limit }} Uploaded</span>
     </header>
 
-    <div class="max-w-xl mx-auto p-4">
-        
-        <div id="image-modal" class="fixed inset-0 bg-black/95 hidden items-center justify-center z-50 backdrop-blur-xl transition-all">
-            <div class="relative w-full max-w-sm m-4 bg-gray-900 rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
-                <button onclick="closeImageModal()" class="absolute top-4 right-4 bg-black/60 text-white p-2 rounded-full hover:bg-red-500 transition z-20">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
-                </button>
-                
-                <div class="aspect-[3/4] w-full bg-black flex items-center justify-center relative">
-                    <img id="modal-img" src="" class="w-full h-full object-cover hidden">
-                    <video id="modal-video" src="" class="w-full h-full object-cover hidden" controls playsinline loop></video>
-                </div>
-                
-                <div class="p-6 bg-gray-900 border-t border-white/10">
-                    <div id="actions-existing" class="flex gap-3 w-full hidden">
-                        <form method="post" class="flex-1">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="set_main">
-                            <input type="hidden" name="photo_id" id="modal-set-main-id">
-                            <button type="submit" class="w-full py-3 bg-yellow-400 text-black font-black uppercase tracking-wider rounded-xl hover:bg-yellow-300 transition text-sm">
-                                Make Main
-                            </button>
-                        </form>
-                        
-                        <form method="post" class="flex-1">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="delete">
-                            <input type="hidden" name="photo_id" id="modal-delete-id">
-                            <button type="submit" class="w-full py-3 bg-red-600/20 text-red-500 border border-red-500/50 font-black uppercase tracking-wider rounded-xl hover:bg-red-600 hover:text-white transition text-sm">
-                                Delete
-                            </button>
-                        </form>
-                    </div>
+    <form method="post" enctype="multipart/form-data" class="mx-auto max-w-lg px-4 pt-4">
+        {% csrf_token %}
+        <input type="hidden" name="new_main_index" id="new-main-index" value="">
+        <input type="file" name="more_photos" id="file-input" multiple accept="image/*,video/*" class="hidden">
 
-                    <div id="actions-new" class="flex flex-col gap-3 w-full hidden">
-                        <button onclick="setNewPhotoAsMain()" class="w-full py-3 bg-yellow-400 text-black font-black uppercase tracking-wider rounded-xl hover:bg-yellow-300 transition text-sm">
-                            Set as Main Photo
-                        </button>
-                        <p class="text-[10px] text-center text-gray-500 uppercase tracking-widest">Only applies after saving</p>
-                        <button onclick="removeNewPhoto()" class="w-full py-3 bg-red-600/20 text-red-500 border border-red-500/50 font-black uppercase tracking-wider rounded-xl hover:bg-red-600 hover:text-white transition text-sm">
-                            Remove Upload
-                        </button>
-                    </div>
+        {% if form.errors %}
+        <div role="alert" class="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <p class="mb-1 font-semibold">Please check these fields:</p>{{ form.errors }}
+        </div>
+        {% endif %}
+        {% if request.GET.saved %}
+        <div id="save-toast" role="status" class="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-center text-sm font-semibold text-emerald-800">Your profile changes were saved.</div>
+        {% endif %}
+
+        <nav role="tablist" aria-label="Profile sections" class="no-scrollbar mb-5 flex gap-2 overflow-x-auto rounded-2xl border border-white bg-white/75 p-1.5 shadow-sm">
+            <button type="button" role="tab" id="tab-photos" aria-controls="panel-photos" aria-selected="true" data-tab="photos" class="edit-tab is-active shrink-0 rounded-xl px-3 py-2 text-xs font-semibold">Photos &amp; Media</button>
+            <button type="button" role="tab" id="tab-about" aria-controls="panel-about" aria-selected="false" data-tab="about" class="edit-tab shrink-0 rounded-xl px-3 py-2 text-xs font-semibold">About Me</button>
+            <button type="button" role="tab" id="tab-interests" aria-controls="panel-interests" aria-selected="false" data-tab="interests" class="edit-tab shrink-0 rounded-xl px-3 py-2 text-xs font-semibold">Interests</button>
+            <button type="button" role="tab" id="tab-discovery" aria-controls="panel-discovery" aria-selected="false" data-tab="discovery" class="edit-tab shrink-0 rounded-xl px-3 py-2 text-xs font-semibold">Discovery &amp; Settings</button>
+        </nav>
+
+        <section role="tabpanel" id="panel-photos" aria-labelledby="tab-photos" data-panel="photos" class="edit-panel soft-card space-y-4 rounded-3xl p-4">
+            <div>
+                <h2 class="text-base font-semibold">Identity gallery</h2>
+                <p class="mt-1 text-xs text-slate-500">Choose a main photo and add up to {{ media_limit }} photos or videos.</p>
+            </div>
+            <div id="photo-grid" class="grid grid-cols-3 gap-2.5">
+                {% for media in existing_photos %}
+                <div class="existing-photo relative aspect-[3/4] cursor-pointer overflow-hidden rounded-2xl border border-rose-100 bg-slate-100"
+                     data-url="{{ media.image.url }}" data-id="{{ media.id }}" data-is-video="{{ media.is_video|yesno:'true,false' }}" onclick="handleMediaClick(this)">
+                    {% if media.is_video %}
+                    <video src="{{ media.image.url }}" class="h-full w-full object-cover"></video>
+                    {% else %}
+                    <img src="{{ media.image.url }}" alt="Profile photo" class="h-full w-full object-cover" onerror="this.onerror=null;this.src='{% static 'dating/images/profile-placeholder.svg' %}'">
+                    {% endif %}
+                    {% if media.is_main %}<span class="absolute inset-x-0 bottom-0 bg-pink-600/90 py-1 text-center text-[9px] font-bold text-white">Main identity</span>{% endif %}
                 </div>
+                {% endfor %}
+                <label id="add-photo-btn" class="flex aspect-[3/4] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-rose-200 bg-white/70 text-slate-500 transition hover:border-pink-400 hover:bg-pink-50">
+                    <span class="mb-2 text-2xl text-pink-500">+</span><span class="text-center text-[10px] font-semibold">Add new</span>
+                </label>
+            </div>
+        </section>
+
+        <section role="tabpanel" id="panel-about" aria-labelledby="tab-about" data-panel="about" class="edit-panel soft-card hidden space-y-5 rounded-3xl p-4">
+            <div><h2 class="text-base font-semibold">Personal details</h2><p class="mt-1 text-xs text-slate-500">A few details help people get to know you.</p></div>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="form-group"><label for="{{ form.name.id_for_label }}">Name</label>{{ form.name }}</div>
+                <div class="form-group"><label for="{{ form.age.id_for_label }}">Age</label>{{ form.age }}</div>
+            </div>
+            <div class="form-group"><label for="{{ form.whatsapp_number.id_for_label }}">WhatsApp</label>{{ form.whatsapp_number }}</div>
+            <div class="grid grid-cols-1 gap-3">
+                <div class="form-group"><label for="{{ form.location.id_for_label }}">City / Home</label>{{ form.location }}</div>
+                <div class="form-group"><label for="{{ form.job_title.id_for_label }}">Job / Industry</label>{{ form.job_title }}</div>
+            </div>
+            <div class="form-group">
+                <div class="mb-2 flex items-center justify-between"><label for="{{ form.bio.id_for_label }}">The vibe</label><span id="bio-count" class="text-xs text-slate-500">0 / 200</span></div>
+                {{ form.bio }}
+            </div>
+            <div class="form-group"><label for="{{ form.first_date_idea.id_for_label }}">Ideal first date</label>{{ form.first_date_idea }}</div>
+        </section>
+
+        <section role="tabpanel" id="panel-interests" aria-labelledby="tab-interests" data-panel="interests" class="edit-panel soft-card hidden space-y-4 rounded-3xl p-4">
+            <div class="sticky top-[4.5rem] z-10 flex items-center justify-between rounded-2xl bg-white/95 py-2 backdrop-blur">
+                <div><h2 class="text-base font-semibold">Your interests</h2><p class="text-xs text-slate-500">Pick up to five.</p></div>
+                <span id="tag-count" class="rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-700"></span>
+            </div>
+            <input type="search" id="interest-search" aria-label="Search interests" placeholder="Search interests" class="w-full rounded-xl border border-rose-100 px-4 py-3 text-base">
+            <div class="tag-grid flex flex-wrap gap-2">
+                {% for checkbox in form.tags %}
+                <label class="interest-chip cursor-pointer">
+                    {{ checkbox.tag }}
+                    <span class="interest-label">{{ checkbox.choice_label }}</span><span class="interest-remove" aria-hidden="true">×</span>
+                </label>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section role="tabpanel" id="panel-discovery" aria-labelledby="tab-discovery" data-panel="discovery" class="edit-panel soft-card hidden space-y-5 rounded-3xl p-4">
+            <div><h2 class="text-base font-semibold">Discovery &amp; privacy</h2><p class="mt-1 text-xs text-slate-500">Choose who you see and how your profile appears.</p></div>
+            <div class="form-group">
+                <label>Seeking</label>{{ form.preferred_gender }}
+                <div id="seeking-pills" class="grid grid-cols-3 gap-2" role="group" aria-label="Seeking gender">
+                    <button type="button" data-gender="M" class="gender-pill">Male</button>
+                    <button type="button" data-gender="F" class="gender-pill">Female</button>
+                    <button type="button" data-gender="O" class="gender-pill">Other</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Age range</label>
+                <div class="flex items-center gap-2">{{ form.min_age_pref }}<span class="text-slate-400">to</span>{{ form.max_age_pref }}</div>
+            </div>
+            <div class="form-group"><label for="{{ form.max_distance_km.id_for_label }}">Maximum distance (km)</label>{{ form.max_distance_km }}</div>
+            <div class="rounded-2xl border border-rose-100 bg-white p-4">
+                <h3 class="text-sm font-semibold">Location coordinates</h3>
+                <p class="mb-3 mt-1 text-xs leading-relaxed text-slate-500">Used to find nearby people and never shown on your profile.</p>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="form-group"><label for="{{ form.latitude.id_for_label }}">Latitude (decimal degrees)</label>{{ form.latitude }}</div>
+                    <div class="form-group"><label for="{{ form.longitude.id_for_label }}">Longitude (decimal degrees)</label>{{ form.longitude }}</div>
+                </div>
+                <button type="button" id="gps-button" class="mt-3 w-full rounded-xl border border-pink-200 px-4 py-3 text-sm font-semibold text-pink-700 hover:bg-pink-50">Use current GPS location</button>
+                <p id="gps-status" class="mt-2 text-xs text-slate-500" aria-live="polite"></p>
+            </div>
+            <div class="space-y-3 rounded-2xl border border-rose-100 bg-white p-4 text-sm">
+                <label class="flex min-h-11 items-center gap-3">{{ form.show_in_discovery }} <span>Show me in discovery</span></label>
+                <label class="flex min-h-11 items-center gap-3">{{ form.allow_messages }} <span>Allow messages from matches</span></label>
+            </div>
+            <div class="rounded-2xl border border-red-100 bg-red-50/70 p-4">
+                <h3 class="text-sm font-semibold text-red-800">Danger zone</h3>
+                <p class="my-2 text-xs text-red-700">Deactivating permanently deletes your account and profile.</p>
+                <button type="button" id="deactivate-open" class="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-white">Deactivate account forever</button>
+            </div>
+        </section>
+
+        <div class="sticky bottom-24 z-20 -mx-4 mt-5 border-t border-pink-100 bg-white/90 p-4 backdrop-blur-md">
+            <button type="submit" class="w-full rounded-2xl bg-gradient-to-r from-pink-600 to-violet-600 px-5 py-4 text-sm font-bold text-white shadow-lg transition hover:scale-[1.01] active:scale-[0.99]">Save changes</button>
+        </div>
+    </form>
+</main>
+
+<div id="deactivate-modal" class="fixed inset-0 z-[110] hidden items-center justify-center bg-slate-950/60 p-5 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="deactivate-title">
+    <div class="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+        <h2 id="deactivate-title" class="text-lg font-bold text-slate-900">Delete your account?</h2>
+        <p class="my-3 text-sm leading-relaxed text-slate-600">This permanently removes your profile and account. This action cannot be undone.</p>
+        <div class="flex gap-3">
+            <button type="button" id="deactivate-cancel" class="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold">Keep account</button>
+            <a href="{% url 'delete_account' %}" class="flex-1 rounded-xl bg-red-600 px-4 py-3 text-center text-sm font-semibold text-white">Continue</a>
+        </div>
+    </div>
+</div>
+
+
+<div id="image-modal" class="fixed inset-0 bg-black/95 hidden items-center justify-center z-[100] backdrop-blur-2xl transition-all p-6" onclick="closeImageModal()">
+    <div class="relative w-full max-w-sm bg-white rounded-[2.5rem] overflow-hidden border border-pink-100 shadow-2xl" onclick="event.stopPropagation()">
+        <button onclick="closeImageModal()" class="absolute top-4 right-4 bg-black/40 text-white p-2 rounded-full hover:bg-red-500 transition z-50">
+            <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+        </button>
+        
+        <div class="aspect-[3/4] w-full bg-black flex items-center justify-center">
+            <img id="modal-img" src="" class="w-full h-full object-cover hidden">
+            <video id="modal-video" src="" class="w-full h-full object-cover hidden" controls playsinline loop></video>
+        </div>
+        
+        <div class="p-8 bg-rose-50 border-t border-rose-100">
+            <div id="actions-existing" class="flex gap-4 hidden">
+                <form method="post" class="flex-1">{% csrf_token %}<input type="hidden" name="action" value="set_main"><input type="hidden" name="photo_id" id="modal-set-main-id"><button type="submit" class="w-full py-3 bg-white text-black font-black uppercase rounded-xl text-[10px]">Make Main</button></form>
+                <form method="post" class="flex-1">{% csrf_token %}<input type="hidden" name="action" value="delete"><input type="hidden" name="photo_id" id="modal-delete-id"><button type="submit" class="w-full py-3 bg-red-600 text-white font-black uppercase rounded-xl text-[10px]">Delete</button></form>
+            </div>
+            <div id="actions-new" class="flex flex-col gap-3 hidden">
+                <button onclick="setNewPhotoAsMain()" class="w-full py-3 bg-white text-black font-black uppercase rounded-xl text-[10px]">Apply as Main</button>
+                <button onclick="removeNewPhoto()" class="w-full py-3 bg-red-600/20 text-red-500 border border-red-500/20 font-black uppercase rounded-xl text-[10px]">Discard</button>
             </div>
         </div>
-
-        <form method="post" enctype="multipart/form-data" class="space-y-8">
-            {% csrf_token %}
-            <input type="hidden" name="new_main_index" id="new-main-index" value="">
-            <input type="file" name="more_photos" id="file-input" multiple accept="image/*,video/*" class="hidden">
-
-            <section>
-                <h3 class="text-pink-300 font-bold uppercase tracking-widest text-xs mb-3 ml-1">Profile Media</h3>
-                
-                <div id="photo-grid" class="grid grid-cols-3 gap-3">
-                    
-                    {% for media in existing_photos %}
-                    <div class="relative group aspect-[3/4] cursor-pointer overflow-hidden rounded-xl bg-black border border-white/10 hover:border-yellow-400 transition existing-photo"
-                         data-url="{{ media.image.url }}"
-                         data-id="{{ media.id }}"
-                         data-is-video="{{ media.is_video|yesno:'true,false' }}"
-                         onclick="handleMediaClick(this)">
-                        
-                        {% if media.is_video %}
-                            <video src="{{ media.image.url }}" class="w-full h-full object-cover pointer-events-none opacity-80 group-hover:opacity-100 transition"></video>
-                            <div class="absolute inset-0 flex items-center justify-center">
-                                <div class="bg-black/40 backdrop-blur-sm rounded-full p-2 border border-white/20">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>
-                                </div>
-                            </div>
-                        {% else %}
-                            <img src="{{ media.image.url }}" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition" onerror="this.parentElement.style.display='none'">
-                        {% endif %}
-
-                        {% if media.is_main %}
-                        <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-yellow-500 to-yellow-400 text-black text-[9px] font-black uppercase tracking-wider text-center py-1">
-                            MAIN PHOTO
-                        </div>
-                        {% endif %}
-                    </div>
-                    {% endfor %}
-
-                    <label id="add-photo-btn" class="aspect-[3/4] flex flex-col items-center justify-center border-2 border-dashed border-white/20 rounded-xl cursor-pointer hover:border-pink-500 hover:bg-pink-500/10 transition group">
-                        <div class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center mb-2 group-hover:scale-110 transition">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400 group-hover:text-pink-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                            </svg>
-                        </div>
-                        <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400 group-hover:text-pink-400">Add New</span>
-                    </label>
-                </div>
-            </section>
-
-            <hr class="border-white/10">
-
-            <section class="space-y-5">
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="form-group">
-                        <label>Age</label>
-                        {{ form.age }}
-                    </div>
-                    <div class="form-group">
-                        <label>WhatsApp</label>
-                        {{ form.whatsapp_number }}
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="form-group">
-                        <label>City</label>
-                        {{ form.location }}
-                    </div>
-                    <div class="form-group">
-                        <label>Job Title</label>
-                        {{ form.job_title }}
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Bio</label>
-                    {{ form.bio }}
-                    <p class="text-[10px] text-gray-500 mt-1 uppercase tracking-wider">Keep it real.</p>
-                </div>
-                
-                <div class="form-group">
-                    <label class="text-yellow-400">Mission / Date Idea</label>
-                    {{ form.first_date_idea }}
-                </div>
-            </section>
-
-            <section class="bg-black/20 rounded-2xl p-5 border border-white/5">
-                <h3 class="text-pink-300 font-bold uppercase tracking-widest text-xs mb-4">Targeting Parameters</h3>
-                
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div class="form-group">
-                        <label>I am...</label>
-                        {{ form.gender }}
-                    </div>
-                    <div class="form-group">
-                        <label>Seeking...</label>
-                        {{ form.preferred_gender }}
-                    </div>
-                </div>
-
-                <div class="bg-black/30 rounded-xl p-3 border border-white/5">
-                    <label class="block text-[10px] font-bold text-gray-400 uppercase mb-2 text-center">Age Range</label>
-                    <div class="flex items-center gap-3">
-                        {{ form.min_age_pref }}
-                        <span class="text-gray-500">-</span>
-                        {{ form.max_age_pref }}
-                    </div>
-                </div>
-            </section>
-
-            <section>
-                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Passions</label>
-                <div class="grid grid-cols-2 gap-2">
-                    {% for checkbox in form.tags %}
-                    <label class="cursor-pointer group">
-                        <div class="relative flex items-center p-3 rounded-lg border border-white/10 bg-black/20 hover:border-pink-500 hover:bg-pink-500/10 transition">
-                            <div class="absolute opacity-0">
-                                {{ checkbox.tag }}
-                            </div>
-                            <div class="w-4 h-4 border-2 border-gray-500 rounded-sm mr-3 flex items-center justify-center transition group-hover:border-pink-400 custom-check">
-                                <div class="w-2 h-2 bg-pink-500 rounded-[1px] opacity-0 transition"></div>
-                            </div>
-                            <span class="text-xs font-bold text-gray-300 group-hover:text-white uppercase tracking-wide">{{ checkbox.choice_label }}</span>
-                        </div>
-                    </label>
-                    {% endfor %}
-                </div>
-            </section>
-
-            <div class="fixed bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-gray-900 to-transparent pointer-events-none">
-                <button type="submit" class="pointer-events-auto w-full max-w-xl mx-auto py-4 bg-pink-600 text-white font-black text-lg uppercase tracking-wider rounded-xl shadow-[0_0_20px_rgba(219,39,119,0.5)] hover:bg-pink-500 hover:scale-[1.02] transition-all border border-pink-400">
-                    Save Updates
-                </button>
-            </div>
-        </form>
     </div>
 </div>
 
 <style>
-    /* Dark Theme Input Overrides */
-    .form-group label {
-        display: block;
-        font-size: 0.65rem;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        color: #9CA3AF;
-        margin-bottom: 0.25rem;
-        margin-left: 0.25rem;
-    }
-
+    .form-group > label, .form-group > div > label { display: block; font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 8px; }
     input[type="text"], input[type="number"], textarea, select {
-        width: 100%;
-        padding: 0.75rem 1rem;
-        background-color: rgba(0, 0, 0, 0.3) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        border-radius: 0.75rem;
-        color: white !important;
-        font-weight: 600;
-        outline: none;
-        transition: all 0.3s ease;
+        width: 100%; min-height: 48px; padding: 12px 14px; background: #fff !important;
+        border: 1px solid #fbcfe8 !important; border-radius: 14px;
+        color: #35162f !important; font-size: 16px !important; font-weight: 500; outline: none; transition: 0.2s ease;
     }
-
-    input[type="text"]:focus, input[type="number"]:focus, textarea:focus, select:focus {
-        border-color: #FACC15 !important; /* Yellow-400 */
-        background-color: rgba(0, 0, 0, 0.5) !important;
-        box-shadow: 0 0 10px rgba(250, 204, 21, 0.2);
-    }
-    
-    /* Hide scrollbar for cleaner look */
-    textarea { resize: none; min-height: 80px; }
-
-    /* Custom Checkbox Logic via CSS */
-    input[type="checkbox"]:checked + div {
-        border-color: #EC4899; /* Pink-500 */
-        background-color: rgba(236, 72, 153, 0.2);
-    }
-    
-    /* Target the parent label when checkbox inside is checked */
-    label:has(input[type="checkbox"]:checked) div {
-        border-color: #EC4899;
-    }
-    
-    label:has(input[type="checkbox"]:checked) .custom-check {
-        border-color: #EC4899;
-    }
-
-    label:has(input[type="checkbox"]:checked) .custom-check div {
-        opacity: 1;
-    }
-
-    @keyframes blob {
-        0% { transform: translate(0px, 0px) scale(1); }
-        33% { transform: translate(-30px, 30px) scale(1.1); }
-        66% { transform: translate(20px, -20px) scale(0.9); }
-        100% { transform: translate(0px, 0px) scale(1); }
-    }
-    .animate-blob {
-        animation: blob 10s infinite;
-    }
+    textarea { min-height: 120px; resize: vertical; }
+    input:focus, textarea:focus, select:focus { border-color: #ec4899 !important; box-shadow: 0 0 0 3px rgb(236 72 153 / 12%); }
+    .edit-tab { color: #64748b; white-space: nowrap; }
+    .edit-tab.is-active { color: #fff; background: linear-gradient(110deg, #ec4899, #8b5cf6); box-shadow: 0 4px 12px rgb(236 72 153 / 20%); }
+    .interest-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 9999px; background: #fff; color: #475569; font-size: 13px; transition: .15s ease; }
+    .interest-chip input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .interest-chip:has(input:checked) { color: #fff; border-color: transparent; background: linear-gradient(110deg, #ec4899, #8b5cf6); }
+    .interest-chip:has(input:disabled:not(:checked)) { opacity: .42; }
+    .interest-chip:has(input:focus-visible) { outline: 2px solid #ec4899; outline-offset: 2px; }
+    .interest-remove { display: none; font-size: 16px; line-height: 1; }
+    .interest-chip:has(input:checked) .interest-remove { display: inline; }
+    .gender-pill { min-height: 44px; border: 1px solid #fbcfe8; border-radius: 14px; background: white; color: #64748b; font-size: 13px; font-weight: 600; }
+    .gender-pill.is-selected { border-color: #ec4899; background: #fce7f3; color: #be185d; }
+    #id_preferred_gender { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 </style>
 
 <script>
@@ -279,25 +201,126 @@
     const configEl = document.getElementById('edit-config');
     const MEDIA_LIMIT = parseInt(configEl.dataset.mediaLimit);
     const CURRENT_COUNT = parseInt(configEl.dataset.currentCount);
-    // Calculate remaining slots
-    const MAX_FILES = MEDIA_LIMIT - CURRENT_COUNT;
     const mainIndexInput = document.getElementById('new-main-index');
-    
     let currentPreviewIndex = -1;
+    const tagInputs = Array.from(document.querySelectorAll('.tag-grid input[type="checkbox"]'));
+    const tagCount = document.getElementById('tag-count');
+    const mediaCounter = document.getElementById('media-counter');
+    const bioInput = document.getElementById('id_bio');
+    const bioCount = document.getElementById('bio-count');
 
-    // --- Media Grid Logic ---
+    function updateTagLimit() {
+        const selectedCount = tagInputs.filter(input => input.checked).length;
+        tagCount.textContent = `${selectedCount} / 5 selected`;
+        tagInputs.forEach(input => {
+            input.disabled = selectedCount >= 5 && !input.checked;
+        });
+    }
 
-    function handleMediaClick(element) {
-        const url = element.dataset.url;
-        const id = element.dataset.id;
-        const isVideo = element.dataset.isVideo === 'true';
-        
+    tagInputs.forEach(input => input.addEventListener('change', updateTagLimit));
+    updateTagLimit();
+
+    const tabButtons = Array.from(document.querySelectorAll('.edit-tab'));
+    const tabPanels = Array.from(document.querySelectorAll('.edit-panel'));
+    function activateTab(name, focusButton = false) {
+        tabButtons.forEach(button => {
+            const active = button.dataset.tab === name;
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-selected', String(active));
+            button.tabIndex = active ? 0 : -1;
+            if (active && focusButton) button.focus();
+        });
+        tabPanels.forEach(panel => panel.classList.toggle('hidden', panel.dataset.panel !== name));
+    }
+    tabButtons.forEach((button, index) => {
+        button.addEventListener('click', () => activateTab(button.dataset.tab));
+        button.addEventListener('keydown', event => {
+            if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+            event.preventDefault();
+            const nextIndex = (index + (event.key === 'ArrowRight' ? 1 : -1) + tabButtons.length) % tabButtons.length;
+            activateTab(tabButtons[nextIndex].dataset.tab, true);
+        });
+    });
+
+    document.getElementById('interest-search').addEventListener('input', event => {
+        const query = event.target.value.trim().toLocaleLowerCase();
+        document.querySelectorAll('.interest-chip').forEach(chip => {
+            chip.hidden = !chip.querySelector('.interest-label').textContent.toLocaleLowerCase().includes(query);
+        });
+    });
+
+    const seekingSelect = document.getElementById('id_preferred_gender');
+    const seekingPills = Array.from(document.querySelectorAll('.gender-pill'));
+    function updateSeekingPills() {
+        seekingPills.forEach(pill => {
+            const selected = pill.dataset.gender === seekingSelect.value;
+            pill.classList.toggle('is-selected', selected);
+            pill.setAttribute('aria-pressed', String(selected));
+        });
+    }
+    seekingPills.forEach(pill => pill.addEventListener('click', () => {
+        seekingSelect.value = pill.dataset.gender;
+        updateSeekingPills();
+    }));
+    updateSeekingPills();
+
+    function updateBioCount() {
+        bioCount.textContent = `${bioInput.value.length} / 200`;
+    }
+    bioInput.addEventListener('input', updateBioCount);
+    updateBioCount();
+
+    function updateMediaCount() {
+        mediaCounter.textContent = `${CURRENT_COUNT + dt.files.length} / ${MEDIA_LIMIT} Uploaded`;
+    }
+
+    const gpsButton = document.getElementById('gps-button');
+    gpsButton.addEventListener('click', () => {
+        const status = document.getElementById('gps-status');
+        if (!navigator.geolocation) {
+            status.textContent = 'Location is not available in this browser.';
+            return;
+        }
+        status.textContent = 'Getting your location…';
+        navigator.geolocation.getCurrentPosition(
+            position => {
+                document.getElementById('id_latitude').value = position.coords.latitude.toFixed(6);
+                document.getElementById('id_longitude').value = position.coords.longitude.toFixed(6);
+                status.textContent = 'Location added. Save changes to apply it.';
+            },
+            () => { status.textContent = 'Could not get your location. Check browser permission and try again.'; },
+            { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
+        );
+    });
+
+    const deactivateModal = document.getElementById('deactivate-modal');
+    document.getElementById('deactivate-open').addEventListener('click', () => {
+        deactivateModal.classList.remove('hidden');
+        deactivateModal.classList.add('flex');
+        document.getElementById('deactivate-cancel').focus();
+    });
+    document.getElementById('deactivate-cancel').addEventListener('click', () => {
+        deactivateModal.classList.add('hidden');
+        deactivateModal.classList.remove('flex');
+        document.getElementById('deactivate-open').focus();
+    });
+    deactivateModal.addEventListener('click', event => {
+        if (event.target === deactivateModal) document.getElementById('deactivate-cancel').click();
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && !deactivateModal.classList.contains('hidden')) {
+            document.getElementById('deactivate-cancel').click();
+        }
+    });
+    const saveToast = document.getElementById('save-toast');
+    if (saveToast) window.setTimeout(() => saveToast.remove(), 4000);
+
+    function handleMediaClick(el) {
         document.getElementById('actions-existing').classList.remove('hidden');
         document.getElementById('actions-new').classList.add('hidden');
-        document.getElementById('modal-set-main-id').value = id;
-        document.getElementById('modal-delete-id').value = id;
-        
-        openModal(url, isVideo);
+        document.getElementById('modal-set-main-id').value = el.dataset.id;
+        document.getElementById('modal-delete-id').value = el.dataset.id;
+        openModal(el.dataset.url, el.dataset.isVideo === 'true');
     }
 
     function handleNewPreviewClick(url, isVideo, index) {
@@ -306,157 +329,69 @@
         document.getElementById('actions-new').classList.remove('hidden');
         openModal(url, isVideo);
     }
-    
-    function setNewPhotoAsMain() {
-        if (currentPreviewIndex === -1) return;
-        mainIndexInput.value = currentPreviewIndex;
-        renderPreviews();
-        closeImageModal();
-    }
-    
-    function removeNewPhoto() {
-         if (currentPreviewIndex === -1) return;
-         removeFileFromBuffer(currentPreviewIndex);
-         closeImageModal();
-    }
+
+    function setNewPhotoAsMain() { mainIndexInput.value = currentPreviewIndex; renderPreviews(); closeImageModal(); }
+    function removeNewPhoto() { removeFileFromBuffer(currentPreviewIndex); closeImageModal(); }
 
     function openModal(url, isVideo) {
-        const modal = document.getElementById('image-modal');
         const img = document.getElementById('modal-img');
-        const video = document.getElementById('modal-video');
-
-        if (isVideo) {
-            img.classList.add('hidden');
-            video.classList.remove('hidden');
-            video.src = url;
-            video.load();
-            video.play();
-        } else {
-            video.classList.add('hidden');
-            video.pause();
-            img.classList.remove('hidden');
-            img.src = url;
-        }
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
+        const vid = document.getElementById('modal-video');
+        if (isVideo) { img.classList.add('hidden'); vid.classList.remove('hidden'); vid.src = url; vid.play(); } 
+        else { vid.classList.add('hidden'); vid.pause(); img.classList.remove('hidden'); img.src = url; }
+        document.getElementById('image-modal').classList.remove('hidden');
+        document.getElementById('image-modal').classList.add('flex');
     }
 
     function closeImageModal() {
-        const modal = document.getElementById('image-modal');
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
+        document.getElementById('image-modal').classList.add('hidden');
+        document.getElementById('image-modal').classList.remove('flex');
         document.getElementById('modal-video').pause();
     }
 
-    // --- File Input Handling ---
-
-    document.getElementById('add-photo-btn').addEventListener('click', function(e) {
-        // Recalculate remaining slots dynamically based on pending uploads
-        const remainingSlots = MEDIA_LIMIT - (CURRENT_COUNT + dt.items.length);
-        
-        if (remainingSlots <= 0) {
-            alert("Media limit reached. Delete existing photos to add more.");
-            e.preventDefault();
-            return;
-        }
-        document.getElementById('file-input').click();
-        e.preventDefault(); 
+    document.getElementById('add-photo-btn').addEventListener('click', (e) => {
+        const remaining = MEDIA_LIMIT - (CURRENT_COUNT + dt.items.length);
+        if (remaining <= 0) { alert("Media limit reached!"); e.preventDefault(); return; }
+        fileInput.click(); e.preventDefault();
     });
 
     fileInput.addEventListener('change', function() {
-        const remainingSlots = MEDIA_LIMIT - (CURRENT_COUNT + dt.items.length);
-        
-        if (this.files.length > remainingSlots) {
-            alert(`You can only add ${remainingSlots} more items.`);
-            this.value = ''; // Reset input
-            return;
-        }
-        
-        for (let i = 0; i < this.files.length; i++) {
-            dt.items.add(this.files[i]);
-        }
+        const remaining = MEDIA_LIMIT - (CURRENT_COUNT + dt.items.length);
+        if (this.files.length > remaining) { alert(`Limit exceeded. Only ${remaining} slots left.`); this.files = dt.files; return; }
+        for (let i = 0; i < this.files.length; i++) { dt.items.add(this.files[i]); }
         this.files = dt.files;
         renderPreviews();
+        updateMediaCount();
     });
 
     function renderPreviews() {
         const grid = document.getElementById('photo-grid');
         const addBtn = document.getElementById('add-photo-btn');
-        // Clear old previews
-        const oldPreviews = grid.querySelectorAll('.preview-img');
-        oldPreviews.forEach(el => el.remove());
-        
+        grid.querySelectorAll('.preview-img').forEach(el => el.remove());
         const selectedMainIndex = parseInt(mainIndexInput.value);
 
         for (let i = 0; i < dt.files.length; i++) {
             const file = dt.files[i];
             const reader = new FileReader();
-            
-            (function(index) {
+            (function(idx) {
                 reader.onload = function(e) {
-                    const wrapper = document.createElement('div');
-                    wrapper.className = "relative aspect-[3/4] rounded-xl overflow-hidden shadow-sm border border-green-500 preview-img group bg-black cursor-pointer hover:scale-[1.02] transition";
-                    
-                    let content;
-                    let isVideo = false;
-                    
-                    if (file.type.startsWith('video/')) {
-                        isVideo = true;
-                        content = document.createElement('video');
-                        content.src = e.target.result;
-                        content.className = "w-full h-full object-cover opacity-80 pointer-events-none";
-                    } else {
-                        content = document.createElement('img');
-                        content.src = e.target.result;
-                        content.className = "w-full h-full object-cover opacity-80";
-                    }
-
-                    wrapper.onclick = function(evt) {
-                        if(evt.target.closest('button')) return;
-                        handleNewPreviewClick(e.target.result, isVideo, index);
-                    };
-
-                    const badge = document.createElement('div');
-                    badge.className = "absolute top-2 right-2 pointer-events-none";
-                    badge.innerHTML = '<span class="bg-green-500 text-black text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider shadow">New</span>';
-
-                    const removeBtn = document.createElement('button');
-                    removeBtn.type = "button";
-                    removeBtn.className = "absolute top-2 left-2 bg-red-500/80 text-white p-1 rounded-full hover:bg-red-600 z-10 backdrop-blur-sm";
-                    removeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>';
-                    removeBtn.onclick = function(e) {
-                        e.stopPropagation(); 
-                        removeFileFromBuffer(index);
-                    };
-
-                    wrapper.appendChild(content);
-                    wrapper.appendChild(badge);
-                    wrapper.appendChild(removeBtn);
-                    
-                    if (!isNaN(selectedMainIndex) && selectedMainIndex === index) {
-                         const mainBadge = document.createElement('div');
-                         mainBadge.className = "absolute bottom-0 inset-x-0 bg-gradient-to-t from-yellow-500 to-yellow-400 text-black text-[9px] font-black uppercase tracking-wider text-center py-1 z-20";
-                         mainBadge.innerText = "Set as Main";
-                         wrapper.appendChild(mainBadge);
-                         wrapper.classList.add("ring-2", "ring-yellow-400");
-                    }
-                    
-                    grid.insertBefore(wrapper, addBtn);
+                    const wrap = document.createElement('div');
+                    wrap.className = "relative aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl border-2 border-green-500/40 preview-img bg-black cursor-pointer hover:scale-105 transition duration-300";
+                    let isVideo = file.type.startsWith('video/');
+                    wrap.innerHTML = isVideo ? `<video src="${e.target.result}" class="w-full h-full object-cover opacity-80 pointer-events-none"></video>` : `<img src="${e.target.result}" class="w-full h-full object-cover opacity-80">`;
+                    wrap.innerHTML += '<div class="absolute top-2 right-2 bg-green-500 text-black text-[7px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest shadow">New</div>';
+                    if (selectedMainIndex === idx) wrap.innerHTML += '<div class="absolute bottom-0 inset-x-0 bg-yellow-400 text-black text-[8px] font-black uppercase text-center py-1">Apply as Main</div>';
+                    wrap.onclick = () => handleNewPreviewClick(e.target.result, isVideo, idx);
+                    grid.insertBefore(wrap, addBtn);
                 };
             })(i);
             reader.readAsDataURL(file);
         }
     }
 
-    function removeFileFromBuffer(index) {
-        let currentMain = parseInt(mainIndexInput.value);
-        if (!isNaN(currentMain)) {
-            if (index < currentMain) mainIndexInput.value = currentMain - 1;
-            else if (index === currentMain) mainIndexInput.value = "";
-        }
-        dt.items.remove(index);
-        fileInput.files = dt.files;
-        renderPreviews();
+    function removeFileFromBuffer(idx) {
+        let curMain = parseInt(mainIndexInput.value);
+        if (idx < curMain) mainIndexInput.value = curMain - 1; else if (idx === curMain) mainIndexInput.value = "";
+        dt.items.remove(idx); fileInput.files = dt.files; renderPreviews(); updateMediaCount();
     }
 </script>
 {% endblock %}

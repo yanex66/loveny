@@ -1,35 +1,37 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}LOVENY - Login{% endblock %}
 
 {% block content %}
-<div class="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 font-sans">
+<div class="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-gradient-to-br from-rose-50 via-white to-orange-50 font-sans">
 
-    <div class="absolute -z-10 w-96 h-96 bg-yellow-400 rounded-full mix-blend-overlay filter blur-[120px] opacity-40 top-0 left-0 animate-blob"></div>
-    <div class="absolute -z-10 w-96 h-96 bg-pink-600 rounded-full mix-blend-overlay filter blur-[120px] opacity-40 bottom-0 right-0 animate-blob animation-delay-2000"></div>
+    <div class="absolute -z-10 w-96 h-96 bg-orange-200 rounded-full mix-blend-multiply filter blur-[120px] opacity-60 top-0 left-0 animate-blob"></div>
+    <div class="absolute -z-10 w-96 h-96 bg-pink-200 rounded-full mix-blend-multiply filter blur-[120px] opacity-60 bottom-0 right-0 animate-blob animation-delay-2000"></div>
 
     <div class="w-full max-w-md px-6 relative z-10">
         
         <div class="text-center mb-8 transform -rotate-2">
-            <h1 class="text-6xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-500 drop-shadow-[4px_4px_0_rgba(0,0,0,0.5)]">
-                LOVENY
+            <h1 class="flex justify-center">
+                <img src="{% static 'dating/images/loveny-logo.png' %}" alt="LOVENY" class="h-16 w-auto max-w-full rounded-xl bg-white/90 px-2 object-contain">
             </h1>
-            <div class="inline-block bg-black text-white text-xs font-bold px-3 py-1 uppercase tracking-widest transform skew-x-12 mt-2">
+            <div class="inline-block brand-gradient text-white text-xs font-bold px-3 py-1 uppercase tracking-widest transform skew-x-12 mt-2">
                 Member Access
             </div>
         </div>
 
-        <div class="bg-white/10 backdrop-blur-xl border-2 border-white/20 rounded-3xl p-8 shadow-2xl relative overflow-hidden group">
+        <div class="soft-card rounded-3xl p-8 shadow-2xl relative overflow-hidden group">
             
-            <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-yellow-400 via-pink-500 to-purple-500"></div>
+            <div class="absolute top-0 left-0 w-full h-2 brand-gradient"></div>
 
-            {% if form.errors %}
-                <div class="mb-6 bg-red-500/20 border-l-4 border-red-500 p-4 rounded-r animate-pulse">
+            {% if form.non_field_errors or form.relationship_mode.errors or form.username.errors or form.password.errors %}
+                <div class="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r animate-pulse">
                     <div class="flex items-center gap-3">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         <div>
-                            <p class="font-bold text-red-200 text-sm">Access Denied</p>
-                            <p class="text-xs text-red-300">Username or password incorrect.</p>
+                            <p class="font-bold text-red-800 text-sm">Access denied</p>
+                            <p class="text-xs text-red-700">Please check your username, password, and connection mode.</p>
+                            {{ form.non_field_errors }}
                         </div>
                     </div>
                 </div>
@@ -39,47 +41,83 @@
                 {% csrf_token %}
                 
                 <div class="space-y-1">
-                    <label for="id_username" class="block text-xs font-bold text-pink-300 uppercase tracking-widest ml-1">Username</label>
-                    <input type="text" name="username" id="id_username" required
-                           class="block w-full px-4 py-3 bg-black/40 border-2 border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-yellow-400 focus:bg-black/60 transition-all font-bold tracking-wide"
-                           placeholder="Enter your handle">
+                    <label for="{{ form.username.id_for_label }}" class="block text-xs font-bold text-pink-700 uppercase tracking-widest ml-1">Username</label>
+                    {{ form.username }}
+                    {{ form.username.errors }}
                 </div>
 
                 <div class="space-y-1">
-                    <label for="id_password" class="block text-xs font-bold text-pink-300 uppercase tracking-widest ml-1">Password</label>
-                    <input type="password" name="password" id="id_password" required
-                           class="block w-full px-4 py-3 bg-black/40 border-2 border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-yellow-400 focus:bg-black/60 transition-all font-bold tracking-wide"
-                           placeholder="••••••••">
+                    <label for="{{ form.password.id_for_label }}" class="block text-xs font-bold text-pink-700 uppercase tracking-widest ml-1">Password</label>
+                    <div class="relative">
+                        {{ form.password }}
+                        <button type="button"
+                                id="toggle-login-password"
+                                aria-label="Show password"
+                                aria-pressed="false"
+                                class="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 transition hover:bg-pink-50 hover:text-pink-700 focus:outline-none focus:ring-2 focus:ring-pink-400">
+                            <svg id="login-password-eye" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    {{ form.password.errors }}
+                </div>
+
+                <div class="space-y-1">
+                    <label for="{{ form.relationship_mode.id_for_label }}" class="block text-xs font-bold text-pink-700 uppercase tracking-widest ml-1">Connection mode</label>
+                    {{ form.relationship_mode }}
+                    {{ form.relationship_mode.errors }}
                 </div>
 
                 <input type="hidden" name="next" value="{{ next }}">
 
-                <button type="submit" 
-                        class="w-full relative group mt-4 overflow-hidden rounded-xl bg-yellow-400 px-8 py-4 font-black text-black text-lg uppercase tracking-wider shadow-[0_0_20px_rgba(250,204,21,0.5)] transition-all hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(250,204,21,0.8)]">
-                    <span class="relative z-10 flex items-center justify-center gap-2">
-                        Unlock Profile 
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" /></svg>
-                    </span>
-                    <div class="absolute inset-0 -translate-x-full group-hover:translate-x-0 bg-white transition-transform duration-300 mix-blend-screen"></div>
+                <button type="submit"
+                        class="auth-submit mt-4 w-full rounded-xl brand-gradient px-8 py-4 text-center text-lg font-black uppercase tracking-wider text-white shadow-lg transition-all hover:scale-[1.02]">
+                    <span>Unlock Profile</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" /></svg>
                 </button>
             </form>
         </div>
 
         <div class="mt-8 text-center space-y-4">
-            <p class="text-gray-400 text-sm">
+            <p class="text-slate-500 text-sm">
                 New to the city? 
-                <a href="{% url 'signup' %}" class="font-bold text-yellow-400 hover:text-white underline decoration-2 underline-offset-4 transition">
+                <a href="{% url 'signup' %}" class="font-bold text-pink-700 hover:text-orange-600 underline decoration-2 underline-offset-4 transition">
                     Create Account
                 </a>
             </p>
-            <div class="text-xs text-gray-600">
-                <a href="#" class="hover:text-gray-400">Forgot Password?</a>
+            <div class="text-xs text-slate-500">
+                <a href="{% url 'password_reset' %}" class="font-semibold text-pink-700 underline decoration-pink-200 underline-offset-4 transition hover:text-orange-600">Forgot password?</a>
             </div>
         </div>
     </div>
 </div>
 
+<script>
+    (() => {
+        const passwordInput = document.getElementById('{{ form.password.id_for_label }}');
+        const toggleButton = document.getElementById('toggle-login-password');
+        const eyeIcon = document.getElementById('login-password-eye');
+        if (!passwordInput || !toggleButton) return;
+
+        toggleButton.addEventListener('click', () => {
+            const showPassword = passwordInput.type === 'password';
+            passwordInput.type = showPassword ? 'text' : 'password';
+            toggleButton.setAttribute('aria-pressed', String(showPassword));
+            toggleButton.setAttribute('aria-label', showPassword ? 'Hide password' : 'Show password');
+            eyeIcon.innerHTML = showPassword
+                ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3l18 18M10.584 10.587a2 2 0 002.829 2.829M9.88 5.09A10.94 10.94 0 0112 4.5c5 0 8.27 4.03 9.5 7.5a11.8 11.8 0 01-3.04 4.56M6.23 6.23A11.8 11.8 0 002.5 12c.63 1.77 1.76 3.45 3.35 4.7A9.8 9.8 0 0012 19.5c1.03 0 2-.16 2.9-.46"/>'
+                : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
+        });
+    })();
+</script>
+
 <style>
+    .auth-submit {
+        min-height: 3.75rem;
+        gap: 0.6rem;
+    }
     @keyframes blob {
         0% { transform: translate(0px, 0px) scale(1); }
         33% { transform: translate(30px, -50px) scale(1.1); }

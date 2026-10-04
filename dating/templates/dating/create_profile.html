@@ -1,47 +1,92 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create Your Profile</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <link rel="icon" type="image/png" href="{% static 'dating/images/loveny-logo.png' %}">
+    <title>Initialize Profile | LOVENY</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Custom form styling */
-        input[type="text"], input[type="number"], input[type="email"], textarea, select {
-            width: 100%; padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 0.75rem;
-            background-color: #f9fafb; font-size: 0.95rem; transition: all 0.2s;
+        .device-frame {
+            width: min(100%, 28rem);
+            min-height: 100svh;
+            overflow-x: clip;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: max(6rem, calc(6rem + env(safe-area-inset-bottom)));
         }
-        input[type="text"]:focus, input[type="number"]:focus, textarea:focus, select:focus {
-            border-color: #db2777; background-color: #fff;
-            box-shadow: 0 0 0 3px rgba(219, 39, 119, 0.1); outline: none;
+        html, body { width: 100%; min-height: 100%; overflow-x: hidden; }
+        input[type="text"], input[type="number"], textarea, select {
+            width: 100%;
+            max-width: 100%;
+            min-height: 44px;
+            padding: 0.85rem;
+            border: 1px solid #f3c8df;
+            border-radius: 1rem;
+            background: #fff;
+            color: #35162f;
+            font-size: 16px;
+            box-sizing: border-box;
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
-        /* Checkbox grid for tags */
+        input:focus, textarea:focus, select:focus {
+            border-color: #ec4899;
+            background: #fff7fb;
+            outline: none;
+            box-shadow: 0 0 15px rgba(236, 72, 153, 0.2);
+        }
+        .tag-grid input[type="checkbox"] {
+            display: none;
+        }
         .tag-grid label {
-            display: flex; align-items: center; padding: 0.5rem;
-            border: 1px solid #f3f4f6; border-radius: 0.5rem; cursor: pointer;
+            display: block;
+            padding: 0.6rem;
+            background: #fff;
+            border: 1px solid #fce7f3;
+            border-radius: 0.75rem;
+            text-align: center;
+            color: #6b5870;
+            cursor: pointer;
             transition: all 0.2s;
         }
-        .tag-grid label:hover { background-color: #fdf2f8; border-color: #fbcfe8; }
-        input[type="checkbox"] { accent-color: #db2777; width: 1rem; height: 1rem; margin-right: 0.5rem; }
+        .tag-grid input[type="checkbox"]:checked + label {
+            background: linear-gradient(to right, #ec4899, #fb7185);
+            border-color: transparent;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
+        }
+        .tag-grid input[type="checkbox"]:disabled + label {
+            cursor: not-allowed;
+            opacity: 0.45;
+        }
+        select option { background: white; color: #35162f; }
+        button[type="submit"]:hover {
+            background-image: none !important;
+            background: #fff !important;
+            color: #35162f !important;
+            border-color: #f9a8d4 !important;
+        }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen py-10 px-4 font-sans">
+<body class="bg-gradient-to-br from-rose-50 via-white to-orange-50 min-h-screen overflow-x-hidden py-6 sm:py-10 px-4 font-sans text-slate-900">
 
-    <div class="max-w-xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden">
-        <div class="bg-pink-600 p-8 text-center">
-            <h1 class="text-3xl font-black text-white tracking-tight mb-2">Create Your Profile</h1>
-            <p class="text-pink-100 font-medium">Tell us about yourself to find better matches.</p>
+    <div class="device-frame max-w-[28rem] mx-auto bg-white rounded-3xl shadow-xl border border-pink-100 overflow-hidden">
+        <div class="p-5 sm:p-10 text-center bg-gradient-to-b from-rose-50 to-white">
+            <img src="{% static 'dating/images/loveny-logo.png' %}" alt="LOVENY" class="mx-auto mb-4 h-12 w-auto max-w-full rounded-lg object-contain">
+            <h1 class="text-2xl font-black text-pink-700 tracking-tighter uppercase italic mb-2 sm:text-3xl">
+                Initialize Profile
+            </h1>
+            <p class="text-slate-500 font-medium">Step into the spotlight. Let's make it official.</p>
         </div>
 
-        <div class="p-8">
+        <div class="px-5 pb-10 sm:px-8">
             {% if form.errors %}
-            <div class="mb-6 bg-red-50 border border-red-100 p-4 rounded-xl">
-                <p class="text-red-600 font-bold text-sm mb-2">Please fix the errors below:</p>
-                <ul class="text-red-500 text-xs list-disc pl-5 space-y-1">
+            <div class="mb-6 bg-red-50 border border-red-200 p-4 rounded-2xl">
+                <p class="text-red-800 font-bold text-sm mb-1">Please check these fields:</p>
+                <ul class="text-red-700 text-xs list-disc pl-5">
                     {% for field, errors in form.errors.items %}
-                        {% for error in errors %}
-                        <li><span class="font-bold capitalize">{{ field }}:</span> {{ error }}</li>
-                        {% endfor %}
+                        <li>{{ field|title }}: {{ errors|striptags }}</li>
                     {% endfor %}
                 </ul>
             </div>
@@ -51,87 +96,87 @@
                 {% csrf_token %}
 
                 <div class="text-center">
-                    <label class="block text-sm font-bold text-gray-700 uppercase mb-3">Upload Your Best Photo or Video</label>
-                    <div class="relative w-32 h-32 mx-auto rounded-full bg-gray-100 border-4 border-white shadow-lg overflow-hidden group cursor-pointer hover:border-pink-200 transition">
-                        <input type="file" name="photo" accept="image/*,video/*" class="absolute inset-0 opacity-0 cursor-pointer z-10" onchange="previewFile(this)">
-                        <div id="preview-container" class="w-full h-full flex items-center justify-center text-gray-400">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 group-hover:text-pink-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <label class="block text-xs font-black text-pink-500 uppercase tracking-widest mb-4">Main Identity Media</label>
+                    <div class="relative w-40 h-40 mx-auto rounded-3xl bg-rose-50 border-2 border-dashed border-pink-200 overflow-hidden group hover:border-pink-500 transition-all duration-500">
+                        <input type="file" name="photo" id="main-photo-input" accept="image/*,video/*" class="absolute inset-0 opacity-0 cursor-pointer z-20" onchange="previewFile(this)">
+                        
+                        <div id="preview-placeholder" class="w-full h-full flex flex-col items-center justify-center text-slate-400 group-hover:text-pink-600 transition">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4" />
                             </svg>
+                            <span class="text-[10px] font-bold uppercase tracking-tighter">Tap to Upload</span>
                         </div>
-                        <img id="preview-img" class="absolute inset-0 w-full h-full object-cover hidden">
-                        <video id="preview-video" class="absolute inset-0 w-full h-full object-cover hidden"></video>
+
+                        <img id="preview-img" class="absolute inset-0 w-full h-full object-cover hidden z-10">
+                        <video id="preview-video" class="absolute inset-0 w-full h-full object-cover hidden z-10" muted loop></video>
                     </div>
                 </div>
 
-                <input type="file" name="more_photos" multiple accept="image/*,video/*" class="hidden">
-
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Age</label>
+                        <label class="block text-[10px] font-black text-slate-500 uppercase mb-2 ml-1">Current Age</label>
                         {{ form.age }}
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">WhatsApp Number</label>
+                        <label class="block text-[10px] font-black text-slate-500 uppercase mb-2 ml-1">WhatsApp (Global)</label>
                         {{ form.whatsapp_number }}
-                        <p class="text-[10px] text-gray-400 mt-1">Must be unique</p>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Location / City</label>
-                        {{ form.location }}
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Job / Industry</label>
-                        {{ form.job_title }}
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">I am a...</label>
+                        <label class="block text-[10px] font-black text-slate-500 uppercase mb-2 ml-1">Identify As</label>
                         {{ form.gender }}
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Looking for...</label>
+                        <label class="block text-[10px] font-black text-slate-500 uppercase mb-2 ml-1">Looking For</label>
                         {{ form.preferred_gender }}
                     </div>
                 </div>
 
-                <div class="p-4 bg-pink-50 rounded-xl border border-pink-100">
-                    <label class="block text-xs font-bold text-pink-600 uppercase mb-2 text-center">Age Preference</label>
-                    <div class="grid grid-cols-2 gap-4">
+                <div class="p-5 sm:p-6 bg-rose-50 rounded-3xl border border-rose-100 space-y-4">
+                    <label class="block text-xs font-black text-pink-700 uppercase tracking-widest">Connection Style</label>
+                    <div><label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Primary mode</label>{{ form.relationship_mode }}</div>
+                </div>
+
+                <div class="p-5 sm:p-6 bg-rose-50 rounded-3xl border border-rose-100">
+                    <label class="block text-xs font-black text-pink-700 uppercase mb-4 text-center tracking-widest">Discovery Filter</label>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Min Age</label>
+                            <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1 ml-1">Min Age (18+)</label>
                             {{ form.min_age_pref }}
                         </div>
                         <div>
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Max Age</label>
+                            <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1 ml-1">Max Age</label>
                             {{ form.max_age_pref }}
                         </div>
+                    </div>
+                    <div class="mt-4">
+                        <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Maximum distance (km)</label>
+                        {{ form.max_distance_km }}
+                        <p class="mt-2 text-[10px] text-slate-500">For Hookup mode, coordinates are used only to filter nearby profiles and are never shown to other members.</p>
+                    </div>
+                    <div class="grid grid-cols-1 gap-4 mt-4">
+                        <div><label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Latitude (decimal degrees)</label>{{ form.latitude }}<p class="mt-1 text-[10px] text-slate-500">Example: 6.5244 (Lagos)</p></div>
+                        <div><label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Longitude (decimal degrees)</label>{{ form.longitude }}<p class="mt-1 text-[10px] text-slate-500">Example: 3.3792 (Lagos)</p></div>
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Short Bio</label>
+                    <label class="block text-[10px] font-black text-slate-500 uppercase mb-2 ml-1">The Vibe (Bio)</label>
                     {{ form.bio }}
                 </div>
 
                 <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">My Ideal First Date</label>
-                    {{ form.first_date_idea }}
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Passions & Interests</label>
-                    <div class="grid grid-cols-2 gap-2 text-xs text-gray-700 tag-grid">
+                    <div class="flex items-center justify-between">
+                        <label class="block text-xs font-black text-slate-500 uppercase mb-4 ml-1">Pick up to 5 interests</label>
+                        <span id="tag-count" class="text-xs font-bold text-pink-700"></span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 tag-grid">
                         {% for checkbox in form.tags %}
                         <div class="relative">
                             {{ checkbox.tag }}
-                            <label for="{{ checkbox.id_for_label }}" class="flex items-center">
+                            <label for="{{ checkbox.id_for_label }}" class="text-xs">
                                 {{ checkbox.choice_label }}
                             </label>
                         </div>
@@ -139,24 +184,38 @@
                     </div>
                 </div>
 
-                <button type="submit" class="w-full py-4 bg-gray-900 text-white font-bold rounded-xl shadow-lg hover:bg-black transition transform active:scale-95">
-                    Complete Profile & Start Swiping
+                <button type="submit" class="w-full py-5 bg-gradient-to-r from-pink-600 to-rose-500 text-white font-black uppercase tracking-widest rounded-2xl shadow-[0_10px_30px_rgba(236,72,153,0.3)] transition-all duration-300 transform hover:-translate-y-1 active:scale-95">
+                    Launch My Profile
                 </button>
             </form>
         </div>
     </div>
 
     <script>
+        const interestInputs = Array.from(document.querySelectorAll('.tag-grid input[type="checkbox"]'));
+        const interestCount = document.getElementById('tag-count');
+
+        function updateInterestLimit() {
+            const selectedCount = interestInputs.filter(input => input.checked).length;
+            interestCount.textContent = `${selectedCount}/5 selected`;
+            interestInputs.forEach(input => {
+                input.disabled = selectedCount >= 5 && !input.checked;
+            });
+        }
+
+        interestInputs.forEach(input => input.addEventListener('change', updateInterestLimit));
+        updateInterestLimit();
+
         function previewFile(input) {
-            const container = document.getElementById('preview-container');
+            const placeholder = document.getElementById('preview-placeholder');
             const img = document.getElementById('preview-img');
             const video = document.getElementById('preview-video');
-            
             const file = input.files[0];
+
             if (file) {
                 const reader = new FileReader();
                 reader.onload = function(e) {
-                    container.classList.add('hidden');
+                    placeholder.classList.add('hidden');
                     if (file.type.startsWith('video/')) {
                         img.classList.add('hidden');
                         video.classList.remove('hidden');
@@ -172,6 +231,5 @@
             }
         }
     </script>
-
 </body>
 </html>

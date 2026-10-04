@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 640" role="img" aria-label="Profile photo unavailable">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#fce7f3"/>
+      <stop offset="1" stop-color="#ede9fe"/>
+    </linearGradient>
+  </defs>
+  <rect width="480" height="640" fill="url(#background)"/>
+  <circle cx="240" cy="220" r="92" fill="#c4b5fd"/>
+  <path d="M72 640c12-146 74-226 168-226s156 80 168 226" fill="#c4b5fd"/>
+  <circle cx="240" cy="220" r="72" fill="#fff" opacity=".6"/>
+  <path d="M74 640c14-126 75-196 166-196s152 70 166 196" fill="#fff" opacity=".6"/>
+</svg>

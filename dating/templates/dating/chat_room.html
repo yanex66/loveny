@@ -1,0 +1,169 @@
+{% extends 'base.html' %}
+
+{% block title %}Private chat with {{ other_user.username }} | LOVENY{% endblock %}
+
+{% block content %}
+<main class="min-h-screen bg-gradient-to-br from-rose-50 via-white to-orange-50 px-3 py-5 pb-36 text-slate-900 sm:px-4">
+    <section class="soft-card mx-auto flex h-[min(78vh,52rem)] min-h-[28rem] max-w-2xl flex-col overflow-hidden rounded-3xl shadow-2xl">
+        <header class="flex items-center justify-between border-b border-rose-100 p-4 sm:p-5">
+            <div class="min-w-0">
+                <h1 class="truncate text-xl font-black">{{ other_user.username }}</h1>
+                <p class="text-xs uppercase tracking-widest text-pink-600">{{ match.get_mode_display }} · Private chat</p>
+            </div>
+            <a href="{% url 'match_list' %}" class="shrink-0 rounded-full border border-pink-200 px-4 py-2 text-xs font-bold text-pink-700 transition hover:bg-white hover:text-slate-900">Back to matches</a>
+        </header>
+
+        <div class="border-b border-rose-100 bg-rose-50 px-4 py-3 text-xs text-slate-600 sm:px-5">
+            Private, text-only chat. Messages are limited to {{ max_message_length }} characters.
+        </div>
+
+        <div id="chat-messages" class="flex-1 space-y-3 overflow-y-auto p-4 sm:p-5" aria-live="polite" aria-relevant="additions text"></div>
+        <p id="chat-status" class="min-h-6 px-4 text-sm text-pink-700 sm:px-5" role="status"></p>
+
+        {% if messages_allowed %}
+        <form id="chat-form" class="flex gap-2 border-t border-rose-100 p-3 sm:gap-3 sm:p-4">
+            {% csrf_token %}
+            <label for="chat-input" class="sr-only">Message</label>
+            <input id="chat-input" name="text" maxlength="{{ max_message_length }}" autocomplete="off" required
+                   class="min-w-0 flex-1 rounded-xl border border-rose-200 bg-white px-4 py-3 text-slate-900 outline-none focus:border-pink-400"
+                   placeholder="Write a private message">
+            <button id="send-button" class="brand-gradient rounded-xl px-5 font-black text-white transition hover:bg-white hover:text-slate-900" type="submit">Send</button>
+        </form>
+        {% else %}
+        <p class="border-t border-rose-100 p-5 text-sm text-slate-600">This member has disabled messages. You can still read previous messages.</p>
+        {% endif %}
+    </section>
+</main>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    const MESSAGES_URL = "{{ messages_url|escapejs }}";
+    const SEND_URL = "{{ send_url|escapejs }}";
+    const CURRENT_USER_ID = {{ user.id }};
+    const messageList = document.getElementById('chat-messages');
+    const chatStatus = document.getElementById('chat-status');
+    let lastMessageId = 0;
+    let polling = false;
+    let pendingSends = 0;
+    let pollingTimer = null;
+
+    function appendMessage(message, optimistic = false) {
+        const row = document.createElement('div');
+        row.dataset.messageId = optimistic ? `pending-${message.clientId}` : String(message.id);
+        row.className = message.sender_id === CURRENT_USER_ID ? 'flex justify-end' : 'flex justify-start';
+        const bubble = document.createElement('div');
+        bubble.className = message.sender_id === CURRENT_USER_ID
+            ? 'max-w-[85%] rounded-2xl rounded-br-sm bg-pink-600 px-4 py-3 text-white'
+            : 'max-w-[85%] rounded-2xl rounded-bl-sm bg-slate-100 px-4 py-3 text-slate-900';
+        const body = document.createElement('p');
+        body.className = 'whitespace-pre-wrap break-words text-sm';
+        body.textContent = message.text;
+        const metadata = document.createElement('div');
+        metadata.className = 'mt-2 flex items-center justify-end gap-1 text-[10px] opacity-70';
+        const time = document.createElement('time');
+        time.dateTime = message.created_at;
+        time.textContent = optimistic
+            ? 'Sending…'
+            : new Date(message.created_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        metadata.appendChild(time);
+        if (message.sender_id === CURRENT_USER_ID && !optimistic) {
+            const ticks = document.createElement('span');
+            ticks.setAttribute('aria-label', message.is_read ? 'Read' : 'Sent');
+            ticks.textContent = message.is_read ? '✓✓' : '✓';
+            metadata.appendChild(ticks);
+        }
+        bubble.append(body, metadata);
+        row.appendChild(bubble);
+        messageList.appendChild(row);
+        if (!optimistic) lastMessageId = Math.max(lastMessageId, message.id);
+        messageList.scrollTop = messageList.scrollHeight;
+        return row;
+    }
+
+    async function refreshMessages() {
+        if (polling || pendingSends || document.visibilityState !== 'visible') return;
+        polling = true;
+        try {
+            const response = await fetch(`${MESSAGES_URL}?after_id=${lastMessageId}`, {
+                headers: {'Accept': 'application/json'},
+            });
+            if (!response.ok) throw new Error('Chat history could not be loaded.');
+            const data = await response.json();
+            data.messages.forEach(appendMessage);
+            chatStatus.textContent = '';
+        } catch (error) {
+            chatStatus.textContent = error.message;
+        } finally {
+            polling = false;
+        }
+    }
+
+    function startPolling() {
+        if (pollingTimer !== null || document.visibilityState !== 'visible') return;
+        refreshMessages();
+        pollingTimer = window.setInterval(refreshMessages, 3500);
+    }
+
+    function stopPolling() {
+        if (pollingTimer !== null) {
+            window.clearInterval(pollingTimer);
+            pollingTimer = null;
+        }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') startPolling();
+        else stopPolling();
+    });
+
+    const chatForm = document.getElementById('chat-form');
+    if (chatForm) {
+        chatForm.addEventListener('submit', async event => {
+            event.preventDefault();
+            const input = document.getElementById('chat-input');
+            const sendButton = document.getElementById('send-button');
+            const text = input.value.trim();
+            if (!text) return;
+
+            const clientId = `${Date.now()}-${Math.random()}`;
+            const optimisticRow = appendMessage({
+                clientId,
+                sender_id: CURRENT_USER_ID,
+                text,
+                created_at: new Date().toISOString(),
+            }, true);
+            input.value = '';
+            pendingSends += 1;
+            sendButton.disabled = true;
+
+            try {
+                const response = await fetch(SEND_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': chatForm.querySelector('[name=csrfmiddlewaretoken]').value,
+                    },
+                    body: JSON.stringify({text}),
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Message could not be sent.');
+                optimisticRow.remove();
+                appendMessage(data.message);
+                chatStatus.textContent = '';
+            } catch (error) {
+                optimisticRow.remove();
+                input.value = text;
+                chatStatus.textContent = error.message;
+            } finally {
+                pendingSends -= 1;
+                sendButton.disabled = false;
+                input.focus();
+                if (pendingSends === 0) refreshMessages();
+            }
+        });
+    }
+
+    startPolling();
+</script>
+{% endblock %}

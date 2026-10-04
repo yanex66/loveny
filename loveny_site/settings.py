@@ -6,23 +6,57 @@ Updated for Production Deployment.
 import os
 from pathlib import Path
 
+import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-_@6fvs6%g2xmk=!y_i$3d^ecz*b7r=_kl1i&f)7!gf^a^^gvn!'
-
 # SECURITY WARNING: don't run with debug turned on in production!
-# --- CHANGED FOR DEPLOYMENT ---
-DEBUG = False 
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False').strip().lower() in {
+    '1',
+    'true',
+    'yes',
+}
 
-# --- CHANGED FOR DEPLOYMENT ---
-# REPLACE 'yourusername' with your actual PythonAnywhere username!
-ALLOWED_HOSTS = ['yourusername.pythonanywhere.com', '127.0.0.1', 'localhost']
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    if not DEBUG:
+        raise ImproperlyConfigured(
+            'Set DJANGO_SECRET_KEY in the environment when DEBUG is disabled.'
+        )
+    SECRET_KEY = 'django-insecure-local-development-only-key'
+
+IS_RENDER = os.environ.get('RENDER', '').strip().lower() == 'true'
+RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '').strip()
+CLOUDINARY_URL = os.environ.get('CLOUDINARY_URL', '').strip()
+if IS_RENDER and not CLOUDINARY_URL:
+    raise ImproperlyConfigured(
+        'Set CLOUDINARY_URL to enable persistent profile photo storage on Render.'
+    )
+
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
+    if host.strip()
+]
+ALLOWED_HOSTS += ['lovenny.pythonanywhere.com', '127.0.0.1', 'localhost']
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://lovenny.pythonanywhere.com',
+    'http://127.0.0.1:8000',
+    'http://localhost:8000',
+]
+CSRF_TRUSTED_ORIGINS += [
+    origin.strip()
+    for origin in os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',')
+    if origin.strip()
+]
+if RENDER_EXTERNAL_HOSTNAME:
+    CSRF_TRUSTED_ORIGINS.append(f'https://{RENDER_EXTERNAL_HOSTNAME}')
 
 
 # Application definition
@@ -34,8 +68,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'reversion',
     'dating',
 ]
+if CLOUDINARY_URL:
+    INSTALLED_APPS[5:5] = ['cloudinary_storage', 'cloudinary']
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -46,6 +83,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+if not DEBUG:
+    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 
 ROOT_URLCONF = 'loveny_site.urls'
 
@@ -67,15 +106,29 @@ TEMPLATES = [
 WSGI_APPLICATION = 'loveny_site.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# Use an externally provisioned PostgreSQL database on Render. Local
+# development continues to use SQLite unless DATABASE_URL is supplied.
+DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+            ssl_require=not DEBUG,
+        )
     }
-}
+elif IS_RENDER:
+    raise ImproperlyConfigured(
+        'Set DATABASE_URL to the external PostgreSQL database connection string.'
+    )
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -114,12 +167,35 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 
-# --- ADDED FOR DEPLOYMENT (This is where collectstatic puts files) ---
-STATIC_ROOT = os.path.join(BASE_DIR, 'static')
+STATICFILES_DIRS = []
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'default': {
+        'BACKEND': (
+            'cloudinary_storage.storage.MediaCloudinaryStorage'
+            if CLOUDINARY_URL
+            else 'django.core.files.storage.FileSystemStorage'
+        ),
+    },
+    'staticfiles': {
+        'BACKEND': (
+            'whitenoise.storage.CompressedManifestStaticFilesStorage'
+            if not DEBUG
+            else 'django.contrib.staticfiles.storage.StaticFilesStorage'
+        ),
+    },
+}
 
 # --- Media Files Configuration (User Uploads) ---
 MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT', BASE_DIR / 'media'))
+
+if IS_RENDER:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 3600
 
 
 # Default primary key field type
@@ -129,7 +205,34 @@ LOGIN_REDIRECT_URL = '/app/'
 LOGOUT_REDIRECT_URL = '/' 
 
 # PAYSTACK KEYS
-PAYSTACK_PUBLIC_KEY = 'pk_live_6fd34253cf04d94620e50e8c547b5259d052c121' 
+PAYSTACK_PUBLIC_KEY = os.environ.get(
+    'PAYSTACK_PUBLIC_KEY',
+    'pk_live_6fd34253cf04d94620e50e8c547b5259d052c121',
+)
+PAYSTACK_SECRET_KEY = os.environ.get('PAYSTACK_SECRET_KEY', '')
 
 # FLUTTERWAVE KEYS
-FLUTTERWAVE_PUBLIC_KEY = 'FLWPUBK-9137e1d408bd082a5b9a72987b0e5ce7-X'
+FLUTTERWAVE_PUBLIC_KEY = os.environ.get(
+    'FLUTTERWAVE_PUBLIC_KEY',
+    'FLWPUBK-9137e1d408bd082a5b9a72987b0e5ce7-X',
+)
+FLUTTERWAVE_SECRET_KEY = os.environ.get('FLUTTERWAVE_SECRET_KEY', '')
+
+# Use Gmail SMTP in production. Gmail requires an app password; never store it
+# in source control. Development defaults to the console email backend.
+EMAIL_BACKEND = os.environ.get(
+    'DJANGO_EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend' if DEBUG
+    else 'django.core.mail.backends.smtp.EmailBackend',
+)
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'help.hoxobil@gmail.com')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'true').strip().lower() in {
+    '1', 'true', 'yes',
+}
+DEFAULT_FROM_EMAIL = os.environ.get(
+    'DEFAULT_FROM_EMAIL',
+    'LOVENY Support <help.hoxobil@gmail.com>',
+)

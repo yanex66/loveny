@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block title %}Delete Account | LOVENY{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-gradient-to-br from-gray-950 via-red-950 to-black font-sans px-6">
+
+    <div class="absolute -z-10 w-96 h-96 bg-red-600 rounded-full filter blur-[150px] opacity-20 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+
+    <div class="w-full max-w-md relative z-10">
+        
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-red-500/10 border border-red-500/20 mb-6">
+                <svg class="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+            </div>
+            <h1 class="text-2xl font-black italic tracking-tighter text-white uppercase sm:text-3xl">
+                Leaving so soon?
+            </h1>
+            <p class="text-gray-400 font-bold uppercase tracking-widest text-xs mt-2">
+                This action is permanent.
+            </p>
+        </div>
+
+        <div class="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-[2.5rem] p-10 shadow-2xl text-center">
+            <p class="text-gray-300 mb-8 leading-relaxed">
+                If you delete your account, your matches, messages, and profile will be <span class="text-white font-bold">gone forever</span>. There is no "undo" button.
+            </p>
+
+            <form method="post" class="space-y-4">
+                {% csrf_token %}
+                
+                <button type="submit" 
+                        class="w-full py-4 bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-red-900/40 transition-all transform active:scale-95">
+                    Delete My Account
+                </button>
+
+                <a href="{% url 'profile' %}" 
+                   class="block w-full py-4 bg-white/5 border border-white/10 text-gray-300 font-black uppercase tracking-widest rounded-2xl hover:bg-white/10 transition">
+                    Nevermind, I'll stay
+                </a>
+            </form>
+        </div>
+
+        <p class="text-center text-[10px] text-gray-600 mt-8 uppercase tracking-widest font-bold">
+            © 2026 LOVENY SOCIAL CLUB
+        </p>
+    </div>
+</div>

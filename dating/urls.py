@@ -4,23 +4,37 @@ from . import views
 urlpatterns = [
     path('', views.index, name='index'),
     path('app/', views.swipe_view, name='swipe_card'), 
+    path('login/', views.login_view, name='login'),
     path('signup/', views.signup, name='signup'),
     path('create-profile/', views.create_profile, name='create_profile'),
     path('profile/', views.profile_detail, name='profile'),
     path('profile/edit/', views.edit_profile, name='edit_profile'),
+    path('account/delete/', views.delete_account, name='delete_account'),
     
     path('settings/', views.settings_view, name='settings'),
 
+    path('api/conversations/', views.conversations_api, name='conversations_api'),
+    path('api/conversations/<int:conversation_id>/messages/', views.conversation_messages_api, name='conversation_messages_api'),
+    path('api/conversations/<int:conversation_id>/send/', views.conversation_send_api, name='conversation_send_api'),
+    path('conversations/<int:conversation_id>/', views.conversation_room, name='conversation_room'),
+    path('api/subscription-plans/', views.subscription_plans_api, name='subscription_plans_api'),
+    path('api/calls/initiate/', views.call_initiate_api, name='call_initiate_api'),
+    path('api/calls/incoming/', views.incoming_calls_api, name='incoming_calls_api'),
+    path('api/calls/<uuid:room_id>/respond/', views.call_respond_api, name='call_respond_api'),
+    path('api/calls/<uuid:room_id>/end/', views.call_end_api, name='call_end_api'),
+    path('api/calls/<uuid:room_id>/', views.call_status_api, name='call_status_api'),
+    path('api/calls/<uuid:room_id>/signals/', views.call_signals_api, name='call_signals_api'),
+    path('api/calls/<uuid:room_id>/signals/send/', views.call_signal_send_api, name='call_signal_send_api'),
     path('api/get_profiles/', views.get_profiles_json, name='get_profiles_json'),
     path('action/', views.swipe_action, name='swipe_action'),
     path('matches/', views.match_list, name='match_list'),
+    path('matches/<int:match_id>/chat/', views.chat_room, name='chat_room'),
     path('likes/', views.likes_list, name='likes_list'),
     path('privacy-policy/', views.privacy, name='privacy'),
     path('terms-of-service/', views.terms, name='terms'),
     
     path('users/<int:pk>/', views.public_profile, name='public_profile'),
 
-    # --- ADD THESE NEW LINES TO FIX THE ERROR ---
     path('premium/', views.premium_landing, name='premium_landing'),
     path('premium/checkout/', views.premium_checkout, name='premium_checkout'),
     path('premium/success/', views.premium_success, name='premium_success'),

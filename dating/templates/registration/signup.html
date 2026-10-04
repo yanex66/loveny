@@ -1,76 +1,100 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}LOVENY - Join the Club{% endblock %}
 
 {% block content %}
-<div class="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 font-sans py-12">
+<div class="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-gradient-to-br from-rose-50 via-white to-orange-50 font-sans py-12">
 
-    <div class="absolute -z-10 w-96 h-96 bg-green-400 rounded-full mix-blend-overlay filter blur-[120px] opacity-40 top-[-10%] left-[-10%] animate-blob"></div>
-    <div class="absolute -z-10 w-96 h-96 bg-purple-600 rounded-full mix-blend-overlay filter blur-[120px] opacity-40 bottom-[-10%] right-[-10%] animate-blob animation-delay-2000"></div>
+    <div class="absolute -z-10 w-96 h-96 bg-orange-200 rounded-full mix-blend-multiply filter blur-[120px] opacity-60 top-[-10%] left-[-10%] animate-blob"></div>
+    <div class="absolute -z-10 w-96 h-96 bg-pink-200 rounded-full mix-blend-multiply filter blur-[120px] opacity-60 bottom-[-10%] right-[-10%] animate-blob animation-delay-2000"></div>
 
     <div class="w-full max-w-md px-6 relative z-10">
         
         <div class="text-center mb-8">
-            <h1 class="text-5xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-500 drop-shadow-[4px_4px_0_rgba(0,0,0,0.5)] transform -rotate-2">
-                JOIN LOVENY
+            <h1 class="flex justify-center">
+                <img src="{% static 'dating/images/loveny-logo.png' %}" alt="LOVENY" class="h-14 w-auto max-w-full rounded-xl bg-white/90 px-2 object-contain">
             </h1>
-            <p class="text-gray-300 font-bold uppercase tracking-widest text-xs mt-4">
+            <p class="mt-2 text-sm font-black uppercase tracking-widest text-pink-700">Join the club</p>
+            <p class="text-slate-500 font-bold uppercase tracking-widest text-xs mt-4">
                 Stop Swiping. Start Texting.
             </p>
         </div>
 
-        <div class="bg-white/10 backdrop-blur-xl border-2 border-white/20 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+        <div class="soft-card rounded-3xl p-8 shadow-2xl relative overflow-hidden">
             
-            <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 via-yellow-400 to-pink-500"></div>
+            <div class="absolute top-0 left-0 w-full h-1 brand-gradient"></div>
 
             <form method="post" class="space-y-5">
                 {% csrf_token %}
                 
                 {% for field in form %}
                 <div class="space-y-1">
-                    <label class="block text-xs font-bold text-pink-300 uppercase tracking-widest ml-1">
+                    <label for="{{ field.id_for_label }}" class="block text-xs font-bold text-pink-700 uppercase tracking-widest ml-1">
                         {{ field.label }}
                     </label>
                     
-                    <input type="{{ field.field.widget.input_type }}" 
-                           name="{{ field.name }}" 
-                           value="{{ field.value|default:'' }}"
-                           required
-                           class="block w-full px-4 py-3 bg-black/40 border-2 border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-yellow-400 focus:bg-black/60 transition-all font-bold tracking-wide shadow-inner">
+                    <div class="relative">
+                        {{ field }}
+                        
+                        {% if "password" in field.name or field.field.widget.input_type == "password" %}
+                        <button type="button" 
+                                onclick="togglePassword('id_{{ field.name }}')" 
+                                class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-pink-600 p-2 transition-colors">
+                            <svg id="eye_{{ field.name }}" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                            </svg>
+                        </button>
+                        {% endif %}
+                    </div>
                     
                     {% if field.help_text %}
-                    <p class="text-[10px] text-gray-400 uppercase tracking-wide font-semibold mt-1 ml-1 opacity-70">
+                    <p class="mt-1 ml-1 text-xs leading-relaxed text-slate-500">
                         {{ field.help_text }}
                     </p>
                     {% endif %}
 
                     {% if field.errors %}
-                    <div class="mt-1 flex items-center gap-2 text-red-300 text-xs font-bold bg-red-900/30 p-2 rounded">
+                    <div class="mt-1 flex items-center gap-2 text-red-700 text-xs font-bold bg-red-50 p-2 rounded">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         {{ field.errors.0 }}
                     </div>
                     {% endif %}
                 </div>
                 {% endfor %}
+                {{ form.non_field_errors }}
 
-                <button type="submit" 
-                        class="w-full relative group mt-6 overflow-hidden rounded-xl bg-yellow-400 px-8 py-4 font-black text-black text-lg uppercase tracking-wider shadow-[0_0_20px_rgba(250,204,21,0.5)] transition-all hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(250,204,21,0.8)]">
-                    <span class="relative z-10 flex items-center justify-center gap-2">
-                        Create Account
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
-                    </span>
-                    <div class="absolute inset-0 -translate-x-full group-hover:translate-x-0 bg-white transition-transform duration-300 mix-blend-screen"></div>
+                <button type="submit"
+                        class="auth-submit mt-6 w-full rounded-xl brand-gradient px-8 py-4 text-center text-lg font-black uppercase tracking-wider text-white shadow-lg transition-all hover:scale-[1.02]">
+                    <span>Create Account</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                 </button>
             </form>
         </div>
         
-        <p class="text-center text-sm text-gray-400 mt-6 font-medium">
-            Already have an account? <a href="{% url 'login' %}" class="text-yellow-400 font-bold hover:text-white underline decoration-2 underline-offset-4 transition">Log In</a>
+        <p class="text-center text-sm text-slate-500 mt-6 font-medium">
+            Already have an account? <a href="{% url 'login' %}" class="text-pink-700 font-bold hover:text-orange-600 underline decoration-2 underline-offset-4 transition">Log In</a>
         </p>
     </div>
 </div>
 
+<script>
+    function togglePassword(inputId) {
+        const passwordInput = document.getElementById(inputId);
+        if (passwordInput.type === "password") {
+            passwordInput.type = "text";
+        } else {
+            passwordInput.type = "password";
+        }
+    }
+</script>
+
 <style>
+    .auth-submit {
+        min-height: 3.75rem;
+        gap: 0.6rem;
+    }
     @keyframes blob {
         0% { transform: translate(0px, 0px) scale(1); }
         33% { transform: translate(30px, -50px) scale(1.1); }
