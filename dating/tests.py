@@ -373,7 +373,10 @@ class DatingPlatformTests(TestCase):
         match = Match.objects.get()
         self.assertTrue(match.has_direct_interest)
         self.assertEqual(match.mode, 'DATING')
-        self.assertContains(self.client.get(reverse('match_list')), 'Open private chat')
+        match_page = self.client.get(reverse('match_list'))
+        self.assertContains(match_page, 'Open private chat')
+        self.assertNotContains(match_page, 'Open WhatsApp')
+        self.assertNotContains(match_page, self.bob_profile.whatsapp_number)
 
     def test_swipe_rejects_self_repeat_and_invalid_payload(self):
         self.client.force_login(self.alice)
@@ -478,15 +481,12 @@ class DatingPlatformTests(TestCase):
         )
         self.assertEqual(self.client.get(reverse('chat_room', args=[match.pk])).status_code, 200)
 
-    def test_support_page_offers_only_the_direct_whatsapp_channel(self):
+    def test_support_page_has_no_external_contact_routing(self):
         response = self.client.get(reverse('contact'))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(
-            response,
-            'https://wa.me/2349130273282?text=Hello%20Loveny%20Support,%20I%20need%20help%20with%20my%20account',
-        )
-        self.assertContains(response, 'target="_blank" rel="noopener noreferrer"')
-        self.assertContains(response, 'Chat on WhatsApp')
+        self.assertContains(response, 'Support requests are not available from this page yet.')
+        self.assertNotContains(response, 'wa.me')
+        self.assertNotContains(response, 'WhatsApp')
         self.assertNotContains(response, 'Email Support')
         self.assertNotContains(response, 'mailto:')
 

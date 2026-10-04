@@ -465,7 +465,6 @@ def match_list(request):
             'username': other.username,
             'age': profile.age,
             'first_date_idea': profile.first_date_idea,
-            'whatsapp_url': f"https://wa.me/{profile.whatsapp_number}",
             'expires_in': max(0, (m.expires_at - timezone.now()).days),
             'has_direct_interest': m.has_direct_interest,
             'mode': m.mode,
@@ -1341,9 +1340,4 @@ def settings_view(request):
 def privacy(request): return render(request, 'dating/privacy.html')
 def terms(request): return render(request, 'dating/terms.html')
 def contact(request):
-    return render(request, 'dating/contact.html', {
-        'support_whatsapp_url': (
-            'https://wa.me/2349130273282?text=Hello%20Loveny%20Support,%20'
-            'I%20need%20help%20with%20my%20account'
-        ),
-    })
+    return render(request, 'dating/contact.html')
