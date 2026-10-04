@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django import forms
 # Import VersionAdmin now that the package is installed
 from reversion.admin import VersionAdmin 
 from .models import (
@@ -15,6 +16,43 @@ from .models import (
     Tag,
 )
 
+
+class ProfileAdminForm(forms.ModelForm):
+    PREMIUM_TIER_CATEGORIES = {
+        'dating_premium_tier': 'DATING',
+        'hookup_premium_tier': 'HOOKUP',
+        'sex_call_premium_tier': 'SEX_CALL',
+    }
+
+    class Meta:
+        model = Profile
+        exclude = ('premium_tier', 'premium_expiry')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field_name, category in self.PREMIUM_TIER_CATEGORIES.items():
+            tier_names = list(
+                SubscriptionPlan.objects.filter(category=category)
+                .order_by('duration_days', 'tier_name')
+                .values_list('tier_name', flat=True)
+            )
+            choices = [('', '---------')]
+            seen_tiers = set()
+            for tier_name in tier_names:
+                if tier_name not in seen_tiers:
+                    choices.append((tier_name, tier_name))
+                    seen_tiers.add(tier_name)
+
+            current_tier = self.initial.get(field_name)
+            if current_tier and current_tier not in seen_tiers:
+                choices.append((current_tier, f'{current_tier} (currently assigned)'))
+
+            self.fields[field_name] = forms.ChoiceField(
+                choices=choices,
+                required=False,
+            )
+
+
 # Register Tag model
 @admin.register(Tag)
 class TagAdmin(admin.ModelAdmin):
@@ -29,6 +67,7 @@ class ProfilePhotoInline(admin.TabularInline):
 # Register Profile model and enable version control (rewind)
 @admin.register(Profile)
 class ProfileAdmin(VersionAdmin): # Inherit from VersionAdmin
+    form = ProfileAdminForm
     list_display = (
         'user', 'relationship_mode', 'gender', 'preferred_gender',
         'age', 'is_verified', 'is_vip', 'whatsapp_number', 'last_active',

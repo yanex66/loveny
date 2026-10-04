@@ -5,6 +5,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
+from django import forms
 from django.contrib.auth.models import User
 from django.core import mail
 from django.core.management import call_command
@@ -13,6 +14,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from .admin import ProfileAdminForm
 from .forms import ProfileCreationForm, ProfileForm, SettingsForm
 from .models import (
     CallSession,
@@ -68,6 +70,25 @@ class DatingPlatformTests(TestCase):
 
     def post_json(self, url, data):
         return self.client.post(url, json.dumps(data), content_type='application/json')
+
+    def test_admin_profile_premium_tiers_are_plan_selectors(self):
+        profile = self.alice_profile
+        SubscriptionPlan.objects.create(
+            category='DATING',
+            tier_name='Gold',
+            duration_days=365,
+            price=Decimal('1000.00'),
+        )
+
+        form = ProfileAdminForm(instance=profile)
+
+        self.assertIsInstance(form.fields['dating_premium_tier'], forms.ChoiceField)
+        self.assertIn(
+            ('Gold', 'Gold'),
+            form.fields['dating_premium_tier'].choices,
+        )
+        self.assertNotIn('premium_tier', form.fields)
+        self.assertNotIn('premium_expiry', form.fields)
 
     def test_discovery_excludes_self_acted_profiles_and_other_modes(self):
         self.client.force_login(self.alice)
