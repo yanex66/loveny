@@ -72,7 +72,7 @@ INSTALLED_APPS = [
     'dating',
 ]
 if CLOUDINARY_URL:
-    INSTALLED_APPS[5:5] = ['cloudinary_storage', 'cloudinary']
+    INSTALLED_APPS[5:5] = ['cloudinary']
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -185,7 +185,6 @@ STORAGES = {
         ),
     },
 }
-
 # --- Media Files Configuration (User Uploads) ---
 MEDIA_URL = '/media/'
 MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT', BASE_DIR / 'media'))
