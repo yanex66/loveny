@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
+{% load static %}
 
-{% block title %}LOVENY - Active Connections{% endblock %}
+{% block title %}LOVENY - Your Matches{% endblock %}
 
 {% block content %}
 <div class="min-h-screen relative overflow-hidden bg-gradient-to-br from-rose-50 via-white to-orange-50 font-sans px-4 py-8 text-slate-900">
@@ -8,57 +9,80 @@
     <div class="absolute -z-10 w-96 h-96 bg-orange-200 rounded-full mix-blend-multiply filter blur-[100px] opacity-60 top-20 right-[-100px] animate-blob"></div>
     <div class="absolute -z-10 w-96 h-96 bg-pink-200 rounded-full mix-blend-multiply filter blur-[100px] opacity-60 bottom-40 left-[-100px] animate-blob animation-delay-2000"></div>
 
-    <header class="max-w-4xl mx-auto mb-10 text-center">
+    <header class="max-w-4xl mx-auto mb-8 text-center">
         <h1 class="text-2xl font-black italic tracking-tighter brand-text sm:text-3xl">
-            YOUR HITS
+            YOUR MATCHES
         </h1>
-        <p class="text-slate-500 font-bold uppercase tracking-widest text-xs mt-3 flex items-center justify-center gap-2">
+        <p class="text-slate-500 font-bold uppercase tracking-widest text-xs mt-2 flex items-center justify-center gap-2">
             <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            Connections expire. Move fast.
+            Mutual connections & active sparks
         </p>
     </header>
 
-    <main class="max-w-md mx-auto md:max-w-4xl pb-24">
+    <main class="max-w-md mx-auto md:max-w-4xl pb-28">
         {% if matches %}
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {% for match in matches %}
                 <div class="soft-card relative group rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1 hover:border-pink-300">
                     
-                    <div class="flex justify-between items-start mb-4">
-                        <div>
-                            <h2 class="min-w-0 break-words text-2xl font-black leading-tight text-slate-900 sm:text-3xl">
-                                {{ match.username }}
-                            </h2>
-                            <span class="text-pink-600 font-bold text-lg">{{ match.age|default:'??' }}</span>
-                            <span class="ml-2 rounded-full bg-rose-50 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-slate-600">{{ match.mode }}</span>
-                            {% if match.has_direct_interest %}
-                                <span class="ml-1 rounded-full bg-orange-50 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-orange-700">Direct interest</span>
+                    <div class="flex items-start gap-4 mb-4">
+                        {% if match.avatar %}
+                        <div class="relative shrink-0">
+                            <img src="{{ match.avatar }}" alt="{{ match.username }}" class="h-16 w-16 rounded-2xl object-cover border-2 border-pink-200 shadow-md">
+                            {% if match.is_online %}
+                            <span class="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-emerald-500 border-2 border-white" title="Online"></span>
                             {% endif %}
                         </div>
-                        
-                        <div class="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-1 rounded-full text-xs font-mono font-bold flex items-center gap-1">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 animate-pulse" viewBox="0 0 20 20" fill="currentColor">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
-                            </svg>
-                            {{ match.expires_in }} DAY{{ match.expires_in|pluralize }} LEFT
+                        {% endif %}
+
+                        <div class="flex-1 min-w-0">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h2 class="min-w-0 break-words text-xl font-black leading-tight text-slate-900 sm:text-2xl">
+                                        {{ match.name|default:match.username }}
+                                    </h2>
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <span class="text-pink-600 font-bold text-sm">{{ match.age|default:'18+' }}</span>
+                                        <span class="text-slate-400 text-xs">• {{ match.location|default:'Nearby' }}</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="bg-rose-50 border border-rose-200 text-rose-700 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold flex items-center gap-1 shrink-0">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 animate-pulse" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
+                                    </svg>
+                                    {{ match.expires_in }} DAY{{ match.expires_in|pluralize }} LEFT
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-2 mt-2">
+                                <span class="rounded-full bg-rose-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-600 border border-rose-100">{{ match.mode }}</span>
+                                {% if match.has_direct_interest %}
+                                    <span class="rounded-full bg-orange-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-orange-700 border border-orange-100">Direct interest</span>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
 
-                    <div class="bg-orange-50 rounded-xl p-4 mb-6 border-l-4 border-orange-400">
-                        <p class="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Mission / Date Idea</p>
-                        <p class="text-slate-700 italic font-medium">
-                            "{{ match.first_date_idea|default:'Let\'s figure out a plan together.' }}"
+                    {% if match.first_date_idea %}
+                    <div class="bg-orange-50/70 rounded-2xl p-3.5 mb-4 border border-orange-100">
+                        <p class="text-[9px] text-slate-500 uppercase tracking-widest font-black mb-1">Icebreaker / Date Idea</p>
+                        <p class="text-xs text-slate-700 italic font-medium leading-relaxed">
+                            "{{ match.first_date_idea }}"
                         </p>
                     </div>
-
-                    <a href="{% url 'chat_room' match.id %}" class="mb-3 block w-full rounded-xl bg-pink-600 p-4 text-center font-black uppercase tracking-wider text-white transition hover:bg-pink-500">
-                        Open private chat
-                    </a>
-                    {% if can_video_call %}
-                    <button type="button" data-video-call-target="{{ match.other_user_id }}" class="mb-3 w-full rounded-xl bg-violet-600 p-4 text-center font-bold text-white transition hover:bg-white">
-                        Start video call
-                    </button>
                     {% endif %}
+
+                    <div class="space-y-2 mt-4">
+                        <a href="{% url 'chat_room' match.id %}" class="block w-full py-3.5 rounded-2xl brand-gradient text-center font-black uppercase tracking-wider text-xs text-white shadow-md shadow-pink-600/20 hover:brightness-105 active:scale-[0.99] transition">
+                            Open private chat
+                        </a>
+                        {% if can_video_call %}
+                        <button type="button" data-video-call-target="{{ match.other_user_id }}" class="w-full py-3 rounded-2xl bg-violet-600 text-center font-bold text-xs uppercase tracking-wider text-white shadow-md shadow-violet-600/20 hover:bg-violet-700 active:scale-[0.99] transition">
+                            Start video call
+                        </button>
+                        {% endif %}
+                    </div>
 
                 </div>
                 {% endfor %}
@@ -66,35 +90,20 @@
 
         {% else %}
             <div class="flex flex-col items-center justify-center py-20 text-center">
-                <div class="w-24 h-24 bg-white rounded-full flex items-center justify-center border-2 border-dashed border-rose-200 mb-6">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                <div class="w-24 h-24 bg-white rounded-full flex items-center justify-center border-2 border-dashed border-rose-200 mb-6 shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-pink-400" viewBox="0 0 24 24" fill="currentColor">
+                        <path fill-rule="evenodd" d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z" clip-rule="evenodd" />
                     </svg>
                 </div>
-                <h2 class="text-2xl font-bold text-slate-900 mb-2">No conversations yet</h2>
-                <p class="text-slate-500 max-w-xs mx-auto mb-8">
-                    No conversations yet. Explore hosts to start connecting.
+                <h2 class="text-2xl font-black text-slate-900 mb-2">No matches yet</h2>
+                <p class="text-slate-500 max-w-xs mx-auto mb-8 text-sm leading-relaxed">
+                    When you and someone like each other, your mutual matches will appear here.
                 </p>
-                <a href="{% url 'sex_call_hub' %}" class="px-8 py-3 brand-gradient text-white font-bold rounded-full shadow-lg shadow-pink-600/30 hover:brightness-105 transition-all">
-                    Explore Hosts
+                <a href="{% if user.profile.relationship_mode == 'SEX_CALL' %}{% url 'sex_call_hub' %}{% else %}{% url 'swipe_card' %}{% endif %}" class="px-8 py-3.5 brand-gradient text-white font-black text-sm uppercase tracking-wider rounded-full shadow-lg shadow-pink-600/30 hover:brightness-105 active:scale-95 transition-all">
+                    Find Matches
                 </a>
             </div>
         {% endif %}
     </main>
 </div>
-
-<style>
-    @keyframes blob {
-        0% { transform: translate(0px, 0px) scale(1); }
-        33% { transform: translate(30px, -50px) scale(1.1); }
-        66% { transform: translate(-20px, 20px) scale(0.9); }
-        100% { transform: translate(0px, 0px) scale(1); }
-    }
-    .animate-blob {
-        animation: blob 7s infinite;
-    }
-    .animation-delay-2000 {
-        animation-delay: 2s;
-    }
-</style>
 {% endblock %}

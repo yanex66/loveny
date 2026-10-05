@@ -617,4 +617,4 @@ class GiftItem(models.Model):
 User.add_to_class(
     'datingprofile',
     property(lambda u: getattr(u, 'profile', None) or Profile.objects.filter(user=u).first())
-)
+)
