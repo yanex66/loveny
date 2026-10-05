@@ -120,6 +120,12 @@ def _candidate_queryset(user, include_test_profiles=False):
     if not current_profile:
         return Profile.objects.none()
 
+    is_sex_call_mode = str(current_profile.relationship_mode).upper() in ('SEX_CALL', 'SEXCALL')
+    if is_sex_call_mode:
+        target_gender = 'F' if current_profile.gender == 'M' else ('M' if current_profile.gender == 'F' else None)
+    else:
+        target_gender = current_profile.preferred_gender or ('F' if current_profile.gender == 'M' else ('M' if current_profile.gender == 'F' else None))
+
     if include_test_profiles:
         # Staff/admin preview mode:
         # Guarantee seeded test profiles immediately appear without being blocked
@@ -127,7 +133,10 @@ def _candidate_queryset(user, include_test_profiles=False):
         qs = Profile.objects.exclude(user=user).filter(
             Q(is_test_profile=True) | Q(user__username__startswith='test_user_')
         )
-        if current_profile and str(current_profile.relationship_mode).upper() in ('SEX_CALL', 'SEXCALL'):
+        if target_gender and qs.filter(gender=target_gender).exists():
+            qs = qs.filter(gender=target_gender)
+
+        if is_sex_call_mode:
             sc_qs = qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
             if sc_qs.exists():
                 return sc_qs.select_related('user').prefetch_related('photos', 'tags')
@@ -143,17 +152,18 @@ def _candidate_queryset(user, include_test_profiles=False):
     active_limit = timezone.now() - timedelta(days=60)
     swiped_ids = Swipe.objects.filter(swiper=user).values('swiped_id')
     filters = {
-        'show_in_discovery': True,
         'is_test_profile': False,
         'relationship_mode': current_profile.relationship_mode,
         'last_active__gte': active_limit,
-        'gender': current_profile.preferred_gender,
-        'preferred_gender': current_profile.gender,
         'age__gte': max(18, current_profile.min_age_pref),
         'age__lte': current_profile.max_age_pref,
         'min_age_pref__lte': current_profile.age,
         'max_age_pref__gte': current_profile.age,
     }
+    if target_gender:
+        filters['gender'] = target_gender
+    if not is_sex_call_mode and current_profile.gender in ('M', 'F'):
+        filters['preferred_gender'] = current_profile.gender
 
     candidates = (
         Profile.objects.exclude(user=user)
@@ -192,6 +202,17 @@ def _candidate_queryset(user, include_test_profiles=False):
             candidates = candidates.filter(location__iexact=current_profile.location)
         else:
             return Profile.objects.none()
+
+    if not candidates.exists() and is_sex_call_mode:
+        test_qs = Profile.objects.exclude(user=user).filter(
+            Q(is_test_profile=True) | Q(user__username__startswith='test_user_')
+        )
+        if target_gender and test_qs.filter(gender=target_gender).exists():
+            test_qs = test_qs.filter(gender=target_gender)
+        sc_qs = test_qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
+        if sc_qs.exists():
+            return sc_qs.select_related('user').prefetch_related('photos', 'tags')
+        return test_qs.select_related('user').prefetch_related('photos', 'tags')
 
     return candidates
 
@@ -334,24 +355,24 @@ def profile_detail(request):
 def public_profile(request, pk):
     if request.user.id == pk:
         return redirect('profile')
-    include_test_profiles = bool(
-        request.session.get('staff_test_profile_preview')
-        or request.session.get('preview_test_profiles')
-        or request.GET.get('test_profiles') in ('on', '1', 'true', 'True')
-        or request.GET.get('preview_test_profiles') in ('on', '1', 'true', 'True')
-    )
     qs = Profile.objects.filter(age__gte=18)
-    if not include_test_profiles:
-        qs = qs.filter(show_in_discovery=True, is_test_profile=False)
     profile = get_object_or_404(qs, user_id=pk)
+    viewer_profile = Profile.objects.filter(user=request.user).first()
     main_photo = profile.photos.filter(is_main=True).first() or profile.photos.first()
     other_photos = profile.photos.exclude(id=main_photo.id) if main_photo else profile.photos.all()
+    is_sex_call = (
+        profile.relationship_mode == 'SEX_CALL'
+        or (viewer_profile and viewer_profile.relationship_mode == 'SEX_CALL')
+    )
+    site_config = SiteConfiguration.get_solo()
     
     return render(request, 'dating/public_profile.html', {
         'profile': profile, 
         'main_photo': main_photo, 
         'other_photos': other_photos, 
-        'is_own_profile': False
+        'is_own_profile': False,
+        'is_sex_call': is_sex_call,
+        'site_config': site_config,
     })
 
 @login_required
@@ -615,40 +636,98 @@ def match_list(request):
     })
 
 @login_required
-def likes_list(request):
-    profile = Profile.objects.filter(user=request.user).first()
-    if not profile:
+def messages_inbox(request):
+    viewer_profile = Profile.objects.filter(user=request.user).first()
+    if not viewer_profile:
         return redirect('create_profile')
-    product_type = profile.relationship_mode
-    premium_tier = profile.premium_tier_for()
-    if not profile.is_premium():
-        return render(request, 'dating/likes_list.html', {
-            'likes': [],
-            'premium_required': True,
-            'csrf_token': get_token(request),
-            'product_type': product_type,
-            'premium_tier': premium_tier,
-            'incoming_like_count': Swipe.objects.filter(
-                swiped=request.user,
-                type='LIKE',
-                mode=profile.relationship_mode,
-                swiper_id__in=_candidate_queryset(request.user).values('user_id'),
-            ).count(),
+
+    matches = Match.objects.filter(
+        Q(user1=request.user) | Q(user2=request.user),
+        expires_at__gt=timezone.now(),
+    ).order_by('-created_at')
+
+    for m in matches:
+        _get_or_create_conversation(m)
+
+    conversations = (
+        Conversation.objects
+        .filter(participants=request.user)
+        .prefetch_related('participants', 'messages')
+        .order_by('-updated_at')
+    )
+
+    threads = []
+    for conv in conversations:
+        other_user = conv.participants.exclude(id=request.user.id).first()
+        if not other_user:
+            continue
+        other_profile = Profile.objects.filter(user=other_user).first()
+        if not other_profile:
+            continue
+
+        last_msg = conv.messages.order_by('-created_at').first()
+        unread_count = conv.messages.exclude(sender=request.user).exclude(read_by=request.user).count()
+        payload = _profile_payload(other_profile)
+
+        time_str = ""
+        if last_msg:
+            diff = timezone.now() - last_msg.created_at
+            if diff.days > 0:
+                time_str = f"{diff.days}d ago"
+            elif diff.seconds >= 3600:
+                time_str = f"{diff.seconds // 3600}h ago"
+            elif diff.seconds >= 60:
+                time_str = f"{diff.seconds // 60}m ago"
+            else:
+                time_str = "just now"
+        elif conv.updated_at:
+            diff = timezone.now() - conv.updated_at
+            if diff.days > 0:
+                time_str = f"{diff.days}d ago"
+            elif diff.seconds >= 3600:
+                time_str = f"{diff.seconds // 3600}h ago"
+            else:
+                time_str = "new"
+
+        if last_msg:
+            if last_msg.message_type == 'gift':
+                last_preview = f"🎁 Sent a gift: {last_msg.text}"
+            elif last_msg.message_type == 'sticker':
+                last_preview = "Sent a sticker"
+            else:
+                last_preview = last_msg.text
+        else:
+            last_preview = "Tap to open chat..."
+
+        is_online = True if other_profile.is_test_profile else (
+            other_profile.is_host_ready or (
+                other_profile.last_active and (timezone.now() - other_profile.last_active).total_seconds() < 1800
+            )
+        )
+
+        threads.append({
+            'id': conv.pk,
+            'chat_url': reverse('conversation_room', args=[conv.pk]),
+            'other_avatar': payload['image_url'],
+            'other_username': other_user.username,
+            'other_name': other_user.first_name or other_user.username,
+            'other_age': other_profile.age,
+            'is_online': is_online,
+            'time_ago': time_str,
+            'last_message': last_preview,
+            'unread_count': unread_count,
+            'updated_at': conv.updated_at,
         })
-    eligible_likers = _candidate_queryset(request.user).values('user_id')
-    likers_ids = Swipe.objects.filter(
-        swiped=request.user,
-        type='LIKE',
-        mode=profile.relationship_mode,
-        swiper_id__in=eligible_likers,
-    ).values_list('swiper_id', flat=True)
-    profiles = Profile.objects.filter(user_id__in=likers_ids).prefetch_related('photos')
-    return render(request, 'dating/likes_list.html', {
-        'likes': profiles,
-        'csrf_token': get_token(request),
-        'product_type': product_type,
-        'premium_tier': premium_tier,
+
+    return render(request, 'dating/messages_inbox.html', {
+        'conversations': threads,
     })
+
+
+@login_required
+def likes_list(request):
+    """Deprecated: redirects directly to messages inbox."""
+    return redirect('messages_inbox')
 
 # --- PREMIUM & REWIND ---
 @login_required
@@ -1613,34 +1692,48 @@ def online_hosts_api(request):
         )
     )
 
+    base_qs = Profile.objects.filter(age__gte=18).select_related('user').prefetch_related('photos')
+    if request.user.is_authenticated:
+        base_qs = base_qs.exclude(user=request.user)
+        current_profile = Profile.objects.filter(user=request.user).first()
+        user_gender = getattr(current_profile, 'gender', None) if current_profile else None
+        if user_gender == 'M':
+            if base_qs.filter(gender='F').exists():
+                base_qs = base_qs.filter(gender='F')
+        elif user_gender == 'F':
+            if base_qs.filter(gender='M').exists():
+                base_qs = base_qs.filter(gender='M')
+
     if include_test_profiles:
-        qs = Profile.objects.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_')).select_related('user').prefetch_related('photos')
-        if request.user.is_authenticated:
-            qs = qs.exclude(user=request.user)
+        qs = base_qs.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_'))
         sc_qs = qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
-        hosts = (sc_qs if sc_qs.exists() else qs)[:24]
+        hosts = (sc_qs if sc_qs.exists() else (qs if qs.exists() else base_qs))[:24]
     else:
-        qs = Profile.objects.filter(age__gte=18, is_test_profile=False).select_related('user').prefetch_related('photos')
-        if request.user.is_authenticated:
-            qs = qs.exclude(user=request.user)
-        hosts = qs.order_by('-is_host_ready', '-last_active')[:24]
+        real_qs = base_qs.filter(is_test_profile=False)
+        if real_qs.exists():
+            hosts = real_qs.order_by('-is_host_ready', '-last_active')[:24]
+        else:
+            test_qs = base_qs.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_'))
+            sc_qs = test_qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
+            hosts = (sc_qs if sc_qs.exists() else (test_qs if test_qs.exists() else base_qs))[:24]
 
     results = []
     for p in hosts:
         is_active = True if p.is_test_profile else (p.is_host_ready or (p.last_active and (timezone.now() - p.last_active).total_seconds() < 1800))
         photo = p.photos.filter(is_main=True).first() or p.photos.first()
         avatar = photo.image.url if (photo and photo.image and photo.image.storage.exists(photo.image.name)) else f"https://api.dicebear.com/7.x/avataaars/svg?seed={p.user.username}"
+        loc = (p.location.strip() if p.location else '') or 'Lekki, Lagos'
         results.append({
             'user_id': p.user_id,
             'username': p.user.username,
             'name': p.user.first_name or p.user.username,
             'age': p.age,
             'gender': p.get_gender_display() if hasattr(p, 'get_gender_display') else p.gender,
-            'city': p.location or 'Nearby',
+            'city': loc,
             'avatar': avatar,
             'response_rate': p.response_rate,
             'total_calls': p.total_calls_completed,
-            'is_host_ready': p.is_host_ready,
+            'is_host_ready': getattr(p, 'is_host_ready', True),
             'is_online': is_active,
             'call_rate': site_config.call_rate_per_minute,
             'bio': (p.bio[:50] + '...') if len(p.bio or '') > 50 else (p.bio or 'Available for video call ✨'),
@@ -2623,17 +2716,34 @@ def sex_call_hosts_api(request):
         )
     )
 
-    qs = Profile.objects.exclude(user=request.user)
+    base_qs = Profile.objects.exclude(user=request.user)
 
     if include_test_profiles:
-        test_qs = qs.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_'))
+        test_qs = base_qs.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_'))
         sc_test = test_qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
-        qs = sc_test if sc_test.exists() else test_qs
+        qs = sc_test if sc_test.exists() else (test_qs if test_qs.exists() else base_qs)
     else:
-        qs = qs.filter(is_test_profile=False, show_in_discovery=True)
-        sc_qs = qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL') | Q(is_host_ready=True))
-        if sc_qs.exists():
-            qs = sc_qs
+        user_gender = getattr(current_profile, 'gender', None) if current_profile else None
+        if user_gender == 'M':
+            gender_q = Q(gender='F')
+        elif user_gender == 'F':
+            gender_q = Q(gender='M')
+        else:
+            gender_q = Q()
+
+        if gender_q and base_qs.filter(gender_q).exists():
+            base_qs = base_qs.filter(gender_q)
+
+        real_qs = base_qs.filter(is_test_profile=False)
+        sc_real = real_qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL') | Q(is_host_ready=True))
+        if sc_real.exists():
+            qs = sc_real
+        elif real_qs.exists():
+            qs = real_qs
+        else:
+            test_qs = base_qs.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_'))
+            sc_test = test_qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
+            qs = sc_test if sc_test.exists() else (test_qs if test_qs.exists() else base_qs)
 
     hosts_list = list(qs.select_related('user').prefetch_related('photos')[:50])
 
@@ -2650,11 +2760,12 @@ def sex_call_hosts_api(request):
     data = []
     for h in hosts_list[:40]:
         payload = _profile_payload(h)
+        loc = (h.location.strip() if h.location else '') or 'Lekki, Lagos'
         data.append({
             'id': h.user_id,
             'username': h.user.username,
             'age': h.age or 22,
-            'location': h.location or 'Online',
+            'location': loc,
             'avatar_url': payload['image_url'],
             'is_online': True if h.is_test_profile else (h.is_host_ready or (h.last_active and (timezone.now() - h.last_active).total_seconds() < 1800)),
             'rate_per_minute': site_config.call_rate_per_minute,

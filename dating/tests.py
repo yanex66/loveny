@@ -624,16 +624,10 @@ class DatingPlatformTests(TestCase):
         Swipe.objects.create(swiper=self.bob, swiped=self.alice, type='LIKE')
         self.client.force_login(self.alice)
         response = self.client.get(reverse('likes_list'))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Likes are a Premium feature')
-        self.assertNotContains(response, 'bob,')
-
-        self.alice_profile.dating_premium_expiry = timezone.now() + timedelta(days=1)
-        self.alice_profile.dating_premium_tier = 'SILVER'
-        self.alice_profile.save()
-        response = self.client.get(reverse('likes_list'))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'bob')
+        self.assertRedirects(response, reverse('messages_inbox'))
+        inbox_response = self.client.get(reverse('messages_inbox'))
+        self.assertEqual(inbox_response.status_code, 200)
+        self.assertContains(inbox_response, 'MESSAGES')
 
     def test_chat_requires_active_match_and_respects_privacy(self):
         match = Match.objects.create(

@@ -118,9 +118,16 @@
                 <button type="button" id="gps-button" class="mt-3 w-full rounded-xl border border-pink-200 px-4 py-3 text-sm font-semibold text-pink-700 hover:bg-pink-50">Use current GPS location</button>
                 <p id="gps-status" class="mt-2 text-xs text-slate-500" aria-live="polite"></p>
             </div>
-            <div class="space-y-3 rounded-2xl border border-rose-100 bg-white p-4 text-sm">
-                <label class="flex min-h-11 items-center gap-3">{{ form.show_in_discovery }} <span>Show me in discovery</span></label>
-                <label class="flex min-h-11 items-center gap-3">{{ form.allow_messages }} <span>Allow messages from matches</span></label>
+            <div class="rounded-2xl border border-rose-100 bg-white p-4">
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <div class="pt-0.5">
+                        {{ form.is_dnd }}
+                    </div>
+                    <div>
+                        <span class="block text-sm font-bold text-slate-900">Do Not Disturb (DND)</span>
+                        <span class="block text-xs text-slate-500 mt-0.5">When enabled, incoming video call rings and notifications are silenced.</span>
+                    </div>
+                </label>
             </div>
             <div class="rounded-2xl border border-red-100 bg-red-50/70 p-4">
                 <h3 class="text-sm font-semibold text-red-800">Danger zone</h3>

@@ -153,8 +153,7 @@ class ProfileForm(forms.ModelForm):
             'bio', 
             'first_date_idea', 
             'tags',
-            'show_in_discovery',
-            'allow_messages',
+            'is_dnd',
         ]
         widgets = {
             # Enforce 18+ Rule in the UI
@@ -179,6 +178,7 @@ class ProfileForm(forms.ModelForm):
             'bio': forms.Textarea(attrs={'rows': 3, 'maxlength': '200', 'class': 'form-input'}),
             'tags': forms.CheckboxSelectMultiple(),
             'location': forms.TextInput(attrs={'placeholder': 'e.g. Lagos, Nigeria', 'class': 'form-input'}),
+            'is_dnd': forms.CheckboxInput(attrs={'class': 'form-checkbox h-5 w-5 text-pink-600 rounded focus:ring-pink-500'}),
         }
         labels = {
             'name': 'Name',
@@ -186,8 +186,7 @@ class ProfileForm(forms.ModelForm):
             'min_age_pref': 'Min Age Preference',
             'max_age_pref': 'Max Age Preference',
             'max_distance_km': 'Maximum distance (km)',
-            'show_in_discovery': 'Show my profile in discovery',
-            'allow_messages': 'Allow messages from matches',
+            'is_dnd': 'Do Not Disturb (DND)',
         }
 
     def clean_tags(self):
@@ -210,35 +209,15 @@ class SettingsForm(forms.ModelForm):
     class Meta:
         model = Profile
         fields = [
-            'preferred_gender', 'relationship_mode',
-            'min_age_pref', 'max_age_pref', 'max_distance_km',
-            'latitude', 'longitude', 'show_in_discovery', 'allow_messages',
+            'relationship_mode',
+            'is_dnd',
         ]
         widgets = {
-            'min_age_pref': forms.NumberInput(attrs={'min': '18'}),
-            'max_age_pref': forms.NumberInput(attrs={'min': '18'}),
-            'max_distance_km': forms.NumberInput(attrs={'min': '1', 'max': '500'}),
-            'latitude': forms.NumberInput(attrs={
-                'step': '0.000001',
-                'min': '-90',
-                'max': '90',
-                'placeholder': 'e.g. 6.5244',
-            }),
-            'longitude': forms.NumberInput(attrs={
-                'step': '0.000001',
-                'min': '-180',
-                'max': '180',
-                'placeholder': 'e.g. 3.3792',
-            }),
+            'is_dnd': forms.CheckboxInput(attrs={'class': 'form-checkbox h-5 w-5 text-pink-600 rounded focus:ring-pink-500'}),
         }
         labels = {
-            'preferred_gender': 'I want to see',
             'relationship_mode': 'Connection mode',
-            'min_age_pref': 'Minimum Age',
-            'max_age_pref': 'Maximum Age',
-            'max_distance_km': 'Maximum distance (km)',
-            'show_in_discovery': 'Show my profile in discovery',
-            'allow_messages': 'Allow messages from matches',
+            'is_dnd': 'Do Not Disturb (DND)',
         }
 
 

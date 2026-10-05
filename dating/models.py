@@ -93,6 +93,7 @@ class Profile(models.Model):
     last_active = models.DateTimeField(default=timezone.now)
     show_in_discovery = models.BooleanField(default=True)
     allow_messages = models.BooleanField(default=True)
+    is_dnd = models.BooleanField(default=False, help_text="When enabled, incoming video call rings and notifications are silenced.")
     is_test_profile = models.BooleanField(default=False, editable=False)
 
     # --- PREMIUM FEATURES ---
@@ -611,3 +612,9 @@ class GiftItem(models.Model):
 
     def __str__(self):
         return f"{self.icon} {self.name} ({self.coin_cost} Coins)"
+
+
+User.add_to_class(
+    'datingprofile',
+    property(lambda u: getattr(u, 'profile', None) or Profile.objects.filter(user=u).first())
+)

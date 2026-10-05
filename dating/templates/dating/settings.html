@@ -20,7 +20,7 @@
     <div class="max-w-lg mx-auto px-4 py-6 sm:px-6 space-y-8">
         
         <section>
-            <h2 class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 ml-1">Discovery preferences</h2>
+            <h2 class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 ml-1">Preferences & Availability</h2>
             
             <form method="post" class="space-y-4">
                 {% csrf_token %}
@@ -36,50 +36,27 @@
                 <div class="soft-card rounded-3xl p-5 sm:p-7">
                     <div class="space-y-5">
                         <div class="form-group">
-                            <label for="{{ form.preferred_gender.id_for_label }}">I want to see</label>
-                            {{ form.preferred_gender }}
-                            {{ form.preferred_gender.errors }}
-                        </div>
-                        <div class="form-group">
-                            <label for="{{ form.relationship_mode.id_for_label }}">Connection mode</label>
+                            <label for="{{ form.relationship_mode.id_for_label }}" class="block text-xs font-bold text-pink-700 uppercase tracking-widest mb-1">Connection mode</label>
                             {{ form.relationship_mode }}
                             {{ form.relationship_mode.errors }}
-                            <p class="mt-2 text-xs text-slate-500">Choose Dating, Hookup, or Sex Call to shape your discovery feed.</p>
-                        </div>
-                        <div class="form-group">
-                            <label for="{{ form.min_age_pref.id_for_label }}">Minimum age (18+)</label>
-                            {{ form.min_age_pref }}
-                            {{ form.min_age_pref.errors }}
-                        </div>
-                        <div class="form-group">
-                            <label for="{{ form.max_age_pref.id_for_label }}">Maximum age</label>
-                            {{ form.max_age_pref }}
-                            {{ form.max_age_pref.errors }}
-                        </div>
-                        <div class="form-group">
-                            <label for="{{ form.max_distance_km.id_for_label }}">Maximum distance (km)</label>
-                            {{ form.max_distance_km }}
-                            {{ form.max_distance_km.errors }}
-                        </div>
-                        <p class="text-xs leading-relaxed text-slate-500">Coordinates are only used for nearby Hookup discovery and are never shown to other members.</p>
-                        <div class="form-group">
-                            <label for="{{ form.latitude.id_for_label }}">Latitude (optional)</label>
-                            {{ form.latitude }}
-                            {{ form.latitude.errors }}
-                        </div>
-                        <div class="form-group">
-                            <label for="{{ form.longitude.id_for_label }}">Longitude (optional)</label>
-                            {{ form.longitude }}
-                            {{ form.longitude.errors }}
+                            <p class="mt-2 text-xs text-slate-500">Choose Dating, Hookup, or Sex Call to shape your experience.</p>
                         </div>
                     </div>
-                    <div class="mt-6 space-y-3">
-                        <label class="toggle-row">{{ form.show_in_discovery }} <span>Show my profile in discovery</span></label>
-                        <label class="toggle-row">{{ form.allow_messages }} <span>Allow messages from matches</span></label>
+
+                    <div class="mt-6 rounded-2xl bg-rose-50/70 border border-rose-100 p-4">
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <div class="pt-0.5">
+                                {{ form.is_dnd }}
+                            </div>
+                            <div>
+                                <span class="block text-sm font-black text-slate-900 uppercase tracking-tight">Do Not Disturb (DND)</span>
+                                <span class="block text-xs text-slate-500 mt-1 leading-relaxed">When enabled, incoming video call rings and notifications are silenced.</span>
+                            </div>
+                        </label>
                     </div>
 
                     <button type="submit" class="w-full mt-7 py-4 brand-gradient text-white font-black uppercase tracking-widest rounded-2xl shadow-lg transition-transform hover:scale-[1.01]">
-                        Update Discovery
+                        Save Settings
                     </button>
                 </div>
             </form>
