@@ -98,12 +98,22 @@
         </section>
     </div>
 
-    <div class="fixed bottom-[calc(7rem+env(safe-area-inset-bottom))] left-1/2 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 px-4 flex justify-center items-center gap-4 z-40 pointer-events-none">
-        <button onclick="handleSwipe('PASS')" class="pointer-events-auto w-16 h-16 rounded-full bg-gray-950 border-2 border-red-500 text-red-500 flex items-center justify-center shadow-2xl active:scale-90 transition hover:bg-red-500 hover:text-white backdrop-blur-md">
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+    <div class="fixed bottom-[calc(7rem+env(safe-area-inset-bottom))] left-1/2 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 px-4 flex justify-center items-center gap-3 z-40 pointer-events-none">
+        <button onclick="handleSwipe('PASS')" class="pointer-events-auto w-14 h-14 rounded-full bg-gray-950 border-2 border-red-500 text-red-500 flex items-center justify-center shadow-2xl active:scale-90 transition hover:bg-red-500 hover:text-white backdrop-blur-md">
+            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
         </button>
-        <button onclick="handleSwipe('LIKE')" class="pointer-events-auto w-20 h-20 rounded-full bg-gradient-to-tr from-pink-600 to-purple-600 text-white flex items-center justify-center shadow-2xl border-4 border-gray-950 active:scale-90 transition hover:scale-110">
-            <svg class="w-10 h-10 fill-current" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        <button type="button"
+                data-call-target-id="{{ profile.user.id }}"
+                data-call-target-name="{{ profile.user.username }}"
+                onclick="window.lovenyStartVideoCall && window.lovenyStartVideoCall({{ profile.user.id }})"
+                class="pointer-events-auto flex items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 px-5 py-3.5 text-white font-black text-xs uppercase tracking-wider shadow-2xl border-2 border-white active:scale-90 transition hover:scale-105"
+                title="Direct Video Call">
+            <span class="text-base">📹</span>
+            <span>Call Now</span>
+            <span class="rounded-full bg-black/35 px-1.5 py-0.5 text-[10px] text-amber-200 font-bold">🪙{{ site_config.call_rate_per_minute|default:20 }}/m</span>
+        </button>
+        <button onclick="handleSwipe('LIKE')" class="pointer-events-auto w-16 h-16 rounded-full bg-gradient-to-tr from-pink-600 to-purple-600 text-white flex items-center justify-center shadow-2xl border-4 border-gray-950 active:scale-90 transition hover:scale-110">
+            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
         </button>
     </div>
 

@@ -67,6 +67,8 @@
         champagne: '🥂',
         crown: '👑',
         car: '🏎️',
+        ring: '💍',
+        yacht: '🛥️',
     };
     const giftNames = {
         rose: 'Rose',
@@ -74,7 +76,100 @@
         champagne: 'Champagne',
         crown: 'Crown',
         car: 'Supercar',
+        ring: 'Diamond Ring',
+        yacht: 'Luxury Yacht',
     };
+
+    // --- Web Audio Ringtone Synthesizer ---
+    let audioCtx = null;
+    let ringInterval = null;
+    let ringOscillators = [];
+
+    function getAudioContext() {
+        if (!audioCtx) {
+            const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtxClass) audioCtx = new AudioCtxClass();
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+        }
+        return audioCtx;
+    }
+
+    function stopRingtone() {
+        if (ringInterval) {
+            clearInterval(ringInterval);
+            ringInterval = null;
+        }
+        ringOscillators.forEach(osc => {
+            try { osc.stop(); osc.disconnect(); } catch (e) {}
+        });
+        ringOscillators = [];
+    }
+
+    function playOutgoingRing() {
+        stopRingtone();
+        const ctx = getAudioContext();
+        if (!ctx) return;
+
+        function beep() {
+            if (!activeCall || !isCaller || activeCall.status !== 'ringing') {
+                stopRingtone();
+                return;
+            }
+            try {
+                const now = ctx.currentTime;
+                const osc1 = ctx.createOscillator();
+                const osc2 = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc1.type = 'sine'; osc1.frequency.setValueAtTime(440, now);
+                osc2.type = 'sine'; osc2.frequency.setValueAtTime(480, now);
+                gain.gain.setValueAtTime(0.06, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+
+                osc1.connect(gain); osc2.connect(gain);
+                gain.connect(ctx.destination);
+                osc1.start(now); osc2.start(now);
+                osc1.stop(now + 1.2); osc2.stop(now + 1.2);
+                ringOscillators = [osc1, osc2];
+            } catch (e) {}
+        }
+        beep();
+        ringInterval = setInterval(beep, 3000);
+    }
+
+    function playIncomingRing() {
+        stopRingtone();
+        const ctx = getAudioContext();
+        if (!ctx) return;
+
+        function melody() {
+            if (!incomingRoomId) {
+                stopRingtone();
+                return;
+            }
+            try {
+                const now = ctx.currentTime;
+                const notes = [523.25, 659.25, 783.99, 1046.5];
+                notes.forEach((freq, idx) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    const start = now + idx * 0.16;
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, start);
+                    gain.gain.setValueAtTime(0.10, start);
+                    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.15);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(start);
+                    osc.stop(start + 0.15);
+                    ringOscillators.push(osc);
+                });
+            } catch (e) {}
+        }
+        melody();
+        ringInterval = setInterval(melody, 2200);
+    }
 
     function csrfToken() {
         const token = document.cookie.split('; ').find(item => item.startsWith('csrftoken='));
@@ -433,6 +528,7 @@
 
     // --- Call Telemetry, Timers & Heartbeats ---
     function startCallTimer() {
+        stopRingtone();
         stopCallTimer();
         callDurationSeconds = 0;
         updateCallTimerDisplay();
@@ -540,11 +636,13 @@
         if (incomingSheet) {
             incomingSheet.classList.remove('hidden');
             incomingSheet.classList.add('flex');
+            playIncomingRing();
         }
     }
 
     function hideIncoming() {
         incomingRoomId = null;
+        stopRingtone();
         if (incomingSheet) {
             incomingSheet.classList.add('hidden');
             incomingSheet.classList.remove('flex');
@@ -568,6 +666,7 @@
 
     function closeRoom() {
         stopPolling();
+        stopRingtone();
         if (peer) {
             peer.onicecandidate = null;
             peer.ontrack = null;
@@ -738,6 +837,7 @@
                 updateWalletUI();
             }
             showRoom('Starting secure video…');
+            playOutgoingRing();
             await createPeer();
             const offer = await peer.createOffer();
             await peer.setLocalDescription(offer);
@@ -762,6 +862,7 @@
         const roomId = incomingRoomId;
         if (!roomId) return;
         hideIncoming();
+        stopRingtone();
         if (action === 'decline') {
             try {
                 await api(`${apiPrefix}${roomId}/respond/`, {
@@ -871,13 +972,95 @@
         });
     }
 
-    // Gift buttons click listeners
+    // Dynamic gifts loading from server
+    async function fetchGifts() {
+        const url = config.dataset.giftsUrl || '/api/gifts/';
+        try {
+            const data = await api(url);
+            if (data.status === 'success' && data.gifts && data.gifts.length > 0) {
+                renderGiftsDrawer(data.gifts);
+            }
+        } catch (err) {
+            console.warn('Could not load dynamic gifts', err);
+        }
+    }
+
+    function renderGiftsDrawer(gifts) {
+        const grid = document.getElementById('gifts-grid-container') || callGiftDrawer?.querySelector('.grid');
+        if (!grid || !gifts.length) return;
+        grid.innerHTML = gifts.map(g => {
+            giftIcons[g.slug] = g.icon;
+            giftNames[g.slug] = g.name;
+            return `
+            <button type="button" class="gift-btn flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/10 p-2 transition hover:bg-pink-500/30 hover:scale-105 active:scale-95" data-gift-type="${g.slug}" data-cost="${g.coin_cost}">
+                <span class="text-2xl">${g.icon}</span>
+                <span class="text-[10px] font-bold text-white truncate max-w-full">${g.name}</span>
+                <span class="text-[10px] font-black text-amber-300">${g.coin_cost} 🪙</span>
+            </button>`;
+        }).join('');
+
+        grid.querySelectorAll('.gift-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const giftType = btn.dataset.giftType;
+                const cost = Number(btn.dataset.cost);
+                sendGift(giftType, cost);
+            });
+        });
+    }
+
+    // Gift buttons click listeners (initial fallback)
     document.querySelectorAll('.gift-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const giftType = btn.dataset.giftType;
             const cost = Number(btn.dataset.cost);
             sendGift(giftType, cost);
         });
+    });
+
+    // Speed Match / Quick Match Function
+    async function quickMatch() {
+        const quickUrl = config.dataset.quickMatchUrl || '/api/calls/quick-match/';
+        if (userCoins < 20 && !isSexCallPremium) {
+            toast('At least 20 coins are required for Speed Match. Opening Coin Store...', true);
+            openCoinStore();
+            return;
+        }
+        toast('Searching for an online host... 🔍');
+        try {
+            const res = await api(quickUrl, {method: 'POST', body: '{}'});
+            if (res.status === 'success' && res.room_id) {
+                activeCall = res.call;
+                isCaller = true;
+                if (res.call.caller_coins !== undefined) {
+                    userCoins = res.call.caller_coins;
+                    updateWalletUI();
+                }
+                showRoom(`Connecting to ${res.host?.username || 'Host'}…`);
+                playOutgoingRing();
+                await createPeer();
+                const offer = await peer.createOffer();
+                await peer.setLocalDescription(offer);
+                await sendSignal('offer', peer.localDescription.toJSON());
+                startPolling();
+            }
+        } catch (err) {
+            toast(err.message || 'No hosts are available right now. Please try again!');
+        }
+    }
+
+    // Global click delegation for [data-call-target-id] and [data-quick-match-trigger]
+    document.addEventListener('click', event => {
+        const callBtn = event.target.closest('[data-call-target-id]');
+        if (callBtn) {
+            event.preventDefault();
+            const targetId = callBtn.getAttribute('data-call-target-id');
+            if (targetId) initiateCall(targetId);
+        }
+        const quickBtn = event.target.closest('[data-quick-match-trigger]');
+        if (quickBtn) {
+            event.preventDefault();
+            quickMatch();
+        }
     });
 
     // Coin Store Buttons
@@ -934,12 +1117,14 @@
         });
     }
 
-    // Initialize Wallet on load
+    // Initialize on load
     fetchWallet();
     fetchCoinPackages();
+    fetchGifts();
 
     // Export global helpers
     window.lovenyStartVideoCall = initiateCall;
     window.lovenyOpenCoinStore = openCoinStore;
+    window.lovenyQuickMatch = quickMatch;
 })();
 

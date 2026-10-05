@@ -23,12 +23,15 @@ from .models import (
     CoinPackage,
     CoinTransaction,
     Conversation,
+    GiftItem,
     Match,
     PaymentTransaction,
     Profile,
     ProfilePhoto,
+    SiteConfiguration,
     SubscriptionPlan,
     Swipe,
+    WithdrawalRequest,
 )
 from .views import _provider_payment, get_profile_batch
 
@@ -1212,4 +1215,178 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(call.status, 'ended')
         self.alice_profile.refresh_from_db()
         self.assertEqual(self.alice_profile.coin_balance, 0)
+
+    def test_site_configuration_dynamic_rates_and_singleton(self):
+        cfg = SiteConfiguration.get_solo()
+        cfg.call_rate_per_minute = 35
+        cfg.grace_period_seconds = 15
+        cfg.host_commission_percentage = 80
+        cfg.welcome_bonus_coins = 50
+        cfg.announcement_banner = "Test Site Announcement"
+        cfg.is_announcement_active = True
+        cfg.save()
+
+        res = self.client.get(reverse('site_config_api'))
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['call_rate_per_minute'], 35)
+        self.assertEqual(data['grace_period_seconds'], 15)
+        self.assertEqual(data['host_commission_percentage'], 80)
+        self.assertEqual(data['welcome_bonus_coins'], 50)
+        self.assertEqual(data['announcement_banner'], "Test Site Announcement")
+        self.assertTrue(data['is_announcement_active'])
+
+        # Singleton enforcement
+        cfg2 = SiteConfiguration.objects.create(call_rate_per_minute=99)
+        self.assertEqual(cfg2.pk, 1)
+
+    def test_gifts_api_and_dynamic_gift_item(self):
+        GiftItem.objects.all().delete()
+        g1 = GiftItem.objects.create(name='Magic Wand', slug='wand', icon='🪄', coin_cost=75, order=1)
+        g2 = GiftItem.objects.create(name='Golden Castle', slug='castle', icon='🏰', coin_cost=400, order=2)
+
+        res = self.client.get(reverse('gifts_api'))
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(len(data['gifts']), 2)
+        self.assertEqual(data['gifts'][0]['slug'], 'wand')
+        self.assertEqual(data['gifts'][0]['coin_cost'], 75)
+
+        # Alice sends custom gift to Bob during active call
+        Match.objects.create(user1=self.alice, user2=self.bob, expires_at=timezone.now() + timedelta(days=1))
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.coin_balance = 100
+        self.alice_profile.save()
+
+        self.client.force_login(self.alice)
+        call_res = self.post_json(reverse('call_initiate_api'), {'receiver_id': self.bob.pk})
+        room_id = call_res.json()['call']['room_id']
+
+        self.client.force_login(self.bob)
+        self.post_json(reverse('call_respond_api', args=[room_id]), {'action': 'accept'})
+
+        self.client.force_login(self.alice)
+        gift_res = self.post_json(reverse('call_gift_api', args=[room_id]), {'gift_type': 'wand'})
+        self.assertEqual(gift_res.status_code, 200)
+        g_data = gift_res.json()
+        self.assertEqual(g_data['gift']['coins'], 75)
+        self.assertEqual(g_data['caller_coins'], 25)
+        # Commission is 70% of 75 = 52 diamonds
+        self.assertEqual(g_data['diamond_award'], 52)
+
+    def test_online_hosts_api(self):
+        self.bob_profile.is_host_ready = True
+        self.bob_profile.response_rate = 96
+        self.bob_profile.total_calls_completed = 14
+        self.bob_profile.save()
+
+        res = self.client.get(reverse('online_hosts_api'))
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['status'], 'success')
+        self.assertTrue(len(data['hosts']) >= 1)
+        bob_item = next(h for h in data['hosts'] if h['username'] == 'bob')
+        self.assertTrue(bob_item['is_host_ready'])
+        self.assertEqual(bob_item['response_rate'], 96)
+        self.assertEqual(bob_item['total_calls'], 14)
+
+    def test_quick_call_match_api(self):
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.coin_balance = 50
+        self.alice_profile.save()
+
+        self.bob_profile.is_host_ready = True
+        self.bob_profile.save()
+
+        self.client.force_login(self.alice)
+        res = self.client.post(reverse('quick_call_match_api'), content_type='application/json')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['status'], 'success')
+        self.assertTrue('room_id' in data)
+        self.assertEqual(data['call']['receiver_name'], 'bob')
+        self.assertEqual(data['host']['username'], 'bob')
+
+    def test_withdrawal_request_flow(self):
+        cfg = SiteConfiguration.get_solo()
+        cfg.min_diamond_withdrawal = 100
+        cfg.diamond_exchange_rate_naira = Decimal('10.00')
+        cfg.save()
+
+        self.bob_profile.earned_diamonds = 250
+        self.bob_profile.save()
+
+        self.client.force_login(self.bob)
+
+        # Try below minimum
+        res_fail = self.post_json(reverse('withdrawal_request_api'), {
+            'diamonds': 50,
+            'bank_name': 'Kuda',
+            'account_number': '1234567890',
+            'account_name': 'Bob Tester',
+        })
+        self.assertEqual(res_fail.status_code, 400)
+        self.assertEqual(res_fail.json()['message'], 'below_minimum')
+
+        # Try exceeding balance
+        res_fail2 = self.post_json(reverse('withdrawal_request_api'), {
+            'diamonds': 500,
+            'bank_name': 'Kuda',
+            'account_number': '1234567890',
+            'account_name': 'Bob Tester',
+        })
+        self.assertEqual(res_fail2.status_code, 400)
+        self.assertEqual(res_fail2.json()['message'], 'insufficient_diamonds')
+
+        # Valid withdrawal
+        res_ok = self.post_json(reverse('withdrawal_request_api'), {
+            'diamonds': 150,
+            'bank_name': 'OPay',
+            'account_number': '9876543210',
+            'account_name': 'Bob Payout',
+        })
+        self.assertEqual(res_ok.status_code, 200)
+        data = res_ok.json()
+        self.assertEqual(data['status'], 'success')
+        self.assertEqual(data['diamonds_withdrawn'], 150)
+        # 150 * 10 = 1500 Naira
+        self.assertEqual(data['naira_amount'], '1500.00')
+        self.assertEqual(data['remaining_diamonds'], 100)
+
+        self.bob_profile.refresh_from_db()
+        self.assertEqual(self.bob_profile.earned_diamonds, 100)
+        self.assertTrue(
+            WithdrawalRequest.objects.filter(
+                user=self.bob,
+                diamonds_amount=150,
+                status='PENDING',
+            ).exists()
+        )
+
+    def test_wallet_history_api(self):
+        CoinTransaction.objects.create(
+            user=self.bob,
+            amount=50,
+            transaction_type='WELCOME_BONUS',
+            description='Test bonus',
+        )
+        WithdrawalRequest.objects.create(
+            user=self.bob,
+            diamonds_amount=200,
+            naira_amount=Decimal('1000.00'),
+            bank_name='GTBank',
+            account_number='0123456789',
+            account_name='Bob Testing',
+            status='PENDING',
+        )
+
+        self.client.force_login(self.bob)
+        res = self.client.get(reverse('wallet_history_api'))
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['status'], 'success')
+        self.assertTrue(len(data['transactions']) >= 1)
+        self.assertTrue(len(data['withdrawals']) >= 1)
+        self.assertEqual(data['withdrawals'][0]['diamonds'], 200)
+
 

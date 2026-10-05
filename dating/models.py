@@ -1,5 +1,6 @@
 import uuid
 import os
+from decimal import Decimal
 from django.db import models
 from django.contrib.auth import get_user_model 
 from django.utils import timezone
@@ -109,6 +110,9 @@ class Profile(models.Model):
     # --- COIN & DIAMOND WALLET ---
     coin_balance = models.PositiveIntegerField(default=0, help_text="Available coin balance for video calls & gifts")
     earned_diamonds = models.PositiveIntegerField(default=0, help_text="Diamonds earned by hosts from received calls & gifts")
+    response_rate = models.PositiveSmallIntegerField(default=98, validators=[MinValueValidator(1), MaxValueValidator(100)], help_text="Host response rate %")
+    total_calls_completed = models.PositiveIntegerField(default=0, help_text="Completed video calls count")
+    is_host_ready = models.BooleanField(default=True, help_text="Ready to accept incoming video calls")
 
     def can_call_with_coins(self, min_coins=20):
         return self.coin_balance >= min_coins
@@ -503,3 +507,107 @@ class CallSignal(models.Model):
 
     def __str__(self):
         return f'{self.signal_type} for call {self.call.room_id}'
+
+
+class SiteConfiguration(models.Model):
+    """
+    Global system settings configurable directly in Admin.
+    Singleton pattern - automatically retrieves or creates pk=1.
+    """
+    call_rate_per_minute = models.PositiveIntegerField(
+        default=20,
+        help_text="Coins deducted per minute during Sex Calls",
+    )
+    grace_period_seconds = models.PositiveIntegerField(
+        default=20,
+        help_text="Calls ending under this duration are 100% free / 0 coins charged",
+    )
+    host_commission_percentage = models.PositiveIntegerField(
+        default=70,
+        validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="Percentage of call coins and gifts awarded to hosts in diamonds (e.g. 70%)",
+    )
+    welcome_bonus_coins = models.PositiveIntegerField(
+        default=30,
+        help_text="Free starter coins granted to new users",
+    )
+    min_diamond_withdrawal = models.PositiveIntegerField(
+        default=500,
+        help_text="Minimum diamond balance required for a host to request a cashout",
+    )
+    diamond_exchange_rate_naira = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        default=Decimal('5.00'),
+        help_text="Naira value per 1 diamond (e.g. ₦5.00/diamond => 500 diamonds = ₦2,500)",
+    )
+    announcement_banner = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Top promotional banner text (e.g. '🔥 Weekend Special: 2x Host Diamonds!')",
+    )
+    is_announcement_active = models.BooleanField(
+        default=False,
+        help_text="Enable announcement banner across the app",
+    )
+
+    class Meta:
+        verbose_name = 'Site Configuration'
+        verbose_name_plural = 'Site Configuration'
+
+    def __str__(self):
+        return f"LOVENY System Config (Rate: {self.call_rate_per_minute}🪙/min, Grace: {self.grace_period_seconds}s)"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        kwargs.pop('force_insert', None)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls):
+        config, _ = cls.objects.get_or_create(pk=1)
+        return config
+
+
+class GiftItem(models.Model):
+    """
+    Customizable in-call gifts manageable directly from Admin.
+    """
+    name = models.CharField(max_length=50)
+    slug = models.SlugField(max_length=50, unique=True, help_text="Unique key (e.g. rose, kiss, champagne)")
+    icon = models.CharField(max_length=20, default='🎁', help_text="Emoji symbol (e.g. 🌹, 💋, 🥂, 👑, 🏎️)")
+    coin_cost = models.PositiveIntegerField(default=10, help_text="Coin cost to send")
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveSmallIntegerField(default=0, help_text="Display order in gift drawer")
+
+    class Meta:
+        ordering = ('order', 'coin_cost')
+
+    def __str__(self):
+        return f"{self.icon} {self.name} ({self.coin_cost} Coins)"
+
+
+class WithdrawalRequest(models.Model):
+    STATUS_CHOICES = (
+        ('PENDING', 'Pending Review'),
+        ('APPROVED', 'Approved'),
+        ('PAID', 'Paid Out'),
+        ('REJECTED', 'Rejected'),
+    )
+
+    user = models.ForeignKey(User, related_name='withdrawal_requests', on_delete=models.CASCADE)
+    diamonds_amount = models.PositiveIntegerField()
+    naira_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    bank_name = models.CharField(max_length=100)
+    account_number = models.CharField(max_length=30)
+    account_name = models.CharField(max_length=150)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING', db_index=True)
+    admin_note = models.TextField(blank=True, help_text="Payment transaction reference or notes")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+
+    def __str__(self):
+        return f"Withdrawal: {self.user.username} - {self.diamonds_amount}💎 (₦{self.naira_amount}) [{self.status}]"

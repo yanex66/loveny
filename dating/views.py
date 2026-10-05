@@ -30,12 +30,15 @@ from .models import (
     CoinPackage,
     CoinTransaction,
     Conversation,
+    GiftItem,
     Match,
     PaymentTransaction,
     Profile,
     ProfilePhoto,
+    SiteConfiguration,
     SubscriptionPlan,
     Swipe,
+    WithdrawalRequest,
 )
 from .forms import (
     LoginForm,
@@ -229,6 +232,7 @@ def _profile_payload(profile):
         else ''
     )
     bio = profile.bio
+    config = SiteConfiguration.get_solo()
     return {
         'id': profile.user_id,
         'username': profile.user.username,
@@ -245,6 +249,10 @@ def _profile_payload(profile):
         'is_vip': profile.is_vip,
         'is_test_profile': profile.is_test_profile,
         'is_online': profile.last_active >= timezone.now() - timedelta(minutes=10),
+        'response_rate': getattr(profile, 'response_rate', 98),
+        'total_calls_completed': getattr(profile, 'total_calls_completed', 0),
+        'is_host_ready': getattr(profile, 'is_host_ready', True),
+        'call_rate_per_minute': config.call_rate_per_minute,
     }
 
 # --- API: Get Profiles JSON for Swipe UI ---
@@ -927,7 +935,8 @@ def _call_payload(call):
 
     caller_coins = caller_profile.coin_balance if caller_profile else 0
     is_unlimited = bool(caller_profile and (caller_profile.user.is_superuser or caller_profile.is_sex_call_premium))
-    rate = getattr(call, 'rate_per_minute', 20) or 20
+    config = SiteConfiguration.get_solo()
+    rate = getattr(call, 'rate_per_minute', None) or getattr(config, 'call_rate_per_minute', 20) or 20
     max_seconds = 86400 if is_unlimited else ((caller_coins // rate) * 60)
 
     elapsed_seconds = 0
@@ -935,6 +944,7 @@ def _call_payload(call):
         elapsed_seconds = max(0, int((timezone.now() - call.started_at).total_seconds()))
 
     remaining_seconds = 86400 if is_unlimited else max(0, max_seconds - elapsed_seconds)
+    grace_period = getattr(config, 'grace_period_seconds', 20)
 
     return {
         'room_id': str(call.room_id),
@@ -951,21 +961,32 @@ def _call_payload(call):
         'max_seconds': max_seconds,
         'elapsed_seconds': elapsed_seconds,
         'remaining_seconds': remaining_seconds,
-        'grace_period_seconds': 20,
+        'grace_period_seconds': grace_period,
         'coins_spent': getattr(call, 'coins_spent', 0),
         'duration_seconds': getattr(call, 'duration_seconds', 0),
-        'grace_period_applied': bool(getattr(call, 'duration_seconds', 0) < 20 and call.status in ('ended', 'declined')),
+        'grace_period_applied': bool(getattr(call, 'duration_seconds', 0) < grace_period and call.status in ('ended', 'declined')),
     }
 
 
-def _can_use_sex_call(profile):
+def _can_use_sex_call(profile_or_user):
+    if not profile_or_user:
+        return False
+    if isinstance(profile_or_user, User):
+        profile = getattr(profile_or_user, 'profile', None) or Profile.objects.filter(user=profile_or_user).first()
+        user = profile_or_user
+    else:
+        profile = profile_or_user
+        user = getattr(profile, 'user', None)
+
+    if user and user.is_superuser:
+        return True
+    if not profile:
+        return False
+    config = SiteConfiguration.get_solo()
+    min_coins = getattr(config, 'call_rate_per_minute', 20) or 20
     return bool(
-        profile
-        and (
-            profile.user.is_superuser
-            or profile.is_sex_call_premium
-            or profile.coin_balance >= 20
-        )
+        profile.is_sex_call_premium
+        or profile.coin_balance >= min_coins
     )
 
 
@@ -980,12 +1001,14 @@ def call_initiate_api(request):
         return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
 
     caller_profile = Profile.objects.filter(user=request.user).first()
+    config = SiteConfiguration.get_solo()
+    min_coins = getattr(config, 'call_rate_per_minute', 20) or 20
     if not _can_use_sex_call(caller_profile):
         return JsonResponse({
             'status': 'error',
             'message': 'sex_call_pass_required',
             'coin_balance': caller_profile.coin_balance if caller_profile else 0,
-            'required_coins': 20,
+            'required_coins': min_coins,
             'subscribe_url': reverse('premium_landing'),
         }, status=403)
     try:
@@ -1007,8 +1030,9 @@ def call_initiate_api(request):
         caller=request.user,
         receiver=receiver,
         status='ringing',
-        rate_per_minute=20,
+        rate_per_minute=min_coins,
     )
+    return JsonResponse({'status': 'success', 'call': _call_payload(call)}, status=201)
     return JsonResponse({'status': 'success', 'call': _call_payload(call)}, status=201)
 
 
@@ -1092,7 +1116,11 @@ def call_end_api(request, room_id):
                 receiver_profile = Profile.objects.select_for_update().filter(user_id=call.receiver_id).first()
                 is_unlimited = bool(caller_profile and (caller_profile.user.is_superuser or caller_profile.is_sex_call_premium))
 
-                if call.duration_seconds < 20:
+                config = SiteConfiguration.get_solo()
+                grace_period = getattr(config, 'grace_period_seconds', 20)
+                commission = Decimal(getattr(config, 'host_commission_percentage', 70)) / Decimal(100)
+
+                if call.duration_seconds < grace_period:
                     call.coins_spent = 0
                     if caller_profile:
                         CoinTransaction.objects.create(
@@ -1100,11 +1128,11 @@ def call_end_api(request, room_id):
                             amount=0,
                             transaction_type='CALL_REFUND',
                             call=call,
-                            description=f'Grace period protected: {call.duration_seconds}s < 20s. 0 coins charged.',
+                            description=f'Grace period protected: {call.duration_seconds}s < {grace_period}s. 0 coins charged.',
                         )
                 elif not is_unlimited and caller_profile:
                     billed_minutes = max(1, math.ceil(call.duration_seconds / 60))
-                    rate = getattr(call, 'rate_per_minute', 20) or 20
+                    rate = getattr(call, 'rate_per_minute', config.call_rate_per_minute) or config.call_rate_per_minute
                     coins_due = billed_minutes * rate
                     coins_deducted = min(caller_profile.coin_balance, coins_due)
 
@@ -1113,7 +1141,7 @@ def call_end_api(request, room_id):
                         caller_profile.save(update_fields=['coin_balance'])
                         call.coins_spent = coins_deducted
 
-                        diamonds_earned = int(coins_deducted * 0.70)
+                        diamonds_earned = int(Decimal(coins_deducted) * commission)
                         if receiver_profile and diamonds_earned > 0:
                             receiver_profile.earned_diamonds += diamonds_earned
                             receiver_profile.save(update_fields=['earned_diamonds'])
@@ -1218,11 +1246,12 @@ def call_heartbeat_api(request, room_id):
     elapsed = max(0, int((timezone.now() - call.started_at).total_seconds()))
     caller_profile = Profile.objects.filter(user_id=call.caller_id).first()
     is_unlimited = bool(caller_profile and (caller_profile.user.is_superuser or caller_profile.is_sex_call_premium))
-    rate = getattr(call, 'rate_per_minute', 20) or 20
+    site_config = SiteConfiguration.get_solo()
+    rate = getattr(call, 'rate_per_minute', site_config.call_rate_per_minute) or site_config.call_rate_per_minute
     max_sec = 86400 if is_unlimited else ((caller_profile.coin_balance // rate) * 60 if caller_profile else 0)
 
-    # If caller exceeded their available coins (after the 20s grace period)
-    if not is_unlimited and elapsed >= max_sec and elapsed >= 20:
+    # If caller exceeded their available coins (after the grace period)
+    if not is_unlimited and elapsed >= max_sec and elapsed >= site_config.grace_period_seconds:
         with transaction.atomic():
             call = CallSession.objects.select_for_update().get(pk=call.pk)
             if call.status == 'connected':
@@ -1237,7 +1266,8 @@ def call_heartbeat_api(request, room_id):
                     caller_p.save(update_fields=['coin_balance'])
                     call.coins_spent = coins_to_take
 
-                    diamonds = int(coins_to_take * 0.70)
+                    commission = Decimal(str(site_config.host_commission_percentage)) / Decimal('100')
+                    diamonds = int(Decimal(coins_to_take) * commission)
                     if diamonds > 0:
                         receiver_p.earned_diamonds += diamonds
                         receiver_p.save(update_fields=['earned_diamonds'])
@@ -1284,11 +1314,22 @@ def call_gift_api(request, room_id):
         return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
 
     gift_type = str(data.get('gift_type', '')).lower()
-    if gift_type not in CallGift.GIFT_PRICES:
+    gift_item = GiftItem.objects.filter(slug=gift_type, is_active=True).first()
+    if gift_item:
+        cost = gift_item.coin_cost
+        gift_name = gift_item.name
+        gift_icon = gift_item.icon
+    elif gift_type in CallGift.GIFT_PRICES:
+        cost = CallGift.GIFT_PRICES[gift_type]
+        gift_name = gift_type.title()
+        gift_icon = '🎁'
+    else:
         return JsonResponse({'status': 'error', 'message': 'invalid_gift_type'}, status=400)
 
-    cost = CallGift.GIFT_PRICES[gift_type]
     recipient_user = call.receiver if request.user == call.caller else call.caller
+    site_config = SiteConfiguration.get_solo()
+    commission = Decimal(str(site_config.host_commission_percentage)) / Decimal('100')
+    diamonds = int(Decimal(cost) * commission)
 
     with transaction.atomic():
         sender_profile = Profile.objects.select_for_update().filter(user=request.user).first()
@@ -1303,7 +1344,6 @@ def call_gift_api(request, room_id):
         sender_profile.coin_balance -= cost
         sender_profile.save(update_fields=['coin_balance'])
 
-        diamonds = int(cost * 0.70)
         recipient_profile = Profile.objects.select_for_update().filter(user=recipient_user).first()
         if recipient_profile:
             recipient_profile.earned_diamonds += diamonds
@@ -1322,7 +1362,7 @@ def call_gift_api(request, room_id):
             amount=-cost,
             transaction_type='GIFT_SENT',
             call=call,
-            description=f'Sent {gift.get_gift_type_display()} to {recipient_user.username}',
+            description=f'Sent {gift_icon} {gift_name} to {recipient_user.username}',
         )
         if recipient_profile:
             CoinTransaction.objects.create(
@@ -1330,7 +1370,7 @@ def call_gift_api(request, room_id):
                 amount=diamonds,
                 transaction_type='GIFT_RECEIVED',
                 call=call,
-                description=f'Received {gift.get_gift_type_display()} from {request.user.username} (+{diamonds} 💎)',
+                description=f'Received {gift_icon} {gift_name} from {request.user.username} (+{diamonds} 💎)',
             )
 
         CallSignal.objects.create(
@@ -1339,6 +1379,8 @@ def call_gift_api(request, room_id):
             signal_type='gift',
             payload={
                 'gift_type': gift_type,
+                'name': gift_name,
+                'icon': gift_icon,
                 'coins': cost,
                 'diamonds': diamonds,
                 'sender_name': request.user.first_name or request.user.username,
@@ -1352,6 +1394,8 @@ def call_gift_api(request, room_id):
         'diamond_award': diamonds,
         'gift': {
             'gift_type': gift_type,
+            'name': gift_name,
+            'icon': gift_icon,
             'coins': cost,
             'diamonds': diamonds,
         },
@@ -1365,18 +1409,20 @@ def wallet_balance_api(request):
     if not profile:
         return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
 
-    # Starter welcome bonus: if 0 coins and no transaction history, give 30 free coins!
+    site_config = SiteConfiguration.get_solo()
+    # Starter welcome bonus: if 0 coins and no transaction history, give configured free coins!
     if profile.coin_balance == 0 and not CoinTransaction.objects.filter(user=request.user).exists():
         with transaction.atomic():
             p = Profile.objects.select_for_update().get(pk=profile.pk)
             if p.coin_balance == 0 and not CoinTransaction.objects.filter(user=request.user).exists():
-                p.coin_balance = 30
+                bonus = site_config.welcome_bonus_coins
+                p.coin_balance = bonus
                 p.save(update_fields=['coin_balance'])
                 CoinTransaction.objects.create(
                     user=request.user,
-                    amount=30,
+                    amount=bonus,
                     transaction_type='WELCOME_BONUS',
-                    description='Welcome gift: 30 free coins to experience Sex Call!',
+                    description=f'Welcome gift: {bonus} free coins to experience Sex Call!',
                 )
                 profile.refresh_from_db()
 
@@ -1384,8 +1430,281 @@ def wallet_balance_api(request):
         'status': 'success',
         'coin_balance': profile.coin_balance,
         'earned_diamonds': profile.earned_diamonds,
+        'min_diamond_withdrawal': site_config.min_diamond_withdrawal,
+        'diamond_exchange_rate_naira': str(site_config.diamond_exchange_rate_naira),
+        'call_rate_per_minute': site_config.call_rate_per_minute,
         'is_sex_call_premium': profile.is_sex_call_premium,
         'relationship_mode': profile.relationship_mode,
+    })
+
+
+@require_GET
+def gifts_api(request):
+    gifts = list(GiftItem.objects.filter(is_active=True).order_by('order', 'coin_cost'))
+    if not gifts:
+        fallback = [
+            {'id': 1, 'name': 'Rose', 'slug': 'rose', 'icon': '🌹', 'coin_cost': 5},
+            {'id': 2, 'name': 'Kiss', 'slug': 'kiss', 'icon': '💋', 'coin_cost': 15},
+            {'id': 3, 'name': 'Champagne', 'slug': 'champagne', 'icon': '🥂', 'coin_cost': 50},
+            {'id': 4, 'name': 'Crown', 'slug': 'crown', 'icon': '👑', 'coin_cost': 150},
+            {'id': 5, 'name': 'Supercar', 'slug': 'car', 'icon': '🏎️', 'coin_cost': 300},
+            {'id': 6, 'name': 'Diamond Ring', 'slug': 'ring', 'icon': '💍', 'coin_cost': 500},
+            {'id': 7, 'name': 'Luxury Yacht', 'slug': 'yacht', 'icon': '🛥️', 'coin_cost': 1000},
+        ]
+        return JsonResponse({'status': 'success', 'gifts': fallback})
+    return JsonResponse({
+        'status': 'success',
+        'gifts': [{
+            'id': g.id,
+            'name': g.name,
+            'slug': g.slug,
+            'icon': g.icon,
+            'coin_cost': g.coin_cost,
+        } for g in gifts],
+    })
+
+
+@require_GET
+def site_config_api(request):
+    cfg = SiteConfiguration.get_solo()
+    return JsonResponse({
+        'status': 'success',
+        'call_rate_per_minute': cfg.call_rate_per_minute,
+        'grace_period_seconds': cfg.grace_period_seconds,
+        'host_commission_percentage': cfg.host_commission_percentage,
+        'welcome_bonus_coins': cfg.welcome_bonus_coins,
+        'min_diamond_withdrawal': cfg.min_diamond_withdrawal,
+        'diamond_exchange_rate_naira': str(cfg.diamond_exchange_rate_naira),
+        'announcement_banner': cfg.announcement_banner if cfg.is_announcement_active else '',
+        'is_announcement_active': cfg.is_announcement_active,
+    })
+
+
+@require_GET
+def online_hosts_api(request):
+    """Returns top active and host-ready users for HiiclubChat discovery carousel."""
+    site_config = SiteConfiguration.get_solo()
+    qs = Profile.objects.filter(age__gte=18).select_related('user').prefetch_related('photos')
+    if request.user.is_authenticated:
+        qs = qs.exclude(user=request.user)
+
+    hosts = qs.order_by('-is_host_ready', '-last_active', '-response_rate')[:24]
+    results = []
+    for p in hosts:
+        is_active = p.is_host_ready or (p.last_active and (timezone.now() - p.last_active).total_seconds() < 1800)
+        photo = p.photos.filter(is_main=True).first() or p.photos.first()
+        avatar = photo.image.url if (photo and photo.image and photo.image.storage.exists(photo.image.name)) else f"https://api.dicebear.com/7.x/avataaars/svg?seed={p.user.username}"
+        results.append({
+            'user_id': p.user_id,
+            'username': p.user.username,
+            'name': p.user.first_name or p.user.username,
+            'age': p.age,
+            'gender': p.get_gender_display() if hasattr(p, 'get_gender_display') else p.gender,
+            'city': p.location or 'Nearby',
+            'avatar': avatar,
+            'response_rate': p.response_rate,
+            'total_calls': p.total_calls_completed,
+            'is_host_ready': p.is_host_ready,
+            'is_online': is_active,
+            'call_rate': site_config.call_rate_per_minute,
+            'bio': (p.bio[:50] + '...') if len(p.bio or '') > 50 else (p.bio or 'Available for video call ✨'),
+        })
+
+    return JsonResponse({
+        'status': 'success',
+        'hosts': results,
+        'call_rate': site_config.call_rate_per_minute,
+    })
+
+
+@login_required
+@require_POST
+def quick_call_match_api(request):
+    """Speed Match: Instantly pairs the caller with an available host or active user."""
+    caller_profile = Profile.objects.filter(user=request.user).first()
+    if not caller_profile:
+        return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
+
+    site_config = SiteConfiguration.get_solo()
+    min_coins = getattr(site_config, 'call_rate_per_minute', 20) or 20
+    if not _can_use_sex_call(caller_profile):
+        return JsonResponse({
+            'status': 'error',
+            'message': 'sex_call_pass_required',
+            'coin_balance': caller_profile.coin_balance if caller_profile else 0,
+            'required_coins': min_coins,
+            'subscribe_url': reverse('premium_landing'),
+        }, status=403)
+
+    candidates = Profile.objects.filter(
+        age__gte=18
+    ).exclude(
+        user=request.user
+    ).select_related('user').prefetch_related('photos')
+
+    # Exclude busy users
+    busy_users = CallSession.objects.filter(
+        status__in=['ringing', 'connected']
+    ).values_list('caller_id', 'receiver_id')
+    busy_ids = set()
+    for c_id, r_id in busy_users:
+        busy_ids.add(c_id)
+        busy_ids.add(r_id)
+    if busy_ids:
+        candidates = candidates.exclude(user_id__in=busy_ids)
+
+    # Pick candidate (prefer host_ready, or random candidate)
+    chosen_profile = (
+        candidates.filter(is_host_ready=True).order_by('?').first()
+        or candidates.order_by('-last_active', '?').first()
+    )
+
+    if not chosen_profile:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'no_hosts_available',
+            'detail': 'No hosts are online right now. Please try again in a moment!',
+        }, status=404)
+
+    call = CallSession.objects.create(
+        caller=request.user,
+        receiver=chosen_profile.user,
+        rate_per_minute=site_config.call_rate_per_minute,
+        status='ringing',
+    )
+
+    CallSignal.objects.create(
+        call=call,
+        sender=request.user,
+        signal_type='call_invitation',
+        payload={
+            'caller_name': request.user.first_name or request.user.username,
+            'caller_avatar': _profile_payload(caller_profile).get('avatar', ''),
+            'rate_per_minute': site_config.call_rate_per_minute,
+            'is_quick_match': True,
+        },
+    )
+
+    return JsonResponse({
+        'status': 'success',
+        'room_id': str(call.room_id),
+        'call': _call_payload(call),
+        'host': _profile_payload(chosen_profile),
+    })
+
+
+@login_required
+@require_POST
+def withdrawal_request_api(request):
+    """Host diamond cashout request to admin."""
+    profile = Profile.objects.filter(user=request.user).first()
+    if not profile:
+        return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
+
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+
+    diamonds_raw = data.get('diamonds')
+    bank_name = str(data.get('bank_name', '')).strip()
+    account_number = str(data.get('account_number', '')).strip()
+    account_name = str(data.get('account_name', '')).strip()
+
+    try:
+        diamonds = int(diamonds_raw)
+        if diamonds <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_diamond_amount', 'detail': 'Enter a valid positive number of diamonds.'}, status=400)
+
+    site_config = SiteConfiguration.get_solo()
+    if diamonds < site_config.min_diamond_withdrawal:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'below_minimum',
+            'min_diamonds': site_config.min_diamond_withdrawal,
+            'detail': f'Minimum cashout is {site_config.min_diamond_withdrawal} diamonds.',
+        }, status=400)
+
+    if not bank_name or not account_number or not account_name:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'missing_bank_details',
+            'detail': 'Bank name, account number, and account name are required.',
+        }, status=400)
+
+    naira_amount = Decimal(diamonds) * Decimal(str(site_config.diamond_exchange_rate_naira))
+
+    with transaction.atomic():
+        p = Profile.objects.select_for_update().get(pk=profile.pk)
+        if p.earned_diamonds < diamonds:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'insufficient_diamonds',
+                'earned_diamonds': p.earned_diamonds,
+                'detail': f'You only have {p.earned_diamonds} diamonds available.',
+            }, status=400)
+
+        p.earned_diamonds -= diamonds
+        p.save(update_fields=['earned_diamonds'])
+
+        req = WithdrawalRequest.objects.create(
+            user=request.user,
+            diamonds_amount=diamonds,
+            naira_amount=naira_amount,
+            bank_name=bank_name,
+            account_number=account_number,
+            account_name=account_name,
+            status='PENDING',
+        )
+
+        CoinTransaction.objects.create(
+            user=request.user,
+            amount=-diamonds,
+            transaction_type='DIAMOND_CASHOUT',
+            description=f'Cashout request #{req.id}: {diamonds} diamonds (₦{naira_amount:,.2f}) to {bank_name} ({account_number})',
+        )
+
+    return JsonResponse({
+        'status': 'success',
+        'withdrawal_id': req.id,
+        'diamonds_withdrawn': diamonds,
+        'naira_amount': str(naira_amount),
+        'remaining_diamonds': p.earned_diamonds,
+        'message': f'Withdrawal of ₦{naira_amount:,.2f} submitted for admin approval!',
+    })
+
+
+@login_required
+@require_GET
+def wallet_history_api(request):
+    """Returns recent transactions and withdrawal requests for the logged-in user."""
+    txs = CoinTransaction.objects.filter(user=request.user).order_by('-created_at')[:30]
+    withdrawals = WithdrawalRequest.objects.filter(user=request.user).order_by('-created_at')[:20]
+
+    return JsonResponse({
+        'status': 'success',
+        'transactions': [{
+            'id': t.id,
+            'amount': t.amount,
+            'type': t.transaction_type,
+            'type_display': t.get_transaction_type_display(),
+            'description': t.description,
+            'created_at': t.created_at.strftime('%b %d, %Y %H:%M'),
+        } for t in txs],
+        'withdrawals': [{
+            'id': w.id,
+            'diamonds': w.diamonds_amount,
+            'naira': str(w.naira_amount),
+            'bank_name': w.bank_name,
+            'account_number': w.account_number,
+            'account_name': w.account_name,
+            'status': w.status,
+            'status_display': w.get_status_display(),
+            'admin_note': w.admin_note,
+            'created_at': w.created_at.strftime('%b %d, %Y %H:%M'),
+        } for w in withdrawals],
     })
 
 

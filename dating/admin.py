@@ -10,13 +10,16 @@ from .models import (
     CoinPackage,
     CoinTransaction,
     Conversation,
+    GiftItem,
     Match,
     PaymentTransaction,
     Profile,
     ProfilePhoto,
+    SiteConfiguration,
     SubscriptionPlan,
     Swipe,
     Tag,
+    WithdrawalRequest,
 )
 
 
@@ -72,13 +75,13 @@ class ProfilePhotoInline(admin.TabularInline):
 class ProfileAdmin(VersionAdmin): # Inherit from VersionAdmin
     form = ProfileAdminForm
     list_display = (
-        'user', 'relationship_mode', 'gender', 'preferred_gender',
-        'age', 'is_verified', 'is_vip', 'is_test_profile', 'last_active',
+        'user', 'relationship_mode', 'coin_balance', 'earned_diamonds',
+        'response_rate', 'is_host_ready', 'is_verified', 'is_vip', 'last_active',
     )
+    list_editable = ('is_verified', 'is_vip', 'is_host_ready')
     search_fields = ('user__username', 'bio')
     list_filter = (
-        'relationship_mode', 'gender', 'preferred_gender',
-        'is_verified', 'is_vip', 'is_test_profile',
+        'relationship_mode', 'is_host_ready', 'is_verified', 'is_vip', 'gender',
     )
     readonly_fields = ('is_test_profile',)
     filter_horizontal = ('tags',) # Nicer interface for ManyToMany field
@@ -227,3 +230,72 @@ class CallSignalAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
+@admin.register(SiteConfiguration)
+class SiteConfigurationAdmin(admin.ModelAdmin):
+    fieldsets = (
+        ('Sex Call Video Economy', {
+            'fields': (
+                'call_rate_per_minute',
+                'grace_period_seconds',
+                'host_commission_percentage',
+                'welcome_bonus_coins',
+            ),
+            'description': 'Adjust live call pricing, free grace periods, and host diamond earnings in real-time.',
+        }),
+        ('Host Diamond Cashout & Payouts', {
+            'fields': (
+                'min_diamond_withdrawal',
+                'diamond_exchange_rate_naira',
+            ),
+            'description': 'Configure host withdrawal minimums and exchange rate to Nigerian Naira (₦).',
+        }),
+        ('Live Announcements & Promotions', {
+            'fields': (
+                'is_announcement_active',
+                'announcement_banner',
+            ),
+            'description': 'Display promotional announcements or event banners to all users across the app.',
+        }),
+    )
+
+    def has_add_permission(self, request):
+        # Enforce singleton - only 1 configuration object allowed
+        return not SiteConfiguration.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(GiftItem)
+class GiftItemAdmin(admin.ModelAdmin):
+    list_display = ('name', 'icon', 'slug', 'coin_cost', 'is_active', 'order')
+    list_editable = ('icon', 'coin_cost', 'is_active', 'order')
+    list_filter = ('is_active',)
+    search_fields = ('name', 'slug')
+    ordering = ('order', 'coin_cost')
+
+
+@admin.register(WithdrawalRequest)
+class WithdrawalRequestAdmin(admin.ModelAdmin):
+    list_display = ('user', 'diamonds_amount', 'naira_amount', 'bank_name', 'account_number', 'account_name', 'status', 'created_at', 'processed_at')
+    list_filter = ('status', 'bank_name', 'created_at')
+    search_fields = ('user__username', 'account_number', 'account_name', 'bank_name', 'admin_note')
+    list_editable = ('status',)
+    readonly_fields = ('user', 'diamonds_amount', 'naira_amount', 'bank_name', 'account_number', 'account_name', 'created_at')
+    actions = ['mark_as_paid', 'mark_as_approved', 'mark_as_rejected']
+
+    def mark_as_paid(self, request, queryset):
+        from django.utils import timezone
+        queryset.update(status='PAID', processed_at=timezone.now())
+    mark_as_paid.short_description = 'Mark selected requests as PAID OUT'
+
+    def mark_as_approved(self, request, queryset):
+        queryset.update(status='APPROVED')
+    mark_as_approved.short_description = 'Mark selected requests as APPROVED'
+
+    def mark_as_rejected(self, request, queryset):
+        from django.utils import timezone
+        queryset.update(status='REJECTED', processed_at=timezone.now())
+    mark_as_rejected.short_description = 'Mark selected requests as REJECTED'

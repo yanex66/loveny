@@ -118,6 +118,34 @@
         </a>
     </header>
 
+    <!-- HiiclubChat Style: Online Hosts & Speed Match Carousel -->
+    <section class="w-full max-w-md px-4 pt-1 pb-2 z-10" aria-label="Online Hosts and Speed Match">
+        <div class="flex items-center justify-between mb-2 px-1">
+            <div class="flex items-center gap-1.5">
+                <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span class="text-xs font-black uppercase tracking-wider text-slate-800">Live Hosts</span>
+                <span class="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-600">Video 📹</span>
+            </div>
+            <button type="button" data-quick-match-trigger="true" class="flex items-center gap-1 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 px-3 py-1 text-[11px] font-black text-white shadow-sm hover:scale-105 active:scale-95 transition">
+                <span>⚡</span>
+                <span>Speed Match</span>
+            </button>
+        </div>
+        <div id="online-hosts-carousel" class="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none snap-x">
+            <!-- Speed Match Tile -->
+            <button type="button" data-quick-match-trigger="true" class="snap-start shrink-0 w-20 flex flex-col items-center p-2 rounded-2xl border border-pink-200/80 bg-gradient-to-b from-pink-50 to-rose-100/60 shadow-sm hover:scale-105 active:scale-95 transition text-center group">
+                <div class="relative w-12 h-12 rounded-full bg-gradient-to-tr from-pink-600 via-rose-500 to-amber-400 flex items-center justify-center text-xl text-white shadow-md shadow-pink-500/30 group-hover:rotate-12 transition-transform">
+                    ⚡
+                </div>
+                <span class="text-[11px] font-black text-slate-900 mt-1.5 leading-tight">Speed</span>
+                <span class="text-[9px] font-bold text-pink-600">Match 1v1</span>
+            </button>
+            <div id="hosts-loading-placeholder" class="shrink-0 flex items-center gap-2 text-xs text-slate-400 py-3 px-2">
+                <span class="animate-spin text-base">⏳</span> Loading live hosts...
+            </div>
+        </div>
+    </section>
+
     <main class="w-full flex-grow flex flex-col justify-center items-center p-4 relative">
         
         <div id="card-container" class="dating-card-wrapper">
@@ -128,7 +156,7 @@
             </div>
         </div>
         
-        <div id="action-buttons" class="flex justify-center items-center gap-6 mt-6 hidden">
+        <div id="action-buttons" class="flex justify-center items-center gap-4 sm:gap-6 mt-6 hidden">
             
             <button onclick="rewindSwipe()" 
                     class="action-btn w-12 h-12 bg-white border border-orange-200 text-orange-500 rounded-full shadow-lg hover:bg-orange-400 hover:text-white flex items-center justify-center">
@@ -142,6 +170,14 @@
                 </svg>
             </button>
             
+            <button id="direct-call-action-btn"
+                    type="button"
+                    title="Direct Video Call ({{ site_config.call_rate_per_minute|default:20 }}🪙/min)"
+                    class="action-btn w-16 h-16 bg-gradient-to-tr from-purple-600 via-pink-600 to-amber-500 text-white rounded-full shadow-[0_10px_25px_rgba(217,70,239,0.4)] hover:scale-105 flex flex-col items-center justify-center border-3 border-white">
+                <span class="text-xl">📹</span>
+                <span class="text-[8px] font-black tracking-tighter uppercase -mt-0.5 text-amber-200">Call</span>
+            </button>
+
             <button onclick="animateAndSwipe('LIKE')" 
                     class="action-btn w-20 h-20 bg-gradient-to-tr from-pink-500 to-rose-500 text-white rounded-full shadow-[0_12px_30px_rgba(236,72,153,0.35)] hover:scale-105 flex items-center justify-center border-4 border-white">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 fill-current" viewBox="0 0 24 24">
@@ -181,7 +217,52 @@
 
     window.onload = function() {
         fetchProfilesBatch();
+        fetchOnlineHosts();
+        const callBtn = document.getElementById('direct-call-action-btn');
+        if (callBtn) {
+            callBtn.onclick = () => {
+                if (currentCardEl && currentCardEl.dataset.targetId) {
+                    if (window.lovenyStartVideoCall) {
+                        window.lovenyStartVideoCall(currentCardEl.dataset.targetId);
+                    }
+                }
+            };
+        }
     };
+
+    async function fetchOnlineHosts() {
+        const carousel = document.getElementById('online-hosts-carousel');
+        if (!carousel) return;
+        try {
+            const res = await fetch('/api/hosts/online/');
+            const data = await res.json();
+            if (data.status === 'success' && data.hosts && data.hosts.length > 0) {
+                const placeholder = document.getElementById('hosts-loading-placeholder');
+                if (placeholder) placeholder.remove();
+                data.hosts.forEach(host => {
+                    const hostTile = document.createElement('div');
+                    hostTile.className = 'snap-start shrink-0 w-20 flex flex-col items-center p-2 rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm text-center relative group';
+                    hostTile.innerHTML = `
+                        <div class="relative w-12 h-12 rounded-full overflow-hidden border-2 border-pink-500 shadow-md">
+                            <img src="${escapeHTML(host.avatar)}" alt="${escapeHTML(host.username)}" class="w-full h-full object-cover">
+                            <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white animate-pulse"></span>
+                        </div>
+                        <span class="text-[11px] font-black text-slate-800 mt-1 truncate max-w-full leading-tight">${escapeHTML(host.name || host.username)}</span>
+                        <span class="text-[9px] font-bold text-emerald-600">${host.response_rate}% ans</span>
+                        <button type="button" data-call-target-id="${host.user_id}" data-call-target-name="${escapeHTML(host.username)}" class="mt-1 w-full rounded-lg bg-gradient-to-r from-pink-500 to-rose-500 px-1 py-1 text-[9px] font-black text-white shadow-sm hover:scale-105 active:scale-95 transition flex items-center justify-center gap-0.5">
+                            <span>📹</span> Call
+                        </button>
+                    `;
+                    carousel.appendChild(hostTile);
+                });
+            } else {
+                const placeholder = document.getElementById('hosts-loading-placeholder');
+                if (placeholder) placeholder.textContent = 'Hosts online shortly ✨';
+            }
+        } catch (e) {
+            console.warn('Could not load online hosts', e);
+        }
+    }
 
     async function fetchProfilesBatch() {
         if (isFetching) return;
@@ -294,7 +375,19 @@
                 <div class="bg-red-600/90 text-white text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-lg backdrop-blur-sm animate-pulse">LIVE</div>
             </div>
             
-            ${onlineBadge} `;
+            <div class="absolute top-4 right-4 z-20 flex flex-col items-end gap-2">
+                ${onlineBadge}
+                <button type="button"
+                        data-call-target-id="${profile.id}"
+                        data-call-target-name="${escapeHTML(profile.username)}"
+                        onclick="event.stopPropagation(); window.lovenyStartVideoCall && window.lovenyStartVideoCall(${profile.id});"
+                        class="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 px-3.5 py-1.5 text-white font-black text-xs uppercase tracking-wider shadow-2xl border border-white/80 active:scale-90 hover:scale-105 transition"
+                        title="Start instant video call">
+                    <span class="text-sm">📹</span>
+                    <span>Call Now</span>
+                    <span class="rounded bg-black/40 px-1 py-0.5 text-[9px] text-amber-200 font-bold">🪙{{ site_config.call_rate_per_minute|default:20 }}/m</span>
+                </button>
+            </div>`;
 
         const mediaElement = newCard.querySelector('.media-content');
         const fallbackImage = "{% static 'dating/images/profile-placeholder.svg' %}";
