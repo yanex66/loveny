@@ -5,51 +5,11 @@
 
 {% block extra_head %}
 <style>
-/* Dual Mode View Styles */
-.view-mode-tab.active-view {
-    background: linear-gradient(135deg, #ec4899, #f43f5e);
-    color: #ffffff;
-    box-shadow: 0 4px 14px rgba(244, 63, 94, 0.4);
-}
+/* Host Grid & Filter Tabs Styles */
 .hub-tab.active-tab {
     background: linear-gradient(135deg, #f43f5e, #ec4899);
     color: #ffffff;
     box-shadow: 0 4px 14px rgba(244, 63, 94, 0.4);
-}
-
-/* Swipe Deck Styles */
-.sc-card-wrapper {
-    position: relative;
-    width: min(90vw, 380px);
-    height: min(65svh, 580px);
-    min-height: 400px;
-    margin: 0 auto;
-    perspective: 1000px;
-}
-.sc-card {
-    transition: transform 0.1s linear, box-shadow 0.2s ease;
-    position: absolute;
-    top: 0; left: 0; width: 100%; height: 100%;
-    overflow: hidden;
-    background-color: #120924;
-    user-select: none;
-    cursor: grab;
-    touch-action: none;
-    border-radius: 2rem;
-    box-shadow: 0 20px 50px -10px rgba(0,0,0,0.7);
-    border: 1px solid rgba(255,255,255,0.12);
-}
-.sc-card:active {
-    cursor: grabbing;
-}
-.sc-card-animate {
-    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-.action-btn {
-    transition: all 0.1s ease;
-}
-.action-btn:active {
-    transform: scale(0.9) translateY(2px);
 }
 
 /* Cosmic Radar & Orbit Keyframes */
@@ -93,24 +53,24 @@
 {% endblock %}
 
 {% block content %}
-<main class="min-h-screen bg-[#0a0514] text-white pb-32 select-none">
+<main class="min-h-screen bg-[#0a0514] text-white pb-36 select-none -mx-4 -mt-4 sm:-mx-6 sm:-mt-6 px-4 pt-6">
     <!-- Starry background subtle ambient lighting -->
     <div class="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(168,85,247,0.18),rgba(255,255,255,0))]"></div>
     <div class="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_60%_60%_at_80%_60%,rgba(244,63,94,0.12),rgba(0,0,0,0))]"></div>
 
-    <div class="relative max-w-4xl mx-auto px-4 pt-4 sm:pt-6">
+    <div class="relative max-w-4xl mx-auto">
         <!-- Top Navigation & Live Wallet Bar -->
         <header class="flex items-center justify-between gap-2 pb-4 border-b border-white/10">
             <div class="flex items-center gap-3">
-                <a href="{% url 'swipe_card' %}" class="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 border border-white/15 text-pink-300 hover:bg-white/20 transition" aria-label="Back">
-                    ←
+                <a href="{% url 'profile' %}" class="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 border border-white/15 text-pink-300 hover:bg-white/20 transition" aria-label="Profile">
+                    👤
                 </a>
                 <div>
                     <h1 class="text-xl sm:text-2xl font-black italic uppercase tracking-wider bg-gradient-to-r from-pink-400 via-rose-300 to-amber-300 bg-clip-text text-transparent flex items-center gap-2">
                         <span>SEX CALL</span>
                         <span class="inline-block h-2 w-2 rounded-full bg-rose-500 animate-pulse"></span>
                     </h1>
-                    <p class="text-[10px] text-white/60 font-semibold tracking-wider uppercase">Live 1-on-1 Video</p>
+                    <p class="text-[10px] text-white/60 font-semibold tracking-wider uppercase">Live 1-on-1 Video Hosts</p>
                 </div>
             </div>
 
@@ -147,41 +107,28 @@
         </div>
         {% endif %}
 
-        <!-- DUAL DISCOVERY MODE SWITCHER: [ 🎴 Swipe ] & [ ⊞ Grid ] -->
-        <div class="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div class="flex items-center gap-2">
-                <!-- Top View Switcher -->
-                <div class="inline-flex rounded-2xl bg-white/10 p-1 border border-white/10 shadow-lg" role="tablist">
-                    <button type="button" id="view-mode-swipe" class="view-mode-tab rounded-xl px-5 py-2 text-xs font-black uppercase tracking-wider transition text-white/70 hover:text-white flex items-center gap-1.5" onclick="setViewMode('swipe')">
-                        <span>🎴</span>
-                        <span>Swipe</span>
-                    </button>
-                    <button type="button" id="view-mode-grid" class="view-mode-tab active-view rounded-xl px-5 py-2 text-xs font-black uppercase tracking-wider transition text-white flex items-center gap-1.5" onclick="setViewMode('grid')">
-                        <span>⊞</span>
-                        <span>Grid</span>
-                    </button>
-                </div>
-
-                <!-- Category Filter Tabs: Hot / Nearby -->
-                <div class="inline-flex rounded-2xl bg-white/10 p-1 border border-white/10 max-w-fit">
-                    <button type="button" id="tab-hot" class="hub-tab active-tab rounded-xl px-4 py-2 text-xs font-black uppercase tracking-wider transition">
-                        🔥 Hot
-                    </button>
-                    <button type="button" id="tab-nearby" class="hub-tab rounded-xl px-4 py-2 text-xs font-black uppercase tracking-wider transition text-white/60 hover:text-white">
-                        📍 Nearby
-                    </button>
-                </div>
+        <!-- FILTER BAR: Hot / Nearby & Cosmic Random Match -->
+        <div class="mt-5 flex flex-row items-center justify-between gap-3">
+            <!-- Category Filter Tabs: Hot / Nearby -->
+            <div class="inline-flex rounded-2xl bg-white/10 p-1 border border-white/10 max-w-fit">
+                <button type="button" id="tab-hot" class="hub-tab active-tab rounded-xl px-5 py-2 text-xs font-black uppercase tracking-wider transition">
+                    🔥 Hot
+                </button>
+                <button type="button" id="tab-nearby" class="hub-tab rounded-xl px-5 py-2 text-xs font-black uppercase tracking-wider transition text-white/60 hover:text-white">
+                    📍 Nearby
+                </button>
             </div>
 
             <!-- Cosmic Random Match Trigger Button -->
-            <button type="button" id="start-cosmic-match-btn" class="group flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-pink-500 px-5 py-2.5 text-xs font-black uppercase tracking-wider text-white shadow-xl shadow-fuchsia-600/30 hover:scale-[1.02] active:scale-95 transition">
+            <button type="button" id="start-cosmic-match-btn" class="group flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-pink-500 px-4 sm:px-5 py-2.5 text-xs font-black uppercase tracking-wider text-white shadow-xl shadow-fuchsia-600/30 hover:scale-[1.02] active:scale-95 transition">
                 <span class="text-base group-hover:rotate-12 transition-transform">🪐</span>
-                <span>Random Match</span>
-                <span class="text-[10px] opacity-75 font-normal">({{ call_rate_per_minute }}🪙/min)</span>
+                <span class="hidden sm:inline">Random Match</span>
+                <span class="sm:hidden">Match</span>
+                <span class="text-[10px] opacity-75 font-normal">({{ call_rate_per_minute }}🪙)</span>
             </button>
         </div>
 
-        <!-- VIEW 1: 2-COLUMN HOST GRID VIEW (Image 1 Style) -->
+        <!-- 2-COLUMN HOST GRID VIEW (Image 1 Style - ONLY GRID) -->
         <section id="grid-view-section" class="mt-6">
             <div id="hosts-grid" class="grid grid-cols-2 gap-3 sm:gap-5" aria-label="Active Sex Call Hosts">
                 <!-- Host cards injected via JS -->
@@ -196,45 +143,6 @@
                 <p class="text-xs text-white/60 max-w-sm mx-auto mb-4">You can try Orbit Random Match to search across open callers or check back in a few minutes!</p>
                 <button type="button" onclick="document.getElementById('start-cosmic-match-btn').click()" class="rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-6 py-2.5 text-xs font-black uppercase text-white shadow-lg">
                     Try Random Match
-                </button>
-            </div>
-        </section>
-
-        <!-- VIEW 2: SWIPE DECK VIEW (Full-card swipe format) -->
-        <section id="swipe-view-section" class="mt-6 hidden flex flex-col items-center">
-            <div id="sc-card-container" class="sc-card-wrapper">
-                <div id="sc-loading-card" class="h-full w-full flex flex-col justify-center items-center text-center bg-white/5 backdrop-blur-md rounded-3xl border border-white/10 shadow-lg">
-                    <div class="w-12 h-12 rounded-full border-2 border-pink-500 border-t-transparent animate-spin mb-4"></div>
-                    <h2 class="text-lg font-bold text-pink-300 uppercase tracking-widest">Scanning Hosts...</h2>
-                    <p class="text-xs text-white/50 mt-1 font-mono">FINDING YOUR MATCH</p>
-                </div>
-            </div>
-
-            <!-- Swipe Action Buttons -->
-            <div id="sc-action-buttons" class="flex justify-center items-center gap-4 sm:gap-6 mt-6">
-                <button type="button" onclick="scRewind()" title="Rewind" class="action-btn w-12 h-12 bg-white/10 border border-white/20 text-amber-300 rounded-full shadow-lg hover:bg-white/20 flex items-center justify-center">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                </button>
-
-                <button type="button" onclick="scSwipe('PASS')" title="Pass" class="action-btn w-14 h-14 bg-white/10 border-2 border-rose-400 text-rose-400 rounded-full shadow-lg hover:bg-rose-500 hover:text-white flex items-center justify-center">
-                    <svg class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-                
-                <button id="sc-direct-call-btn" type="button" onclick="scDirectCallCurrent()" title="Direct Video Call" class="action-btn w-16 h-16 bg-gradient-to-tr from-purple-600 via-pink-600 to-amber-500 text-white rounded-full shadow-[0_10px_25px_rgba(217,70,239,0.5)] hover:scale-105 flex flex-col items-center justify-center border-2 border-white">
-                    <span class="text-xl">📹</span>
-                    <span class="text-[8px] font-black tracking-tighter uppercase -mt-0.5 text-amber-200">Call</span>
-                </button>
-
-                <button type="button" onclick="scSwipe('LIKE')" title="Like" class="action-btn w-14 h-14 bg-gradient-to-tr from-pink-500 to-rose-500 text-white rounded-full shadow-[0_12px_30px_rgba(236,72,153,0.4)] hover:scale-105 flex items-center justify-center border-2 border-white">
-                    <svg class="h-7 w-7 fill-current" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                    </svg>
-                </button>
-
-                <button type="button" onclick="scSwipe('DIRECT')" title="Direct Interest" class="action-btn w-12 h-12 bg-white/10 border border-white/20 text-amber-300 rounded-full shadow-lg hover:bg-white/20 flex items-center justify-center">
-                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.539 1.118l-2.8-2.034a1 1 0 00-1.176 0l-2.8 2.034c-.783.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118l-2.8-2.034c-.783-.57-.38-1.81.588-1.81h3.462a1 1 0 00.95-.69l1.07-3.292z"/></svg>
                 </button>
             </div>
         </section>
@@ -298,35 +206,40 @@
     <div class="relative w-full max-w-sm rounded-3xl border border-cyan-500/30 bg-slate-900 p-6 shadow-2xl text-white">
         <button type="button" id="close-exchange-modal-btn" class="absolute right-4 top-4 text-white/50 hover:text-white transition text-lg font-bold">✕</button>
 
-        <div class="flex items-center gap-2 mb-4">
-            <span class="text-2xl">💎</span>
-            <h3 class="text-lg font-black uppercase text-cyan-300">Convert Diamonds</h3>
+        <div class="flex items-center gap-3">
+            <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-500/20 text-2xl border border-cyan-400/40">💎</div>
+            <div>
+                <h3 class="text-base font-black text-cyan-300 uppercase">Exchange Diamonds</h3>
+                <p class="text-[10px] text-white/60">Convert gifts into Coins (Rate: 100 💎 = {{ diamond_to_coin_percentage|default:70 }} 🪙)</p>
+            </div>
         </div>
 
-        <p class="text-xs text-white/70 mb-4">
-            Exchange your earned diamonds for coins at <strong class="text-cyan-300">{{ diamond_to_coin_percentage }}%</strong>.
-            Diamonds cannot be withdrawn for fiat currency.
-        </p>
-
-        <div class="rounded-2xl bg-white/5 border border-white/10 p-3 mb-4 flex justify-between text-xs font-bold">
+        <div class="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3 flex justify-between items-center text-xs">
             <span class="text-white/60">Your Diamonds:</span>
-            <span class="text-cyan-300" id="exchange-current-diamonds">{{ user_earned_diamonds }}</span>
+            <span id="exchange-current-diamonds" class="font-black text-cyan-300 text-sm">{{ user_earned_diamonds }} 💎</span>
         </div>
 
-        <form id="diamond-exchange-form">
-            <label class="block text-[11px] font-bold uppercase tracking-wider text-white/60 mb-1.5" for="exchange-diamonds-input">Diamonds to Exchange:</label>
-            <div class="relative mb-3">
-                <input type="number" id="exchange-diamonds-input" min="1" max="{{ user_earned_diamonds }}" placeholder="Enter quantity" class="w-full rounded-xl bg-white/10 border border-white/20 px-3 py-2.5 text-sm font-bold text-white focus:outline-none focus:border-cyan-400" required>
-                <button type="button" id="exchange-max-btn" class="absolute right-2 top-2 rounded-lg bg-cyan-500/20 px-2 py-1 text-[10px] font-black uppercase text-cyan-300">MAX</button>
+        <!-- Exchange Policy Guarantee -->
+        <div class="mt-3 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-3 text-[10px] text-amber-200">
+            <strong class="font-bold text-amber-300">Closed-Loop Platform Rule:</strong>
+            Diamonds can only be converted into Coins. Cash withdrawals are strictly disabled.
+        </div>
+
+        <form id="diamond-exchange-form" class="mt-4">
+            <label for="exchange-diamonds-input" class="text-[10px] font-bold uppercase text-white/60">Amount to convert</label>
+            <div class="relative mt-1">
+                <input type="number" id="exchange-diamonds-input" min="10" max="{{ user_earned_diamonds }}" step="1" placeholder="Min 10" class="w-full rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-white font-bold placeholder-white/30 focus:border-cyan-400 focus:outline-none">
+                <button type="button" id="exchange-max-btn" class="absolute right-2 top-2 rounded-xl bg-cyan-500/30 px-2.5 py-1 text-[10px] font-black uppercase text-cyan-200 hover:bg-cyan-500/50">
+                    Max
+                </button>
             </div>
 
-            <div class="text-xs text-amber-300 font-bold mb-4 flex items-center justify-between">
-                <span>You will receive:</span>
-                <span>🪙 <span id="preview-coins-received">0</span> Coins</span>
+            <div class="mt-2 text-right text-[11px] text-white/70">
+                You'll receive: <span id="preview-coins-received" class="font-black text-amber-300">0</span> 🪙
             </div>
 
-            <button type="submit" id="submit-exchange-btn" class="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-3 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-cyan-500/30 hover:scale-[1.02] active:scale-95 transition">
-                Exchange Now
+            <button type="submit" class="mt-4 w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-3 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-cyan-500/30 active:scale-95 transition">
+                Convert to Coins
             </button>
             <p id="exchange-status-msg" class="mt-2 min-h-4 text-center text-xs font-bold text-rose-400"></p>
         </form>
@@ -337,55 +250,20 @@
 {% block extra_js %}
 <script>
 (() => {
+    let currentTab = 'hot';
+
     const hostsGrid = document.getElementById('hosts-grid');
     const noHostsMsg = document.getElementById('no-hosts-message');
     const tabHot = document.getElementById('tab-hot');
     const tabNearby = document.getElementById('tab-nearby');
-    const gridViewSec = document.getElementById('grid-view-section');
-    const swipeViewSec = document.getElementById('swipe-view-section');
-    const viewTabGrid = document.getElementById('view-mode-grid');
-    const viewTabSwipe = document.getElementById('view-mode-swipe');
-
-    let currentTab = 'hot';
-    let currentView = '{{ initial_view|default:"grid" }}';
-
-    // Top View Switcher (Grid vs Swipe)
-    window.setViewMode = (mode) => {
-        currentView = mode;
-        if (mode === 'swipe') {
-            viewTabSwipe.classList.add('active-view');
-            viewTabGrid.classList.remove('active-view');
-            gridViewSec.classList.add('hidden');
-            swipeViewSec.classList.remove('hidden');
-            if (!scQueue.length) fetchSwipeProfiles();
-        } else {
-            viewTabGrid.classList.add('active-view');
-            viewTabSwipe.classList.remove('active-view');
-            swipeViewSec.classList.add('hidden');
-            gridViewSec.classList.remove('hidden');
-        }
-        try {
-            const url = new URL(window.location);
-            url.searchParams.set('view', mode);
-            window.history.replaceState({}, '', url);
-        } catch (_) {}
-    };
 
     function csrfToken() {
         const token = document.cookie.split('; ').find(item => item.startsWith('csrftoken='));
         return token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
     }
 
-    // Host Profile Click Navigation
-    window.openHostProfile = (event, hostId, username) => {
-        // Only navigate if user did not click on video call action button
-        if (event.target.closest('button')) return;
-        window.location.href = `/profile/${hostId}/`;
-    };
-
-    // Tab Filter Handlers
+    // Tab Switcher
     tabHot?.addEventListener('click', () => {
-        if (currentTab === 'hot') return;
         currentTab = 'hot';
         tabHot.classList.add('active-tab');
         tabHot.classList.remove('text-white/60');
@@ -395,7 +273,6 @@
     });
 
     tabNearby?.addEventListener('click', () => {
-        if (currentTab === 'nearby') return;
         currentTab = 'nearby';
         tabNearby.classList.add('active-tab');
         tabNearby.classList.remove('text-white/60');
@@ -403,6 +280,12 @@
         tabHot.classList.add('text-white/60');
         loadHosts('nearby');
     });
+
+    // Host Profile Click Navigation
+    window.openHostProfile = (event, hostId, username) => {
+        if (event.target.closest('button')) return;
+        window.location.href = `/users/${hostId}/`;
+    };
 
     // Load 2-Column Host Grid
     async function loadHosts(tab = 'hot') {
@@ -454,7 +337,7 @@
                         </p>
                     </div>
 
-                    <!-- Floating Round Orange/Pink Video Call Action Button -->
+                    <!-- Floating Round Video Call Action Button -->
                     <button type="button" onclick="event.stopPropagation(); startDirectCall(${h.id}, '${h.username}')" class="absolute bottom-3 right-3 h-11 w-11 rounded-full bg-gradient-to-tr from-orange-500 via-rose-500 to-pink-500 flex items-center justify-center text-white shadow-xl shadow-pink-500/40 hover:scale-110 active:scale-90 transition-all duration-200" title="Call ${h.username}">
                         <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
                             <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
@@ -492,7 +375,6 @@
                 return;
             }
 
-            // Route to call room
             if (data.room_id) {
                 window.location.href = `/call/${data.room_id}/`;
             } else if (window.lovenyStartVideoCall) {
@@ -503,150 +385,7 @@
         }
     };
 
-    // --- SWIPE DECK LOGIC ---
-    let scQueue = [];
-    let scCurrentCardEl = null;
-    let scIsDragging = false;
-    let scStartX = 0;
-    const scCardContainer = document.getElementById('sc-card-container');
-
-    async function fetchSwipeProfiles() {
-        try {
-            const res = await fetch("{{ PROFILES_URL }}");
-            const data = await res.json();
-            if (data.profiles && data.profiles.length > 0) {
-                scQueue = data.profiles;
-                renderNextSwipeCard();
-            } else {
-                renderEmptySwipeCard();
-            }
-        } catch (_) {
-            renderEmptySwipeCard();
-        }
-    }
-
-    function renderEmptySwipeCard() {
-        if (!scCardContainer) return;
-        scCardContainer.innerHTML = `
-            <div class="h-full w-full flex flex-col justify-center items-center text-center bg-white/5 backdrop-blur-md rounded-3xl border border-white/10 p-6 shadow-lg">
-                <div class="text-4xl mb-3">💋</div>
-                <h3 class="text-base font-bold text-white mb-1">You're all caught up!</h3>
-                <p class="text-xs text-white/60 mb-4">No more profiles in this batch. Switch to Grid view or check back soon.</p>
-                <button type="button" onclick="setViewMode('grid')" class="rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-5 py-2 text-xs font-black uppercase text-white shadow-lg">
-                    Browse Grid View
-                </button>
-            </div>
-        `;
-    }
-
-    function renderNextSwipeCard() {
-        if (!scQueue.length) {
-            renderEmptySwipeCard();
-            return;
-        }
-
-        const profile = scQueue.shift();
-        const card = document.createElement('div');
-        card.className = 'sc-card';
-        card.dataset.targetId = profile.id;
-        card.dataset.username = profile.username;
-        card.innerHTML = `
-            <img src="${profile.image_url || profile.avatar}" alt="${profile.username}" class="w-full h-full object-cover pointer-events-none">
-            <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none"></div>
-            
-            <div class="absolute top-4 left-4 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 backdrop-blur-md border border-white/10 text-xs font-bold text-white pointer-events-none">
-                <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>Online Host</span>
-            </div>
-
-            <div class="absolute bottom-6 left-6 right-6 pointer-events-none">
-                <h3 class="text-2xl font-black text-white leading-tight">
-                    ${profile.username}, <span class="text-pink-400">${profile.age}</span>
-                </h3>
-                <p class="text-xs text-white/70 mt-1">${profile.location || 'Online'} · 🪙 {{ call_rate_per_minute|default:20 }}/min</p>
-                ${profile.bio ? `<p class="text-xs text-white/80 mt-2 line-clamp-2">${profile.bio}</p>` : ''}
-            </div>
-        `;
-
-        setupSwipeCardDrag(card);
-        scCardContainer.innerHTML = '';
-        scCardContainer.appendChild(card);
-        scCurrentCardEl = card;
-    }
-
-    function setupSwipeCardDrag(card) {
-        let currentX = 0;
-        const onStart = (e) => {
-            scIsDragging = true;
-            scStartX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-            card.classList.remove('sc-card-animate');
-        };
-        const onMove = (e) => {
-            if (!scIsDragging) return;
-            const x = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-            currentX = x - scStartX;
-            card.style.transform = `translateX(${currentX}px) rotate(${currentX * 0.08}deg)`;
-        };
-        const onEnd = () => {
-            if (!scIsDragging) return;
-            scIsDragging = false;
-            if (currentX > 100) {
-                scSwipe('LIKE');
-            } else if (currentX < -100) {
-                scSwipe('PASS');
-            } else {
-                card.classList.add('sc-card-animate');
-                card.style.transform = '';
-            }
-        };
-
-        card.addEventListener('mousedown', onStart);
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onEnd);
-        card.addEventListener('touchstart', onStart, { passive: true });
-        window.addEventListener('touchmove', onMove, { passive: true });
-        window.addEventListener('touchend', onEnd);
-    }
-
-    window.scSwipe = async (action) => {
-        if (!scCurrentCardEl) return;
-        const targetId = scCurrentCardEl.dataset.targetId;
-        scCurrentCardEl.classList.add('sc-card-animate');
-        scCurrentCardEl.style.transform = action === 'LIKE' ? 'translateX(150vw) rotate(25deg)' : 'translateX(-150vw) rotate(-25deg)';
-
-        setTimeout(() => {
-            renderNextSwipeCard();
-        }, 200);
-
-        try {
-            await fetch("{{ SWIPE_URL }}", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken(),
-                },
-                body: JSON.stringify({ action: action, target_user_id: targetId }),
-            });
-        } catch (_) {}
-    };
-
-    window.scRewind = async () => {
-        try {
-            const res = await fetch("{% url 'rewind_swipe' %}", {
-                method: 'POST',
-                headers: { 'X-CSRFToken': csrfToken() },
-            });
-            if (res.ok) fetchSwipeProfiles();
-        } catch (_) {}
-    };
-
-    window.scDirectCallCurrent = () => {
-        if (scCurrentCardEl && scCurrentCardEl.dataset.targetId) {
-            startDirectCall(scCurrentCardEl.dataset.targetId, scCurrentCardEl.dataset.username);
-        }
-    };
-
-    // --- COSMIC RANDOM MATCH LOGIC ---
+    // Cosmic Random Match Logic
     const cosmicOverlay = document.getElementById('cosmic-match-overlay');
     const startCosmicBtn = document.getElementById('start-cosmic-match-btn');
     const cancelCosmicBtn = document.getElementById('cancel-cosmic-match-btn');
@@ -687,7 +426,7 @@
         cosmicOverlay.classList.remove('flex');
     });
 
-    // --- DIAMOND EXCHANGE LOGIC ---
+    // Diamond Exchange Logic
     const exchangeModal = document.getElementById('diamond-exchange-modal');
     const openExchangeBtn = document.getElementById('hub-diamonds-btn');
     const closeExchangeBtn = document.getElementById('close-exchange-modal-btn');
@@ -757,10 +496,8 @@
         }
     });
 
-    // Initialize View Mode
-    setViewMode(currentView);
+    // Initial load
     loadHosts(currentTab);
 })();
 </script>
 {% endblock %}
-

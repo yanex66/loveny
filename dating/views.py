@@ -444,6 +444,8 @@ def swipe_view(request):
     profile.last_active = timezone.now()
     profile.save(update_fields=['last_active'])
     product_type = profile.relationship_mode
+    if product_type == 'SEX_CALL':
+        return redirect('sex_call_hub')
     is_preview = bool(
         request.session.get('staff_test_profile_preview')
         or request.session.get('preview_test_profiles')

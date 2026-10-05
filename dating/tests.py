@@ -1617,25 +1617,24 @@ class DatingPlatformTests(TestCase):
         res_landing = self.client.get(reverse('premium_landing'), {'mode': 'COINS'})
         self.assertRedirects(res_landing, f"{reverse('premium_checkout')}?mode=COINS")
 
-    def test_dual_discovery_modes_on_sex_call_hub(self):
+    def test_sex_call_mode_is_only_grid_and_redirects_from_swipe(self):
         self.client.force_login(self.alice)
         self.alice_profile.relationship_mode = 'SEX_CALL'
         self.alice_profile.save()
 
-        # Sex call hub renders with both Swipe and Grid view controls
+        # Swiping is disabled for Sex Call mode: visiting swipe_card redirects to sex_call_hub
+        res_swipe = self.client.get(reverse('swipe_card'))
+        self.assertRedirects(res_swipe, reverse('sex_call_hub'))
+
+        # Sex call hub renders ONLY the Grid view with Hot and Nearby filters
         res = self.client.get(reverse('sex_call_hub'))
         self.assertEqual(res.status_code, 200)
-        self.assertContains(res, 'view-mode-swipe')
-        self.assertContains(res, 'view-mode-grid')
         self.assertContains(res, 'grid-view-section')
-        self.assertContains(res, 'swipe-view-section')
         self.assertContains(res, 'Hot')
         self.assertContains(res, 'Nearby')
-
-        # Requesting view=swipe explicitly
-        res_swipe = self.client.get(reverse('sex_call_hub'), {'view': 'swipe'})
-        self.assertEqual(res_swipe.status_code, 200)
-        self.assertEqual(res_swipe.context['initial_view'], 'swipe')
+        self.assertContains(res, 'hosts-grid')
+        self.assertNotContains(res, 'view-mode-swipe')
+        self.assertNotContains(res, 'swipe-view-section')
 
     def test_preview_test_profiles_via_query_param_populates_swipe_and_grid(self):
         test_user, test_profile = self.make_profile('test_model_dual', mode='SEX_CALL')
