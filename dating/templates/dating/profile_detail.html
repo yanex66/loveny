@@ -221,7 +221,7 @@
                 </div>
 
                 <!-- Stats Grid -->
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4 text-center">
+                <div class="grid grid-cols-2 gap-2.5 mb-4 text-center">
                     <div class="rounded-2xl border border-cyan-200 bg-white/90 p-3 shadow-sm">
                         <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-800">Earned Diamonds</span>
                         <div class="flex items-center justify-center gap-1 mt-0.5 text-xl font-black text-cyan-900">
@@ -237,22 +237,6 @@
                             <span id="host-coins-val">{{ profile.coin_balance }}</span>
                         </div>
                         <span class="text-[9px] font-medium text-slate-400">{{ site_config.call_rate_per_minute|default:20 }}🪙/min</span>
-                    </div>
-                    <div class="rounded-2xl border border-purple-200 bg-white/90 p-3 shadow-sm">
-                        <span class="text-[10px] font-bold uppercase tracking-wider text-purple-800">Total Calls</span>
-                        <div class="flex items-center justify-center gap-1 mt-0.5 text-xl font-black text-purple-900">
-                            <span>📹</span>
-                            <span>{{ profile.total_calls_completed }}</span>
-                        </div>
-                        <span class="text-[9px] font-medium text-slate-400">Completed</span>
-                    </div>
-                    <div class="rounded-2xl border border-rose-200 bg-white/90 p-3 shadow-sm">
-                        <span class="text-[10px] font-bold uppercase tracking-wider text-rose-800">Response Rate</span>
-                        <div class="flex items-center justify-center gap-1 mt-0.5 text-xl font-black text-rose-900">
-                            <span>⚡</span>
-                            <span>{{ profile.response_rate }}%</span>
-                        </div>
-                        <span class="text-[9px] font-medium text-slate-400">Rating</span>
                     </div>
                 </div>
 

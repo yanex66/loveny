@@ -1622,7 +1622,7 @@ def online_hosts_api(request):
         qs = Profile.objects.filter(age__gte=18, is_test_profile=False).select_related('user').prefetch_related('photos')
         if request.user.is_authenticated:
             qs = qs.exclude(user=request.user)
-        hosts = qs.order_by('-is_host_ready', '-last_active', '-response_rate')[:24]
+        hosts = qs.order_by('-is_host_ready', '-last_active')[:24]
 
     results = []
     for p in hosts:

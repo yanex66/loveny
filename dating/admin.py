@@ -76,7 +76,7 @@ class ProfileAdmin(VersionAdmin): # Inherit from VersionAdmin
     form = ProfileAdminForm
     list_display = (
         'user', 'relationship_mode', 'coin_balance', 'earned_diamonds',
-        'response_rate', 'is_host_ready', 'is_verified', 'is_vip', 'last_active',
+        'is_host_ready', 'is_verified', 'is_vip', 'last_active',
     )
     list_editable = ('is_verified', 'is_vip', 'is_host_ready')
     search_fields = ('user__username', 'bio')
