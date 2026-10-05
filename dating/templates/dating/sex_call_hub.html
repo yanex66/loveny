@@ -3,6 +3,95 @@
 
 {% block title %}Sex Call · Live 1-on-1 Video Hosts | LOVENY{% endblock %}
 
+{% block extra_head %}
+<style>
+/* Dual Mode View Styles */
+.view-mode-tab.active-view {
+    background: linear-gradient(135deg, #ec4899, #f43f5e);
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(244, 63, 94, 0.4);
+}
+.hub-tab.active-tab {
+    background: linear-gradient(135deg, #f43f5e, #ec4899);
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(244, 63, 94, 0.4);
+}
+
+/* Swipe Deck Styles */
+.sc-card-wrapper {
+    position: relative;
+    width: min(90vw, 380px);
+    height: min(65svh, 580px);
+    min-height: 400px;
+    margin: 0 auto;
+    perspective: 1000px;
+}
+.sc-card {
+    transition: transform 0.1s linear, box-shadow 0.2s ease;
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    overflow: hidden;
+    background-color: #120924;
+    user-select: none;
+    cursor: grab;
+    touch-action: none;
+    border-radius: 2rem;
+    box-shadow: 0 20px 50px -10px rgba(0,0,0,0.7);
+    border: 1px solid rgba(255,255,255,0.12);
+}
+.sc-card:active {
+    cursor: grabbing;
+}
+.sc-card-animate {
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.action-btn {
+    transition: all 0.1s ease;
+}
+.action-btn:active {
+    transform: scale(0.9) translateY(2px);
+}
+
+/* Cosmic Radar & Orbit Keyframes */
+@keyframes radarPing {
+    0% { transform: scale(0.6); opacity: 0.8; }
+    100% { transform: scale(1.6); opacity: 0.8; }
+}
+.radar-ring.ring-1 { width: 14rem; height: 14rem; animation: radarPing 3s infinite cubic-bezier(0, 0.2, 0.8, 1); }
+.radar-ring.ring-2 { width: 18rem; height: 18rem; animation: radarPing 3s infinite 1s cubic-bezier(0, 0.2, 0.8, 1); }
+.radar-ring.ring-3 { width: 22rem; height: 22rem; animation: radarPing 3s infinite 2s cubic-bezier(0, 0.2, 0.8, 1); }
+
+@keyframes orbit1 {
+    0% { transform: rotate(0deg) translateX(7rem) rotate(0deg); }
+    100% { transform: rotate(360deg) translateX(7rem) rotate(-360deg); }
+}
+@keyframes orbit2 {
+    0% { transform: rotate(120deg) translateX(9.5rem) rotate(-120deg); }
+    100% { transform: rotate(480deg) translateX(9.5rem) rotate(-480deg); }
+}
+@keyframes orbit3 {
+    0% { transform: rotate(240deg) translateX(8rem) rotate(-240deg); }
+    100% { transform: rotate(600deg) translateX(8rem) rotate(-600deg); }
+}
+.orbit-pin.pin-1 { animation: orbit1 8s infinite linear; }
+.orbit-pin.pin-2 { animation: orbit2 12s infinite linear; }
+.orbit-pin.pin-3 { animation: orbit3 10s infinite linear; }
+
+.starfield-bg {
+    background-image: 
+        radial-gradient(2px 2px at 20px 30px, #ffffff, rgba(0,0,0,0)),
+        radial-gradient(2px 2px at 40px 70px, #ffffff, rgba(0,0,0,0)),
+        radial-gradient(1px 1px at 90px 40px, #ffffff, rgba(0,0,0,0)),
+        radial-gradient(2px 2px at 160px 120px, #f472b6, rgba(0,0,0,0)),
+        radial-gradient(2px 2px at 230px 210px, #c084fc, rgba(0,0,0,0)),
+        radial-gradient(1px 1px at 290px 150px, #ffffff, rgba(0,0,0,0));
+    background-repeat: repeat;
+    background-size: 300px 300px;
+    opacity: 0.35;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <main class="min-h-screen bg-[#0a0514] text-white pb-32 select-none">
     <!-- Starry background subtle ambient lighting -->
@@ -27,12 +116,12 @@
 
             <!-- Live Wallet Pills (Coins & Diamonds) -->
             <div class="flex items-center gap-2">
-                <!-- Coin Balance Pill (Triggers Buy/Top-up) -->
-                <button type="button" id="hub-coins-btn" class="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-400/40 px-3 py-1.5 text-xs font-black text-amber-300 hover:bg-amber-500/30 active:scale-95 transition shadow-lg shadow-amber-500/10" title="Buy Coins">
+                <!-- Coin Balance Pill (Triggers Coin Shop) -->
+                <a href="{% url 'coin_shop' %}" id="hub-coins-btn" class="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-400/40 px-3 py-1.5 text-xs font-black text-amber-300 hover:bg-amber-500/30 active:scale-95 transition shadow-lg shadow-amber-500/10" title="Buy Coins">
                     <span class="text-sm">🪙</span>
                     <span id="hub-coins-val">{{ user_coin_balance }}</span>
                     <span class="ml-0.5 rounded-full bg-amber-400 text-slate-950 px-1 text-[10px] leading-tight font-extrabold">+</span>
-                </button>
+                </a>
 
                 <!-- Diamond Balance Pill (Triggers Closed-Loop Exchange) -->
                 <button type="button" id="hub-diamonds-btn" class="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-400/40 px-3 py-1.5 text-xs font-black text-cyan-300 hover:bg-cyan-500/30 active:scale-95 transition shadow-lg shadow-cyan-500/10" title="Convert Diamonds to Coins">
@@ -48,20 +137,40 @@
             <span class="flex items-center gap-1.5 font-bold">
                 <span class="animate-pulse">🧪</span> Test Profile Preview Mode ACTIVE
             </span>
-            <span class="text-[10px] uppercase font-bold text-amber-300 bg-amber-500/30 px-2 py-0.5 rounded-full">Staff Preview</span>
+            <a href="?test_profiles=off" class="text-[10px] uppercase font-bold text-amber-300 bg-amber-500/30 px-2 py-0.5 rounded-full hover:bg-amber-500/50 transition">Exit Preview</a>
+        </div>
+        {% elif is_staff %}
+        <div class="mt-3 flex justify-end">
+            <a href="?test_profiles=on" class="text-[10px] uppercase font-bold text-amber-300 bg-white/10 px-3 py-1 rounded-full border border-white/15 hover:bg-white/20 transition">
+                🧪 Preview Test Profiles
+            </a>
         </div>
         {% endif %}
 
-        <!-- Filter Tabs: [ Hot ] and [ Nearby ] + Cosmic Random Match Hero -->
+        <!-- DUAL DISCOVERY MODE SWITCHER: [ 🎴 Swipe ] & [ ⊞ Grid ] -->
         <div class="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <!-- Filter Tabs -->
-            <div class="inline-flex rounded-2xl bg-white/10 p-1 border border-white/10 max-w-fit">
-                <button type="button" id="tab-hot" class="hub-tab active-tab rounded-xl px-5 py-2 text-xs font-black uppercase tracking-wider transition">
-                    🔥 Hot
-                </button>
-                <button type="button" id="tab-nearby" class="hub-tab rounded-xl px-5 py-2 text-xs font-black uppercase tracking-wider transition text-white/60 hover:text-white">
-                    📍 Nearby
-                </button>
+            <div class="flex items-center gap-2">
+                <!-- Top View Switcher -->
+                <div class="inline-flex rounded-2xl bg-white/10 p-1 border border-white/10 shadow-lg" role="tablist">
+                    <button type="button" id="view-mode-swipe" class="view-mode-tab rounded-xl px-5 py-2 text-xs font-black uppercase tracking-wider transition text-white/70 hover:text-white flex items-center gap-1.5" onclick="setViewMode('swipe')">
+                        <span>🎴</span>
+                        <span>Swipe</span>
+                    </button>
+                    <button type="button" id="view-mode-grid" class="view-mode-tab active-view rounded-xl px-5 py-2 text-xs font-black uppercase tracking-wider transition text-white flex items-center gap-1.5" onclick="setViewMode('grid')">
+                        <span>⊞</span>
+                        <span>Grid</span>
+                    </button>
+                </div>
+
+                <!-- Category Filter Tabs: Hot / Nearby -->
+                <div class="inline-flex rounded-2xl bg-white/10 p-1 border border-white/10 max-w-fit">
+                    <button type="button" id="tab-hot" class="hub-tab active-tab rounded-xl px-4 py-2 text-xs font-black uppercase tracking-wider transition">
+                        🔥 Hot
+                    </button>
+                    <button type="button" id="tab-nearby" class="hub-tab rounded-xl px-4 py-2 text-xs font-black uppercase tracking-wider transition text-white/60 hover:text-white">
+                        📍 Nearby
+                    </button>
+                </div>
             </div>
 
             <!-- Cosmic Random Match Trigger Button -->
@@ -72,10 +181,10 @@
             </button>
         </div>
 
-        <!-- 2-Column Host Cards Grid -->
-        <section class="mt-6">
+        <!-- VIEW 1: 2-COLUMN HOST GRID VIEW (Image 1 Style) -->
+        <section id="grid-view-section" class="mt-6">
             <div id="hosts-grid" class="grid grid-cols-2 gap-3 sm:gap-5" aria-label="Active Sex Call Hosts">
-                <!-- Host cards injected via JS or fallback placeholders -->
+                <!-- Host cards injected via JS -->
                 <div class="col-span-full py-20 text-center text-sm text-white/50 animate-pulse">
                     Scanning active live hosts...
                 </div>
@@ -90,15 +199,52 @@
                 </button>
             </div>
         </section>
+
+        <!-- VIEW 2: SWIPE DECK VIEW (Full-card swipe format) -->
+        <section id="swipe-view-section" class="mt-6 hidden flex flex-col items-center">
+            <div id="sc-card-container" class="sc-card-wrapper">
+                <div id="sc-loading-card" class="h-full w-full flex flex-col justify-center items-center text-center bg-white/5 backdrop-blur-md rounded-3xl border border-white/10 shadow-lg">
+                    <div class="w-12 h-12 rounded-full border-2 border-pink-500 border-t-transparent animate-spin mb-4"></div>
+                    <h2 class="text-lg font-bold text-pink-300 uppercase tracking-widest">Scanning Hosts...</h2>
+                    <p class="text-xs text-white/50 mt-1 font-mono">FINDING YOUR MATCH</p>
+                </div>
+            </div>
+
+            <!-- Swipe Action Buttons -->
+            <div id="sc-action-buttons" class="flex justify-center items-center gap-4 sm:gap-6 mt-6">
+                <button type="button" onclick="scRewind()" title="Rewind" class="action-btn w-12 h-12 bg-white/10 border border-white/20 text-amber-300 rounded-full shadow-lg hover:bg-white/20 flex items-center justify-center">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                </button>
+
+                <button type="button" onclick="scSwipe('PASS')" title="Pass" class="action-btn w-14 h-14 bg-white/10 border-2 border-rose-400 text-rose-400 rounded-full shadow-lg hover:bg-rose-500 hover:text-white flex items-center justify-center">
+                    <svg class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+                
+                <button id="sc-direct-call-btn" type="button" onclick="scDirectCallCurrent()" title="Direct Video Call" class="action-btn w-16 h-16 bg-gradient-to-tr from-purple-600 via-pink-600 to-amber-500 text-white rounded-full shadow-[0_10px_25px_rgba(217,70,239,0.5)] hover:scale-105 flex flex-col items-center justify-center border-2 border-white">
+                    <span class="text-xl">📹</span>
+                    <span class="text-[8px] font-black tracking-tighter uppercase -mt-0.5 text-amber-200">Call</span>
+                </button>
+
+                <button type="button" onclick="scSwipe('LIKE')" title="Like" class="action-btn w-14 h-14 bg-gradient-to-tr from-pink-500 to-rose-500 text-white rounded-full shadow-[0_12px_30px_rgba(236,72,153,0.4)] hover:scale-105 flex items-center justify-center border-2 border-white">
+                    <svg class="h-7 w-7 fill-current" viewBox="0 0 24 24">
+                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                    </svg>
+                </button>
+
+                <button type="button" onclick="scSwipe('DIRECT')" title="Direct Interest" class="action-btn w-12 h-12 bg-white/10 border border-white/20 text-amber-300 rounded-full shadow-lg hover:bg-white/20 flex items-center justify-center">
+                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.539 1.118l-2.8-2.034a1 1 0 00-1.176 0l-2.8 2.034c-.783.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118l-2.8-2.034c-.783-.57-.38-1.81.588-1.81h3.462a1 1 0 00.95-.69l1.07-3.292z"/></svg>
+                </button>
+            </div>
+        </section>
     </div>
 </main>
 
 <!-- COSMIC RANDOM MATCH WAITING SCREEN (Image 2) -->
 <div id="cosmic-match-overlay" class="fixed inset-0 z-[140] hidden flex-col items-center justify-between p-6 bg-gradient-to-b from-[#090317] via-[#140632] to-[#250942] text-white overflow-hidden select-none" role="dialog" aria-modal="true" aria-labelledby="cosmic-header">
-    <!-- Starfield particles backdrop -->
     <div class="starfield-bg absolute inset-0 pointer-events-none"></div>
 
-    <!-- Top cosmic header -->
     <div class="relative z-10 text-center pt-8 sm:pt-12">
         <span class="text-[10px] font-black uppercase tracking-[0.35em] text-pink-400">1-on-1 Orbit Radar</span>
         <h2 id="cosmic-header" class="text-3xl sm:text-4xl font-black uppercase tracking-widest bg-gradient-to-r from-pink-400 via-rose-300 to-amber-200 bg-clip-text text-transparent mt-1 drop-shadow-lg">
@@ -110,147 +256,82 @@
         </p>
     </div>
 
-    <!-- Central Orbiting Planet Graphic with Pulsing Radar Rings & Floating Avatar Pins -->
+    <!-- Central Orbiting Planet Graphic -->
     <div class="relative z-10 my-auto flex items-center justify-center w-72 h-72 sm:w-96 sm:h-96">
-        <!-- Radar Pulse Waves (Expanding concentric rings) -->
         <div class="radar-ring ring-1 absolute rounded-full border border-pink-500/30"></div>
         <div class="radar-ring ring-2 absolute rounded-full border border-fuchsia-500/25"></div>
         <div class="radar-ring ring-3 absolute rounded-full border border-purple-500/20"></div>
 
-        <!-- Orbit Tracks -->
-        <div class="orbit-path orbit-1 absolute w-60 h-60 sm:w-80 sm:h-80 rounded-full border border-dashed border-white/10 pointer-events-none"></div>
-        <div class="orbit-path orbit-2 absolute w-48 h-48 sm:w-64 sm:h-64 rounded-full border border-dashed border-pink-500/15 pointer-events-none"></div>
-
-        <!-- Orbiting Avatar Pin 1 -->
-        <div class="orbit-pin pin-1 absolute w-11 h-11 rounded-full p-0.5 bg-gradient-to-tr from-pink-500 to-amber-400 shadow-lg shadow-pink-500/50">
-            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Chloe" alt="" class="w-full h-full rounded-full object-cover bg-slate-900">
-        </div>
-        <!-- Orbiting Avatar Pin 2 -->
-        <div class="orbit-pin pin-2 absolute w-11 h-11 rounded-full p-0.5 bg-gradient-to-tr from-cyan-400 to-blue-500 shadow-lg shadow-cyan-500/50">
-            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Zara" alt="" class="w-full h-full rounded-full object-cover bg-slate-900">
-        </div>
-        <!-- Orbiting Avatar Pin 3 -->
-        <div class="orbit-pin pin-3 absolute w-10 h-10 rounded-full p-0.5 bg-gradient-to-tr from-rose-500 to-fuchsia-500 shadow-lg shadow-rose-500/50">
-            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Maya" alt="" class="w-full h-full rounded-full object-cover bg-slate-900">
+        <!-- Central Glowing Celestial Sphere -->
+        <div class="relative flex items-center justify-center w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-gradient-to-tr from-purple-800 via-pink-600 to-amber-400 shadow-[0_0_60px_rgba(236,72,153,0.6)] border border-pink-300/40 animate-pulse">
+            <span class="text-5xl sm:text-6xl drop-shadow-lg">🪐</span>
         </div>
 
-        <!-- Central Glowing Orbiting Planet Sphere -->
-        <div class="planet-body relative z-20 w-28 h-28 sm:w-36 sm:h-36 rounded-full bg-gradient-to-tr from-indigo-950 via-purple-700 to-pink-500 shadow-[0_0_60px_rgba(236,72,153,0.6)] flex items-center justify-center overflow-hidden border-2 border-white/20">
-            <!-- Planet ring accent -->
-            <div class="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.4),transparent_60%)]"></div>
-            <div class="absolute h-[180%] w-6 -rotate-45 bg-pink-400/20 blur-sm pointer-events-none"></div>
-            <!-- Central icon -->
-            <div class="relative z-10 text-3xl sm:text-4xl animate-bounce">🪐</div>
+        <!-- Orbiting Avatar Pins -->
+        <div class="orbit-pin pin-1 absolute flex items-center justify-center">
+            <div class="h-11 w-11 rounded-full border-2 border-pink-400 bg-purple-900 shadow-[0_0_15px_rgba(244,63,94,0.7)] overflow-hidden">
+                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Host1" alt="" class="h-full w-full object-cover">
+            </div>
+        </div>
+        <div class="orbit-pin pin-2 absolute flex items-center justify-center">
+            <div class="h-10 w-10 rounded-full border-2 border-amber-300 bg-indigo-900 shadow-[0_0_15px_rgba(251,191,36,0.7)] overflow-hidden">
+                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Host2" alt="" class="h-full w-full object-cover">
+            </div>
+        </div>
+        <div class="orbit-pin pin-3 absolute flex items-center justify-center">
+            <div class="h-12 w-12 rounded-full border-2 border-cyan-300 bg-slate-900 shadow-[0_0_15px_rgba(34,211,238,0.7)] overflow-hidden">
+                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Host3" alt="" class="h-full w-full object-cover">
+            </div>
         </div>
     </div>
 
     <!-- Bottom Cancel Pill Button -->
-    <div class="relative z-10 text-center pb-8">
-        <button type="button" id="cancel-cosmic-match-btn" class="rounded-full border border-white/25 bg-white/10 px-10 py-3 text-xs font-black uppercase tracking-widest text-white/90 hover:bg-white/20 active:scale-95 backdrop-blur-md shadow-2xl transition">
+    <div class="relative z-10 pb-8 sm:pb-12 text-center">
+        <button type="button" id="cancel-cosmic-match-btn" class="rounded-full bg-white/10 hover:bg-white/20 border border-white/20 px-8 py-3 text-xs font-black uppercase tracking-widest text-white/90 shadow-lg backdrop-blur-md transition active:scale-95">
             Cancel
         </button>
-        <p class="text-[10px] text-white/50 mt-3 font-medium">Rate: {{ call_rate_per_minute }}🪙/min · {{ site_config.grace_period_seconds|default:20 }}s free grace guarantee</p>
     </div>
 </div>
 
-<!-- CLOSED-LOOP MODAL: EXCHANGE DIAMONDS FOR COINS -->
-<div id="diamond-exchange-modal" class="fixed inset-0 z-[150] hidden items-center justify-center bg-black/75 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="exchange-title">
-    <div class="w-full max-w-sm rounded-[2rem] border border-cyan-400/30 bg-[#0e0a1a] p-6 text-white shadow-2xl">
-        <div class="flex items-center justify-between pb-3 border-b border-white/10">
-            <div>
-                <h3 id="exchange-title" class="text-base font-black uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
-                    <span>💎</span>
-                    <span>Exchange Diamonds</span>
-                </h3>
-                <p class="text-[11px] text-white/60">Convert your earned Diamonds into Coins</p>
-            </div>
-            <button type="button" id="close-exchange-modal-btn" class="h-8 w-8 rounded-full bg-white/10 text-white/70 hover:text-white flex items-center justify-center">✕</button>
+<!-- CLOSED-LOOP DIAMOND EXCHANGE MODAL -->
+<div id="diamond-exchange-modal" class="fixed inset-0 z-[140] hidden items-center justify-center bg-slate-950/80 p-4 backdrop-blur-md select-none" role="dialog" aria-modal="true">
+    <div class="relative w-full max-w-sm rounded-3xl border border-cyan-500/30 bg-slate-900 p-6 shadow-2xl text-white">
+        <button type="button" id="close-exchange-modal-btn" class="absolute right-4 top-4 text-white/50 hover:text-white transition text-lg font-bold">✕</button>
+
+        <div class="flex items-center gap-2 mb-4">
+            <span class="text-2xl">💎</span>
+            <h3 class="text-lg font-black uppercase text-cyan-300">Convert Diamonds</h3>
         </div>
 
-        <div class="mt-4 p-3.5 rounded-2xl bg-cyan-950/40 border border-cyan-500/20 text-xs">
-            <div class="flex justify-between font-bold mb-1">
-                <span class="text-white/70">Your Diamond Balance:</span>
-                <span class="text-cyan-300 font-black"><span id="exchange-current-diamonds">{{ user_earned_diamonds }}</span> 💎</span>
-            </div>
-            <div class="flex justify-between font-bold">
-                <span class="text-white/70">Exchange Rate:</span>
-                <span class="text-amber-300 font-black">100 💎 = {{ diamond_to_coin_percentage }} 🪙 ({{ diamond_to_coin_percentage }}%)</span>
-            </div>
-            <p class="text-[10px] text-white/50 mt-2 italic">Strictly closed-loop economy. Diamonds cannot be cashed out into fiat currency.</p>
+        <p class="text-xs text-white/70 mb-4">
+            Exchange your earned diamonds for coins at <strong class="text-cyan-300">{{ diamond_to_coin_percentage }}%</strong>.
+            Diamonds cannot be withdrawn for fiat currency.
+        </p>
+
+        <div class="rounded-2xl bg-white/5 border border-white/10 p-3 mb-4 flex justify-between text-xs font-bold">
+            <span class="text-white/60">Your Diamonds:</span>
+            <span class="text-cyan-300" id="exchange-current-diamonds">{{ user_earned_diamonds }}</span>
         </div>
 
-        <form id="diamond-exchange-form" class="mt-4 space-y-4">
-            <div>
-                <label for="exchange-diamonds-input" class="block text-xs font-bold uppercase tracking-wider text-white/70 mb-1">
-                    Diamonds to convert:
-                </label>
-                <div class="relative">
-                    <input type="number" id="exchange-diamonds-input" min="1" max="{{ user_earned_diamonds }}" placeholder="e.g. 100" required class="w-full rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-bold text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400">
-                    <button type="button" id="exchange-max-btn" class="absolute right-2 top-2 rounded-lg bg-cyan-500/30 px-2 py-1 text-[10px] font-black uppercase text-cyan-300 hover:bg-cyan-500/50">MAX</button>
-                </div>
+        <form id="diamond-exchange-form">
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-white/60 mb-1.5" for="exchange-diamonds-input">Diamonds to Exchange:</label>
+            <div class="relative mb-3">
+                <input type="number" id="exchange-diamonds-input" min="1" max="{{ user_earned_diamonds }}" placeholder="Enter quantity" class="w-full rounded-xl bg-white/10 border border-white/20 px-3 py-2.5 text-sm font-bold text-white focus:outline-none focus:border-cyan-400" required>
+                <button type="button" id="exchange-max-btn" class="absolute right-2 top-2 rounded-lg bg-cyan-500/20 px-2 py-1 text-[10px] font-black uppercase text-cyan-300">MAX</button>
             </div>
 
-            <div class="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between text-xs">
-                <span class="text-white/70">You will receive:</span>
-                <span class="text-base font-black text-amber-300"><span id="preview-coins-received">0</span> 🪙</span>
+            <div class="text-xs text-amber-300 font-bold mb-4 flex items-center justify-between">
+                <span>You will receive:</span>
+                <span>🪙 <span id="preview-coins-received">0</span> Coins</span>
             </div>
-
-            <p id="exchange-status-msg" class="min-h-4 text-center text-xs font-bold" role="status"></p>
 
             <button type="submit" id="submit-exchange-btn" class="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-3 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-cyan-500/30 hover:scale-[1.02] active:scale-95 transition">
                 Exchange Now
             </button>
+            <p id="exchange-status-msg" class="mt-2 min-h-4 text-center text-xs font-bold text-rose-400"></p>
         </form>
     </div>
 </div>
-
-<style>
-/* CSS Keyframes for Cosmic Random Match & Tabs */
-.hub-tab.active-tab {
-    background: linear-gradient(135deg, #f43f5e, #ec4899);
-    color: #ffffff;
-    box-shadow: 0 4px 14px rgba(244, 63, 94, 0.4);
-}
-
-@keyframes radarPing {
-    0% { transform: scale(0.6); opacity: 0.8; }
-    100% { transform: scale(1.6); opacity: 0.8; }
-}
-
-.radar-ring.ring-1 { width: 14rem; height: 14rem; animation: radarPing 3s infinite cubic-bezier(0, 0.2, 0.8, 1); }
-.radar-ring.ring-2 { width: 18rem; height: 18rem; animation: radarPing 3s infinite 1s cubic-bezier(0, 0.2, 0.8, 1); }
-.radar-ring.ring-3 { width: 22rem; height: 22rem; animation: radarPing 3s infinite 2s cubic-bezier(0, 0.2, 0.8, 1); }
-
-@keyframes orbit1 {
-    0% { transform: rotate(0deg) translateX(7rem) rotate(0deg); }
-    100% { transform: rotate(360deg) translateX(7rem) rotate(-360deg); }
-}
-@keyframes orbit2 {
-    0% { transform: rotate(120deg) translateX(9.5rem) rotate(-120deg); }
-    100% { transform: rotate(480deg) translateX(9.5rem) rotate(-480deg); }
-}
-@keyframes orbit3 {
-    0% { transform: rotate(240deg) translateX(8rem) rotate(-240deg); }
-    100% { transform: rotate(600deg) translateX(8rem) rotate(-600deg); }
-}
-
-.orbit-pin.pin-1 { animation: orbit1 8s infinite linear; }
-.orbit-pin.pin-2 { animation: orbit2 12s infinite linear; }
-.orbit-pin.pin-3 { animation: orbit3 10s infinite linear; }
-
-.starfield-bg {
-    background-image: 
-        radial-gradient(2px 2px at 20px 30px, #ffffff, rgba(0,0,0,0)),
-        radial-gradient(2px 2px at 40px 70px, #ffffff, rgba(0,0,0,0)),
-        radial-gradient(1px 1px at 90px 40px, #ffffff, rgba(0,0,0,0)),
-        radial-gradient(2px 2px at 160px 120px, #f472b6, rgba(0,0,0,0)),
-        radial-gradient(2px 2px at 230px 210px, #c084fc, rgba(0,0,0,0)),
-        radial-gradient(1px 1px at 290px 150px, #ffffff, rgba(0,0,0,0));
-    background-repeat: repeat;
-    background-size: 300px 300px;
-    opacity: 0.35;
-}
-</style>
 {% endblock %}
 
 {% block extra_js %}
@@ -260,106 +341,70 @@
     const noHostsMsg = document.getElementById('no-hosts-message');
     const tabHot = document.getElementById('tab-hot');
     const tabNearby = document.getElementById('tab-nearby');
+    const gridViewSec = document.getElementById('grid-view-section');
+    const swipeViewSec = document.getElementById('swipe-view-section');
+    const viewTabGrid = document.getElementById('view-mode-grid');
+    const viewTabSwipe = document.getElementById('view-mode-swipe');
+
     let currentTab = 'hot';
+    let currentView = '{{ initial_view|default:"grid" }}';
 
-    const cosmicOverlay = document.getElementById('cosmic-match-overlay');
-    const startCosmicBtn = document.getElementById('start-cosmic-match-btn');
-    const cancelCosmicBtn = document.getElementById('cancel-cosmic-match-btn');
-    const cosmicStatusLabel = document.getElementById('cosmic-status-label');
-    let cosmicMatchAbortController = null;
-    let cosmicStatusTimer = null;
-
-    // Exchange Modal
-    const exchangeModal = document.getElementById('diamond-exchange-modal');
-    const openExchangeBtn = document.getElementById('hub-diamonds-btn');
-    const closeExchangeBtn = document.getElementById('close-exchange-modal-btn');
-    const exchangeForm = document.getElementById('diamond-exchange-form');
-    const exchangeInput = document.getElementById('exchange-diamonds-input');
-    const exchangeMaxBtn = document.getElementById('exchange-max-btn');
-    const previewCoins = document.getElementById('preview-coins-received');
-    const exchangeStatus = document.getElementById('exchange-status-msg');
-    const exchangeCurrentDiamonds = document.getElementById('exchange-current-diamonds');
-    const hubDiamondsVal = document.getElementById('hub-diamonds-val');
-    const hubCoinsVal = document.getElementById('hub-coins-val');
-    const exchangeRatePercent = parseInt('{{ diamond_to_coin_percentage|default:"70" }}', 10) || 70;
+    // Top View Switcher (Grid vs Swipe)
+    window.setViewMode = (mode) => {
+        currentView = mode;
+        if (mode === 'swipe') {
+            viewTabSwipe.classList.add('active-view');
+            viewTabGrid.classList.remove('active-view');
+            gridViewSec.classList.add('hidden');
+            swipeViewSec.classList.remove('hidden');
+            if (!scQueue.length) fetchSwipeProfiles();
+        } else {
+            viewTabGrid.classList.add('active-view');
+            viewTabSwipe.classList.remove('active-view');
+            swipeViewSec.classList.add('hidden');
+            gridViewSec.classList.remove('hidden');
+        }
+        try {
+            const url = new URL(window.location);
+            url.searchParams.set('view', mode);
+            window.history.replaceState({}, '', url);
+        } catch (_) {}
+    };
 
     function csrfToken() {
         const token = document.cookie.split('; ').find(item => item.startsWith('csrftoken='));
         return token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
     }
 
-    // Top up coins button
-    document.getElementById('hub-coins-btn')?.addEventListener('click', () => {
-        const coinStoreModal = document.getElementById('coin-store-modal');
-        if (coinStoreModal) {
-            coinStoreModal.classList.remove('hidden');
-            coinStoreModal.classList.add('flex');
-        }
+    // Host Profile Click Navigation
+    window.openHostProfile = (event, hostId, username) => {
+        // Only navigate if user did not click on video call action button
+        if (event.target.closest('button')) return;
+        window.location.href = `/profile/${hostId}/`;
+    };
+
+    // Tab Filter Handlers
+    tabHot?.addEventListener('click', () => {
+        if (currentTab === 'hot') return;
+        currentTab = 'hot';
+        tabHot.classList.add('active-tab');
+        tabHot.classList.remove('text-white/60');
+        tabNearby.classList.remove('active-tab');
+        tabNearby.classList.add('text-white/60');
+        loadHosts('hot');
     });
 
-    // Exchange modal triggers
-    openExchangeBtn?.addEventListener('click', () => {
-        exchangeModal.classList.remove('hidden');
-        exchangeModal.classList.add('flex');
-    });
-    closeExchangeBtn?.addEventListener('click', () => {
-        exchangeModal.classList.add('hidden');
-        exchangeModal.classList.remove('flex');
-    });
-
-    exchangeInput?.addEventListener('input', () => {
-        const diamonds = parseInt(exchangeInput.value, 10) || 0;
-        const coins = Math.floor(diamonds * (exchangeRatePercent / 100));
-        previewCoins.textContent = coins;
+    tabNearby?.addEventListener('click', () => {
+        if (currentTab === 'nearby') return;
+        currentTab = 'nearby';
+        tabNearby.classList.add('active-tab');
+        tabNearby.classList.remove('text-white/60');
+        tabHot.classList.remove('active-tab');
+        tabHot.classList.add('text-white/60');
+        loadHosts('nearby');
     });
 
-    exchangeMaxBtn?.addEventListener('click', () => {
-        const maxDiamonds = parseInt(exchangeCurrentDiamonds.textContent, 10) || 0;
-        exchangeInput.value = maxDiamonds;
-        const coins = Math.floor(maxDiamonds * (exchangeRatePercent / 100));
-        previewCoins.textContent = coins;
-    });
-
-    exchangeForm?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const diamonds = parseInt(exchangeInput.value, 10);
-        if (!diamonds || diamonds <= 0) return;
-
-        exchangeStatus.textContent = 'Exchanging...';
-        exchangeStatus.className = 'min-h-4 text-center text-xs font-bold text-white/70';
-
-        try {
-            const res = await fetch("/api/wallet/convert-diamonds/", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken(),
-                },
-                body: JSON.stringify({ diamonds }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || data.message || 'Exchange failed');
-
-            exchangeStatus.textContent = data.message || 'Exchanged successfully!';
-            exchangeStatus.className = 'min-h-4 text-center text-xs font-bold text-emerald-400';
-            hubDiamondsVal.textContent = data.earned_diamonds;
-            exchangeCurrentDiamonds.textContent = data.earned_diamonds;
-            hubCoinsVal.textContent = data.coin_balance;
-            exchangeInput.value = '';
-            previewCoins.textContent = '0';
-
-            setTimeout(() => {
-                exchangeModal.classList.add('hidden');
-                exchangeModal.classList.remove('flex');
-                exchangeStatus.textContent = '';
-            }, 1500);
-        } catch (err) {
-            exchangeStatus.textContent = err.message;
-            exchangeStatus.className = 'min-h-4 text-center text-xs font-bold text-rose-400';
-        }
-    });
-
-    // Fetch and render hosts grid
+    // Load 2-Column Host Grid
     async function loadHosts(tab = 'hot') {
         hostsGrid.innerHTML = `
             <div class="col-span-full py-16 text-center text-sm text-white/50 animate-pulse">
@@ -381,7 +426,7 @@
             }
 
             hostsGrid.innerHTML = hosts.map(h => `
-                <div class="relative rounded-3xl overflow-hidden aspect-[3/4] bg-slate-900 border border-white/10 shadow-2xl group transition-all duration-300">
+                <div class="relative rounded-3xl overflow-hidden aspect-[3/4] bg-slate-900 border border-white/10 shadow-2xl group transition-all duration-300 cursor-pointer" onclick="openHostProfile(event, ${h.id}, '${h.username}')">
                     <img src="${h.avatar_url}" alt="${h.username}" class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
                     <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none"></div>
 
@@ -410,7 +455,7 @@
                     </div>
 
                     <!-- Floating Round Orange/Pink Video Call Action Button -->
-                    <button type="button" onclick="startDirectCall(${h.id}, '${h.username}')" class="absolute bottom-3 right-3 h-11 w-11 rounded-full bg-gradient-to-tr from-orange-500 via-rose-500 to-pink-500 flex items-center justify-center text-white shadow-xl shadow-pink-500/40 hover:scale-110 active:scale-90 transition-all duration-200" title="Call ${h.username}">
+                    <button type="button" onclick="event.stopPropagation(); startDirectCall(${h.id}, '${h.username}')" class="absolute bottom-3 right-3 h-11 w-11 rounded-full bg-gradient-to-tr from-orange-500 via-rose-500 to-pink-500 flex items-center justify-center text-white shadow-xl shadow-pink-500/40 hover:scale-110 active:scale-90 transition-all duration-200" title="Call ${h.username}">
                         <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
                             <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
                         </svg>
@@ -426,7 +471,7 @@
         }
     }
 
-    // Direct call action
+    // Direct Video Call Trigger
     window.startDirectCall = async (receiverId, receiverName) => {
         try {
             const res = await fetch("/api/calls/initiate/", {
@@ -439,127 +484,283 @@
             });
             const data = await res.json();
             if (!res.ok) {
-                if (data.message === 'sex_call_pass_required' || data.message === 'insufficient_coins') {
-                    // Open coin store modal
-                    const coinStoreModal = document.getElementById('coin-store-modal');
-                    if (coinStoreModal) {
-                        coinStoreModal.classList.remove('hidden');
-                        coinStoreModal.classList.add('flex');
-                    } else {
-                        alert(`You need at least ${data.required_coins || 20} coins to start a video call.`);
-                    }
-                    return;
+                if (data.message === 'insufficient_coins' || data.message === 'sex_call_pass_required') {
+                    window.location.href = "{% url 'coin_shop' %}";
+                } else {
+                    alert(data.message || 'Unable to initiate call');
                 }
-                throw new Error(data.detail || data.message || 'Call failed to initiate');
+                return;
             }
 
-            if (data.call?.room_id || data.room_id) {
-                const rId = data.call?.room_id || data.room_id;
-                window.location.href = `/call/${rId}/`;
+            // Route to call room
+            if (data.room_id) {
+                window.location.href = `/call/${data.room_id}/`;
+            } else if (window.lovenyStartVideoCall) {
+                window.lovenyStartVideoCall(receiverId);
             }
         } catch (err) {
-            alert(err.message);
+            alert('Call initiation error: ' + err.message);
         }
     };
 
-    // Tab switcher
-    tabHot?.addEventListener('click', () => {
-        currentTab = 'hot';
-        tabHot.classList.add('active-tab', 'text-white');
-        tabHot.classList.remove('text-white/60');
-        tabNearby.classList.remove('active-tab', 'text-white');
-        tabNearby.classList.add('text-white/60');
-        loadHosts('hot');
-    });
+    // --- SWIPE DECK LOGIC ---
+    let scQueue = [];
+    let scCurrentCardEl = null;
+    let scIsDragging = false;
+    let scStartX = 0;
+    const scCardContainer = document.getElementById('sc-card-container');
 
-    tabNearby?.addEventListener('click', () => {
-        currentTab = 'nearby';
-        tabNearby.classList.add('active-tab', 'text-white');
-        tabNearby.classList.remove('text-white/60');
-        tabHot.classList.remove('active-tab', 'text-white');
-        tabHot.classList.add('text-white/60');
-        loadHosts('nearby');
-    });
-
-    // Cosmic Random Match Flow
-    startCosmicBtn?.addEventListener('click', () => {
-        cosmicOverlay.classList.remove('hidden');
-        cosmicOverlay.classList.add('flex');
-        runCosmicMatch();
-    });
-
-    cancelCosmicBtn?.addEventListener('click', () => {
-        abortCosmicMatch();
-    });
-
-    function abortCosmicMatch() {
-        if (cosmicMatchAbortController) {
-            cosmicMatchAbortController.abort();
-            cosmicMatchAbortController = null;
+    async function fetchSwipeProfiles() {
+        try {
+            const res = await fetch("{{ PROFILES_URL }}");
+            const data = await res.json();
+            if (data.profiles && data.profiles.length > 0) {
+                scQueue = data.profiles;
+                renderNextSwipeCard();
+            } else {
+                renderEmptySwipeCard();
+            }
+        } catch (_) {
+            renderEmptySwipeCard();
         }
-        clearInterval(cosmicStatusTimer);
-        cosmicOverlay.classList.add('hidden');
-        cosmicOverlay.classList.remove('flex');
     }
 
-    async function runCosmicMatch() {
-        cosmicMatchAbortController = new AbortController();
-        const statusPhrases = [
-            "Scanning orbit for open partners...",
-            "Tuning spicy frequencies...",
-            "Pairing high-definition video channel...",
-            "Connecting with live host..."
-        ];
-        let phraseIdx = 0;
-        clearInterval(cosmicStatusTimer);
-        cosmicStatusTimer = setInterval(() => {
-            phraseIdx = (phraseIdx + 1) % statusPhrases.length;
-            cosmicStatusLabel.innerHTML = `<span class="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span><span>${statusPhrases[phraseIdx]}</span>`;
-        }, 1800);
+    function renderEmptySwipeCard() {
+        if (!scCardContainer) return;
+        scCardContainer.innerHTML = `
+            <div class="h-full w-full flex flex-col justify-center items-center text-center bg-white/5 backdrop-blur-md rounded-3xl border border-white/10 p-6 shadow-lg">
+                <div class="text-4xl mb-3">💋</div>
+                <h3 class="text-base font-bold text-white mb-1">You're all caught up!</h3>
+                <p class="text-xs text-white/60 mb-4">No more profiles in this batch. Switch to Grid view or check back soon.</p>
+                <button type="button" onclick="setViewMode('grid')" class="rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-5 py-2 text-xs font-black uppercase text-white shadow-lg">
+                    Browse Grid View
+                </button>
+            </div>
+        `;
+    }
+
+    function renderNextSwipeCard() {
+        if (!scQueue.length) {
+            renderEmptySwipeCard();
+            return;
+        }
+
+        const profile = scQueue.shift();
+        const card = document.createElement('div');
+        card.className = 'sc-card';
+        card.dataset.targetId = profile.id;
+        card.dataset.username = profile.username;
+        card.innerHTML = `
+            <img src="${profile.image_url || profile.avatar}" alt="${profile.username}" class="w-full h-full object-cover pointer-events-none">
+            <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none"></div>
+            
+            <div class="absolute top-4 left-4 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 backdrop-blur-md border border-white/10 text-xs font-bold text-white pointer-events-none">
+                <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Online Host</span>
+            </div>
+
+            <div class="absolute bottom-6 left-6 right-6 pointer-events-none">
+                <h3 class="text-2xl font-black text-white leading-tight">
+                    ${profile.username}, <span class="text-pink-400">${profile.age}</span>
+                </h3>
+                <p class="text-xs text-white/70 mt-1">${profile.location || 'Online'} · 🪙 {{ call_rate_per_minute|default:20 }}/min</p>
+                ${profile.bio ? `<p class="text-xs text-white/80 mt-2 line-clamp-2">${profile.bio}</p>` : ''}
+            </div>
+        `;
+
+        setupSwipeCardDrag(card);
+        scCardContainer.innerHTML = '';
+        scCardContainer.appendChild(card);
+        scCurrentCardEl = card;
+    }
+
+    function setupSwipeCardDrag(card) {
+        let currentX = 0;
+        const onStart = (e) => {
+            scIsDragging = true;
+            scStartX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+            card.classList.remove('sc-card-animate');
+        };
+        const onMove = (e) => {
+            if (!scIsDragging) return;
+            const x = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+            currentX = x - scStartX;
+            card.style.transform = `translateX(${currentX}px) rotate(${currentX * 0.08}deg)`;
+        };
+        const onEnd = () => {
+            if (!scIsDragging) return;
+            scIsDragging = false;
+            if (currentX > 100) {
+                scSwipe('LIKE');
+            } else if (currentX < -100) {
+                scSwipe('PASS');
+            } else {
+                card.classList.add('sc-card-animate');
+                card.style.transform = '';
+            }
+        };
+
+        card.addEventListener('mousedown', onStart);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onEnd);
+        card.addEventListener('touchstart', onStart, { passive: true });
+        window.addEventListener('touchmove', onMove, { passive: true });
+        window.addEventListener('touchend', onEnd);
+    }
+
+    window.scSwipe = async (action) => {
+        if (!scCurrentCardEl) return;
+        const targetId = scCurrentCardEl.dataset.targetId;
+        scCurrentCardEl.classList.add('sc-card-animate');
+        scCurrentCardEl.style.transform = action === 'LIKE' ? 'translateX(150vw) rotate(25deg)' : 'translateX(-150vw) rotate(-25deg)';
+
+        setTimeout(() => {
+            renderNextSwipeCard();
+        }, 200);
 
         try {
-            const res = await fetch("/api/calls/quick-match/", {
+            await fetch("{{ SWIPE_URL }}", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken(),
                 },
-                body: JSON.stringify({}),
-                signal: cosmicMatchAbortController.signal,
+                body: JSON.stringify({ action: action, target_user_id: targetId }),
+            });
+        } catch (_) {}
+    };
+
+    window.scRewind = async () => {
+        try {
+            const res = await fetch("{% url 'rewind_swipe' %}", {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken() },
+            });
+            if (res.ok) fetchSwipeProfiles();
+        } catch (_) {}
+    };
+
+    window.scDirectCallCurrent = () => {
+        if (scCurrentCardEl && scCurrentCardEl.dataset.targetId) {
+            startDirectCall(scCurrentCardEl.dataset.targetId, scCurrentCardEl.dataset.username);
+        }
+    };
+
+    // --- COSMIC RANDOM MATCH LOGIC ---
+    const cosmicOverlay = document.getElementById('cosmic-match-overlay');
+    const startCosmicBtn = document.getElementById('start-cosmic-match-btn');
+    const cancelCosmicBtn = document.getElementById('cancel-cosmic-match-btn');
+    let cosmicTimer = null;
+
+    startCosmicBtn?.addEventListener('click', () => {
+        cosmicOverlay.classList.remove('hidden');
+        cosmicOverlay.classList.add('flex');
+        
+        cosmicTimer = setTimeout(async () => {
+            try {
+                const res = await fetch("/api/calls/quick-match/", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken(),
+                    },
+                });
+                const data = await res.json();
+                if (data.status === 'success' && data.room_id) {
+                    window.location.href = `/call/${data.room_id}/`;
+                } else if (data.status === 'success' && data.host_id) {
+                    startDirectCall(data.host_id, data.host_username);
+                } else if (data.message === 'insufficient_coins') {
+                    window.location.href = "{% url 'coin_shop' %}";
+                } else {
+                    document.getElementById('cosmic-status-label').textContent = 'No hosts found right now. Try again!';
+                }
+            } catch (_) {
+                document.getElementById('cosmic-status-label').textContent = 'Match timed out. Please retry.';
+            }
+        }, 3000);
+    });
+
+    cancelCosmicBtn?.addEventListener('click', () => {
+        if (cosmicTimer) clearTimeout(cosmicTimer);
+        cosmicOverlay.classList.add('hidden');
+        cosmicOverlay.classList.remove('flex');
+    });
+
+    // --- DIAMOND EXCHANGE LOGIC ---
+    const exchangeModal = document.getElementById('diamond-exchange-modal');
+    const openExchangeBtn = document.getElementById('hub-diamonds-btn');
+    const closeExchangeBtn = document.getElementById('close-exchange-modal-btn');
+    const exchangeForm = document.getElementById('diamond-exchange-form');
+    const exchangeInput = document.getElementById('exchange-diamonds-input');
+    const exchangeMaxBtn = document.getElementById('exchange-max-btn');
+    const previewCoins = document.getElementById('preview-coins-received');
+    const exchangeStatus = document.getElementById('exchange-status-msg');
+    const ratePercent = parseInt('{{ diamond_to_coin_percentage|default:"70" }}', 10) || 70;
+
+    openExchangeBtn?.addEventListener('click', () => {
+        exchangeModal.classList.remove('hidden');
+        exchangeModal.classList.add('flex');
+    });
+    closeExchangeBtn?.addEventListener('click', () => {
+        exchangeModal.classList.add('hidden');
+        exchangeModal.classList.remove('flex');
+    });
+
+    exchangeInput?.addEventListener('input', () => {
+        const qty = parseInt(exchangeInput.value, 10) || 0;
+        previewCoins.textContent = Math.floor(qty * (ratePercent / 100));
+    });
+
+    exchangeMaxBtn?.addEventListener('click', () => {
+        const max = parseInt(document.getElementById('exchange-current-diamonds')?.textContent || '0', 10);
+        exchangeInput.value = max;
+        previewCoins.textContent = Math.floor(max * (ratePercent / 100));
+    });
+
+    exchangeForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const diamonds = parseInt(exchangeInput.value, 10);
+        if (!diamonds || diamonds <= 0) return;
+
+        exchangeStatus.textContent = 'Exchanging...';
+        exchangeStatus.className = 'mt-2 min-h-4 text-center text-xs font-bold text-white/70';
+
+        try {
+            const res = await fetch("/api/wallet/convert-diamonds/", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+                body: JSON.stringify({ diamonds }),
             });
             const data = await res.json();
-            if (!res.ok) {
-                if (data.message === 'sex_call_pass_required' || data.message === 'insufficient_coins') {
-                    abortCosmicMatch();
-                    const coinStoreModal = document.getElementById('coin-store-modal');
-                    if (coinStoreModal) {
-                        coinStoreModal.classList.remove('hidden');
-                        coinStoreModal.classList.add('flex');
-                    } else {
-                        alert(`You need at least ${data.required_coins || 20} coins to start a video call.`);
-                    }
-                    return;
-                }
-                throw new Error(data.detail || data.message || 'No hosts available right now');
-            }
+            if (!res.ok) throw new Error(data.detail || data.message || 'Exchange failed');
 
-            if (data.room_id) {
-                cosmicStatusLabel.textContent = `Matched! Connecting to ${data.host?.username || 'host'}...`;
-                setTimeout(() => {
-                    window.location.href = `/call/${data.room_id}/`;
-                }, 800);
-            }
-        } catch (err) {
-            if (err.name === 'AbortError') return;
-            cosmicStatusLabel.textContent = err.message;
+            exchangeStatus.textContent = 'Exchange successful!';
+            exchangeStatus.className = 'mt-2 min-h-4 text-center text-xs font-bold text-emerald-400';
+            document.getElementById('hub-diamonds-val').textContent = data.earned_diamonds;
+            document.getElementById('exchange-current-diamonds').textContent = data.earned_diamonds;
+            document.getElementById('hub-coins-val').textContent = data.coin_balance;
+
             setTimeout(() => {
-                abortCosmicMatch();
-            }, 2500);
+                exchangeModal.classList.add('hidden');
+                exchangeModal.classList.remove('flex');
+                exchangeStatus.textContent = '';
+                exchangeInput.value = '';
+                previewCoins.textContent = '0';
+            }, 1200);
+        } catch (err) {
+            exchangeStatus.textContent = err.message;
+            exchangeStatus.className = 'mt-2 min-h-4 text-center text-xs font-bold text-rose-400';
         }
-    }
+    });
 
-    // Initial load
-    loadHosts('hot');
+    // Initialize View Mode
+    setViewMode(currentView);
+    loadHosts(currentTab);
 })();
 </script>
 {% endblock %}
+

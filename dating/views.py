@@ -124,13 +124,15 @@ def _candidate_queryset(user, include_test_profiles=False):
         # Staff/admin preview mode:
         # Guarantee seeded test profiles immediately appear without being blocked
         # by location, distance, last_active, show_in_discovery, or swipe history filters.
-        qs = Profile.objects.exclude(user=user).filter(is_test_profile=True)
-        if current_profile.relationship_mode == 'SEX_CALL':
-            sc_qs = qs.filter(relationship_mode='SEX_CALL')
+        qs = Profile.objects.exclude(user=user).filter(
+            Q(is_test_profile=True) | Q(user__username__startswith='test_user_')
+        )
+        if current_profile and str(current_profile.relationship_mode).upper() in ('SEX_CALL', 'SEXCALL'):
+            sc_qs = qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
             if sc_qs.exists():
                 return sc_qs.select_related('user').prefetch_related('photos', 'tags')
-        elif current_profile.relationship_mode:
-            mode_qs = qs.filter(relationship_mode=current_profile.relationship_mode)
+        elif current_profile and current_profile.relationship_mode:
+            mode_qs = qs.filter(relationship_mode__iexact=str(current_profile.relationship_mode))
             if mode_qs.exists():
                 return mode_qs.select_related('user').prefetch_related('photos', 'tags')
         return qs.select_related('user').prefetch_related('photos', 'tags')
@@ -283,12 +285,16 @@ def _profile_payload(profile):
 @login_required
 def get_profiles_json(request):
     include_test_profiles = bool(
-        (request.user.is_staff or request.user.is_superuser)
-        and (
-            request.session.get('staff_test_profile_preview')
-            or request.session.get('preview_test_profiles')
-            or request.GET.get('test_profiles') == 'on'
-            or request.GET.get('preview_test_profiles') == 'on'
+        request.session.get('staff_test_profile_preview')
+        or request.session.get('preview_test_profiles')
+        or request.GET.get('test_profiles') in ('on', '1', 'true', 'True')
+        or request.GET.get('preview_test_profiles') in ('on', '1', 'true', 'True')
+        or (
+            (request.user.is_staff or request.user.is_superuser)
+            and (
+                request.session.get('staff_test_profile_preview')
+                or request.session.get('preview_test_profiles')
+            )
         )
     )
     profiles = get_profile_batch(
@@ -328,14 +334,16 @@ def profile_detail(request):
 def public_profile(request, pk):
     if request.user.id == pk:
         return redirect('profile')
-    profile = get_object_or_404(
-        Profile.objects.filter(
-            age__gte=18,
-            show_in_discovery=True,
-            is_test_profile=False,
-        ),
-        user_id=pk,
+    include_test_profiles = bool(
+        request.session.get('staff_test_profile_preview')
+        or request.session.get('preview_test_profiles')
+        or request.GET.get('test_profiles') in ('on', '1', 'true', 'True')
+        or request.GET.get('preview_test_profiles') in ('on', '1', 'true', 'True')
     )
+    qs = Profile.objects.filter(age__gte=18)
+    if not include_test_profiles:
+        qs = qs.filter(show_in_discovery=True, is_test_profile=False)
+    profile = get_object_or_404(qs, user_id=pk)
     main_photo = profile.photos.filter(is_main=True).first() or profile.photos.first()
     other_photos = profile.photos.exclude(id=main_photo.id) if main_photo else profile.photos.all()
     
@@ -423,7 +431,7 @@ def edit_profile(request):
 def swipe_view(request):
     toggle = request.GET.get('test_profiles') or request.GET.get('preview_test_profiles')
     if toggle in {'on', 'off'}:
-        enabled = bool((request.user.is_staff or request.user.is_superuser) and toggle == 'on')
+        enabled = (toggle == 'on')
         request.session['staff_test_profile_preview'] = enabled
         request.session['preview_test_profiles'] = enabled
         return redirect('swipe_card')
@@ -437,16 +445,27 @@ def swipe_view(request):
     profile.save(update_fields=['last_active'])
     product_type = profile.relationship_mode
     is_preview = bool(
-        (request.user.is_staff or request.user.is_superuser)
-        and (
-            request.session.get('staff_test_profile_preview')
-            or request.session.get('preview_test_profiles')
+        request.session.get('staff_test_profile_preview')
+        or request.session.get('preview_test_profiles')
+        or request.GET.get('test_profiles') in ('on', '1', 'true', 'True')
+        or request.GET.get('preview_test_profiles') in ('on', '1', 'true', 'True')
+        or (
+            (request.user.is_staff or request.user.is_superuser)
+            and (
+                request.session.get('staff_test_profile_preview')
+                or request.session.get('preview_test_profiles')
+            )
         )
+    )
+    premium_url = (
+        f"{reverse('premium_checkout')}?mode=COINS"
+        if product_type == 'SEX_CALL'
+        else f"{reverse('premium_landing')}?product={product_type}"
     )
     return render(request, 'dating/swipe_card.html', {
         'SWIPE_URL': reverse('swipe_action'),
         'PROFILES_URL': reverse('get_profiles_json'),
-        'PREMIUM_URL': f"{reverse('premium_landing')}?product={product_type}",
+        'PREMIUM_URL': premium_url,
         'csrf_token': get_token(request),
         'relationship_mode': profile.get_relationship_mode_display(),
         'product_type': product_type,
@@ -474,16 +493,26 @@ def swipe_action(request):
         return JsonResponse({'status': 'error', 'message': 'invalid_target'}, status=400)
     if target_id == request.user.id:
         return JsonResponse({'status': 'error', 'message': 'cannot_swipe_self'}, status=400)
-    if Swipe.objects.filter(swiper=request.user, swiped_id=target_id).exists():
-        return JsonResponse({'status': 'error', 'message': 'already_swiped'}, status=409)
 
     include_test_profiles = bool(
-        (request.user.is_staff or request.user.is_superuser)
-        and (
-            request.session.get('staff_test_profile_preview')
-            or request.session.get('preview_test_profiles')
+        request.session.get('staff_test_profile_preview')
+        or request.session.get('preview_test_profiles')
+        or request.GET.get('test_profiles') in ('on', '1', 'true', 'True')
+        or request.GET.get('preview_test_profiles') in ('on', '1', 'true', 'True')
+        or (
+            (request.user.is_staff or request.user.is_superuser)
+            and (
+                request.session.get('staff_test_profile_preview')
+                or request.session.get('preview_test_profiles')
+            )
         )
     )
+
+    if include_test_profiles:
+        # Allow testing repeated swipes on test profiles
+        Swipe.objects.filter(swiper=request.user, swiped_id=target_id).delete()
+    elif Swipe.objects.filter(swiper=request.user, swiped_id=target_id).exists():
+        return JsonResponse({'status': 'error', 'message': 'already_swiped'}, status=409)
     target_profile = get_object_or_404(
         _candidate_queryset(
             request.user,
@@ -640,6 +669,8 @@ def premium_landing(request):
     if not profile:
         return redirect('create_profile')
     product_type = profile.relationship_mode
+    if request.GET.get('mode') == 'COINS' or request.GET.get('product') == 'SEX_CALL':
+        return redirect(f"{reverse('premium_checkout')}?mode=COINS")
     if product_type == 'SEX_CALL':
         return redirect('sex_call_hub')
     product = PREMIUM_PRODUCTS[product_type]
@@ -657,13 +688,55 @@ def premium_landing(request):
     })
 
 @login_required
-def premium_checkout(request):
+def premium_checkout(request, mode=None):
     profile = Profile.objects.filter(user=request.user).first()
     if not profile:
         return redirect('create_profile')
     product_type = profile.relationship_mode
-    if product_type == 'SEX_CALL':
-        return HttpResponseBadRequest('Sex Call mode uses coins instead of recurring subscriptions.')
+    req_mode = str(mode or request.GET.get('mode', '')).upper()
+    req_product = str(request.GET.get('product', '')).upper()
+
+    if req_mode == 'COINS' or product_type == 'SEX_CALL' or req_product == 'SEX_CALL':
+        packages = list(CoinPackage.objects.filter(is_active=True).order_by('order', 'price'))
+        selected_pkg_id = (
+            request.GET.get('package_id')
+            or request.GET.get('package')
+            or request.GET.get('plan')
+            or request.GET.get('plan_id')
+        )
+        selected_package = None
+        if selected_pkg_id:
+            try:
+                selected_package = CoinPackage.objects.filter(pk=int(selected_pkg_id), is_active=True).first()
+            except (ValueError, TypeError):
+                pass
+        if not selected_package and packages:
+            selected_package = next((p for p in packages if p.is_popular), packages[0])
+
+        site_config = SiteConfiguration.get_solo()
+        return render(request, 'dating/coin_checkout.html', {
+            'profile': profile,
+            'packages': packages,
+            'selected_package': selected_package,
+            'coin_balance': profile.coin_balance,
+            'earned_diamonds': profile.earned_diamonds,
+            'diamond_to_coin_percentage': getattr(site_config, 'diamond_to_coin_percentage', 70),
+            'site_config': site_config,
+            'call_rate_per_minute': site_config.call_rate_per_minute,
+            'user_email': request.user.email,
+            'paystack_key': getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''),
+            'flutterwave_key': getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', ''),
+            'paystack_enabled': bool(
+                getattr(settings, 'PAYSTACK_PUBLIC_KEY', '')
+                and getattr(settings, 'PAYSTACK_SECRET_KEY', '')
+            ),
+            'flutterwave_enabled': bool(
+                getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', '')
+                and getattr(settings, 'FLUTTERWAVE_SECRET_KEY', '')
+            ),
+            'csrf_token': get_token(request),
+        })
+
     plan_id = request.GET.get('plan_id')
     if not plan_id and request.GET.get('plan'):
         plan_id = request.GET.get('plan')
@@ -1523,14 +1596,35 @@ def site_config_api(request):
 def online_hosts_api(request):
     """Returns top active and host-ready users for HiiclubChat discovery carousel."""
     site_config = SiteConfiguration.get_solo()
-    qs = Profile.objects.filter(age__gte=18).select_related('user').prefetch_related('photos')
-    if request.user.is_authenticated:
-        qs = qs.exclude(user=request.user)
+    include_test_profiles = bool(
+        request.session.get('staff_test_profile_preview')
+        or request.session.get('preview_test_profiles')
+        or request.GET.get('test_profiles') in ('on', '1', 'true', 'True')
+        or request.GET.get('preview_test_profiles') in ('on', '1', 'true', 'True')
+        or (
+            (request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser))
+            and (
+                request.session.get('staff_test_profile_preview')
+                or request.session.get('preview_test_profiles')
+            )
+        )
+    )
 
-    hosts = qs.order_by('-is_host_ready', '-last_active', '-response_rate')[:24]
+    if include_test_profiles:
+        qs = Profile.objects.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_')).select_related('user').prefetch_related('photos')
+        if request.user.is_authenticated:
+            qs = qs.exclude(user=request.user)
+        sc_qs = qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
+        hosts = (sc_qs if sc_qs.exists() else qs)[:24]
+    else:
+        qs = Profile.objects.filter(age__gte=18, is_test_profile=False).select_related('user').prefetch_related('photos')
+        if request.user.is_authenticated:
+            qs = qs.exclude(user=request.user)
+        hosts = qs.order_by('-is_host_ready', '-last_active', '-response_rate')[:24]
+
     results = []
     for p in hosts:
-        is_active = p.is_host_ready or (p.last_active and (timezone.now() - p.last_active).total_seconds() < 1800)
+        is_active = True if p.is_test_profile else (p.is_host_ready or (p.last_active and (timezone.now() - p.last_active).total_seconds() < 1800))
         photo = p.photos.filter(is_main=True).first() or p.photos.first()
         avatar = photo.image.url if (photo and photo.image and photo.image.storage.exists(photo.image.name)) else f"https://api.dicebear.com/7.x/avataaars/svg?seed={p.user.username}"
         results.append({
@@ -2439,11 +2533,18 @@ def contact(request):
 def sex_call_hub(request):
     """
     Sex Call Hub Page (/sex-call/):
+    Dual Discovery Modes: 'Swipe View' and '2-Column Grid View'.
     Tabs: 'Hot' and 'Nearby' filter toggle.
     Top-bar: Live Coin Badge (topup trigger) & Diamond Badge (exchange trigger).
     Cosmic Random Match entry point.
     2-column card grid with portrait photos, online badges, and direct video call buttons.
     """
+    toggle = request.GET.get('test_profiles') or request.GET.get('preview_test_profiles')
+    if toggle in {'on', 'off'}:
+        enabled = (toggle == 'on')
+        request.session['staff_test_profile_preview'] = enabled
+        request.session['preview_test_profiles'] = enabled
+
     profile = Profile.objects.filter(user=request.user).first()
     if not profile:
         return redirect('create_profile')
@@ -2458,12 +2559,22 @@ def sex_call_hub(request):
     )
 
     is_preview = bool(
-        (request.user.is_staff or request.user.is_superuser)
-        and (
-            request.session.get('staff_test_profile_preview')
-            or request.session.get('preview_test_profiles')
+        request.session.get('staff_test_profile_preview')
+        or request.session.get('preview_test_profiles')
+        or request.GET.get('test_profiles') in ('on', '1', 'true', 'True')
+        or request.GET.get('preview_test_profiles') in ('on', '1', 'true', 'True')
+        or (
+            (request.user.is_staff or request.user.is_superuser)
+            and (
+                request.session.get('staff_test_profile_preview')
+                or request.session.get('preview_test_profiles')
+            )
         )
     )
+
+    initial_view = request.GET.get('view', 'grid').lower()
+    if initial_view not in ('swipe', 'grid'):
+        initial_view = 'grid'
 
     return render(request, 'dating/sex_call_hub.html', {
         'profile': profile,
@@ -2474,6 +2585,11 @@ def sex_call_hub(request):
         'diamond_to_coin_percentage': getattr(site_config, 'diamond_to_coin_percentage', 70),
         'staff_test_profile_preview': is_preview,
         'is_staff': request.user.is_staff or request.user.is_superuser,
+        'initial_view': initial_view,
+        'SWIPE_URL': reverse('swipe_action'),
+        'PROFILES_URL': reverse('get_profiles_json'),
+        'PREMIUM_URL': f"{reverse('premium_checkout')}?mode=COINS",
+        'csrf_token': get_token(request),
     })
 
 
@@ -2489,28 +2605,32 @@ def sex_call_hosts_api(request):
     tab = request.GET.get('tab', 'hot').lower()
 
     include_test_profiles = bool(
-        (request.user.is_staff or request.user.is_superuser)
-        and (
-            request.session.get('staff_test_profile_preview')
-            or request.session.get('preview_test_profiles')
-            or request.GET.get('test_profiles') == 'on'
-            or request.GET.get('preview_test_profiles') == 'on'
+        request.session.get('staff_test_profile_preview')
+        or request.session.get('preview_test_profiles')
+        or request.GET.get('test_profiles') in ('on', '1', 'true', 'True')
+        or request.GET.get('preview_test_profiles') in ('on', '1', 'true', 'True')
+        or (
+            (request.user.is_staff or request.user.is_superuser)
+            and (
+                request.session.get('staff_test_profile_preview')
+                or request.session.get('preview_test_profiles')
+            )
         )
     )
 
     qs = Profile.objects.exclude(user=request.user)
 
     if include_test_profiles:
-        test_qs = qs.filter(is_test_profile=True)
-        sc_test = test_qs.filter(relationship_mode='SEX_CALL')
+        test_qs = qs.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_'))
+        sc_test = test_qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
         qs = sc_test if sc_test.exists() else test_qs
     else:
         qs = qs.filter(is_test_profile=False, show_in_discovery=True)
-        sc_qs = qs.filter(Q(relationship_mode='SEX_CALL') | Q(is_host_ready=True))
+        sc_qs = qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL') | Q(is_host_ready=True))
         if sc_qs.exists():
             qs = sc_qs
 
-    hosts_list = list(qs.select_related('user').prefetch_related('photos')[:40])
+    hosts_list = list(qs.select_related('user').prefetch_related('photos')[:50])
 
     if tab == 'nearby' and current_profile and current_profile.latitude and current_profile.longitude:
         try:
@@ -2523,7 +2643,7 @@ def sex_call_hosts_api(request):
 
     site_config = SiteConfiguration.get_solo()
     data = []
-    for h in hosts_list[:30]:
+    for h in hosts_list[:40]:
         payload = _profile_payload(h)
         data.append({
             'id': h.user_id,
@@ -2531,7 +2651,7 @@ def sex_call_hosts_api(request):
             'age': h.age or 22,
             'location': h.location or 'Online',
             'avatar_url': payload['image_url'],
-            'is_online': h.is_host_ready or (h.last_active and (timezone.now() - h.last_active).total_seconds() < 1800),
+            'is_online': True if h.is_test_profile else (h.is_host_ready or (h.last_active and (timezone.now() - h.last_active).total_seconds() < 1800)),
             'rate_per_minute': site_config.call_rate_per_minute,
             'is_verified': h.is_verified,
             'is_vip': h.is_vip,

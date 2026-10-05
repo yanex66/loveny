@@ -1592,4 +1592,72 @@ class DatingPlatformTests(TestCase):
         hosts = res_hosts.json()['hosts']
         self.assertTrue(any(h['id'] == test_profile.pk for h in hosts))
 
+    def test_coin_checkout_page_renders_packages_and_closed_loop_rules(self):
+        self.client.force_login(self.alice)
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.coin_balance = 45
+        self.alice_profile.earned_diamonds = 30
+        self.alice_profile.save()
+
+        # Direct access to checkout with plan=1&mode=COINS
+        res = self.client.get(reverse('premium_checkout'), {'plan': 1, 'mode': 'COINS'})
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'Buy Coins')
+        self.assertContains(res, 'Strictly Closed-Loop Economy')
+        self.assertContains(res, 'Pay with Paystack')
+        self.assertContains(res, '45') # coin balance
+        self.assertContains(res, '30') # diamond balance
+
+        # coin_shop named route
+        res_shop = self.client.get(reverse('coin_shop'))
+        self.assertEqual(res_shop.status_code, 200)
+        self.assertContains(res_shop, 'Official Sex Call Token Shop')
+
+        # premium_landing with mode=COINS redirects Sex Call users directly to Coin Shop
+        res_landing = self.client.get(reverse('premium_landing'), {'mode': 'COINS'})
+        self.assertRedirects(res_landing, f"{reverse('premium_checkout')}?mode=COINS")
+
+    def test_dual_discovery_modes_on_sex_call_hub(self):
+        self.client.force_login(self.alice)
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.save()
+
+        # Sex call hub renders with both Swipe and Grid view controls
+        res = self.client.get(reverse('sex_call_hub'))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'view-mode-swipe')
+        self.assertContains(res, 'view-mode-grid')
+        self.assertContains(res, 'grid-view-section')
+        self.assertContains(res, 'swipe-view-section')
+        self.assertContains(res, 'Hot')
+        self.assertContains(res, 'Nearby')
+
+        # Requesting view=swipe explicitly
+        res_swipe = self.client.get(reverse('sex_call_hub'), {'view': 'swipe'})
+        self.assertEqual(res_swipe.status_code, 200)
+        self.assertEqual(res_swipe.context['initial_view'], 'swipe')
+
+    def test_preview_test_profiles_via_query_param_populates_swipe_and_grid(self):
+        test_user, test_profile = self.make_profile('test_model_dual', mode='SEX_CALL')
+        test_profile.is_test_profile = True
+        test_profile.show_in_discovery = False
+        test_profile.save()
+
+        self.client.force_login(self.alice)
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.save()
+
+        # Swipe deck feed with preview_test_profiles=on
+        res_swipe = self.client.get(reverse('get_profiles_json'), {'preview_test_profiles': 'on'})
+        self.assertEqual(res_swipe.status_code, 200)
+        swipe_profiles = res_swipe.json()['profiles']
+        self.assertTrue(any(p['id'] == test_profile.pk for p in swipe_profiles))
+
+        # Grid view feed with preview_test_profiles=on
+        res_grid = self.client.get(reverse('sex_call_hosts_api'), {'preview_test_profiles': 'on'})
+        self.assertEqual(res_grid.status_code, 200)
+        grid_hosts = res_grid.json()['hosts']
+        self.assertTrue(any(h['id'] == test_profile.pk for h in grid_hosts))
+
+
 

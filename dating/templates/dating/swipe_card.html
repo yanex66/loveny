@@ -118,6 +118,25 @@
         </a>
     </header>
 
+    {% if product_type == 'SEX_CALL' %}
+    <div class="w-full max-w-md px-6 pt-1 pb-2 z-10 flex items-center justify-between">
+        <div class="inline-flex rounded-2xl bg-white p-1 border border-pink-100 shadow-sm">
+            <span class="rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 px-4 py-1.5 text-xs font-black uppercase tracking-wider text-white flex items-center gap-1 shadow-sm">
+                <span>🎴</span>
+                <span>Swipe</span>
+            </span>
+            <a href="{% url 'sex_call_hub' %}?view=grid" class="rounded-xl px-4 py-1.5 text-xs font-black uppercase tracking-wider text-slate-600 hover:text-pink-600 transition flex items-center gap-1">
+                <span>⊞</span>
+                <span>Grid</span>
+            </a>
+        </div>
+        <a href="{% url 'coin_shop' %}" class="flex items-center gap-1 rounded-full bg-amber-100 border border-amber-300 px-3 py-1.5 text-xs font-black text-amber-900 shadow-sm hover:scale-105 transition">
+            <span>🪙</span>
+            <span>Shop</span>
+        </a>
+    </div>
+    {% endif %}
+
     <!-- HiiclubChat Style: Online Hosts & Speed Match Carousel -->
     <section class="w-full max-w-md px-4 pt-1 pb-2 z-10" aria-label="Online Hosts and Speed Match">
         <div class="flex items-center justify-between mb-2 px-1">

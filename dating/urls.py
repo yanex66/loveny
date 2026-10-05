@@ -54,6 +54,7 @@ urlpatterns = [
 
     path('premium/', views.premium_landing, name='premium_landing'),
     path('premium/checkout/', views.premium_checkout, name='premium_checkout'),
+    path('coins/shop/', views.premium_checkout, {'mode': 'COINS'}, name='coin_shop'),
     path('premium/success/', views.premium_success, name='premium_success'),
     path('premium/verify/', views.verify_payment, name='verify_payment'),
     path('contact/', views.contact, name='contact'),
