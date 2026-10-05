@@ -17,8 +17,11 @@ from django.utils import timezone
 from .admin import ProfileAdminForm
 from .forms import ProfileCreationForm, ProfileForm, SettingsForm
 from .models import (
+    CallGift,
     CallSession,
     ChatMessage,
+    CoinPackage,
+    CoinTransaction,
     Conversation,
     Match,
     PaymentTransaction,
@@ -405,6 +408,9 @@ class DatingPlatformTests(TestCase):
             self.assertEqual(len(mail.outbox), 1)
             self.assertEqual(mail.outbox[0].to, [self.alice.email])
             self.assertEqual(mail.outbox[0].from_email, 'LOVENY Support <help.hoxobil@gmail.com>')
+            self.assertEqual(len(mail.outbox[0].alternatives), 1)
+            self.assertEqual(mail.outbox[0].alternatives[0][1], 'text/html')
+            self.assertIn('Reset My Password', mail.outbox[0].alternatives[0][0])
 
             reset_url = next(
                 line.strip()
@@ -425,6 +431,18 @@ class DatingPlatformTests(TestCase):
             expired_response = self.client.get(reset_url, follow=True)
             self.assertEqual(expired_response.status_code, 200)
             self.assertContains(expired_response, 'This reset link has expired')
+
+    def test_password_reset_alias_and_smtp_error_handling(self):
+        self.client.logout()
+        response = self.client.get(reverse('password_reset_alias'))
+        self.assertEqual(response.status_code, 200)
+
+        import smtplib
+        with patch('django.core.mail.backends.locmem.EmailBackend.send_messages', side_effect=smtplib.SMTPConnectError(421, b'Cannot connect')):
+            with self.settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend'):
+                response = self.client.post(reverse('password_reset'), {'email': self.alice.email})
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, 'Unable to deliver the reset email due to a mail server connection issue.')
 
     def test_direct_interest_creates_match_after_reciprocal_like(self):
         self.client.force_login(self.alice)
@@ -877,9 +895,17 @@ class DatingPlatformTests(TestCase):
 
         self.alice_profile.relationship_mode = 'SEX_CALL'
         self.alice_profile.sex_call_premium_expiry = None
-        self.alice_profile.save(update_fields=['relationship_mode', 'sex_call_premium_expiry'])
+        self.alice_profile.coin_balance = 0
+        self.alice_profile.save(update_fields=['relationship_mode', 'sex_call_premium_expiry', 'coin_balance'])
         expired_match.expires_at = timezone.now() + timedelta(days=1)
         expired_match.save(update_fields=['expires_at'])
+        response = self.post_json(initiate_url, {'receiver_id': self.bob.pk})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()['message'], 'sex_call_pass_required')
+
+        # Now fund Alice with 20 coins
+        self.alice_profile.coin_balance = 20
+        self.alice_profile.save(update_fields=['coin_balance'])
         response = self.post_json(initiate_url, {'receiver_id': self.bob.pk})
         self.assertEqual(response.status_code, 201)
 
@@ -935,3 +961,255 @@ class DatingPlatformTests(TestCase):
         request = mocked_urlopen.call_args.args[0]
         self.assertIn('/transaction/verify/verified-ref', request.full_url)
         self.assertEqual(request.get_header('Authorization'), 'Bearer server-test-key')
+
+    def test_wallet_balance_api_and_welcome_bonus(self):
+        self.client.force_login(self.alice)
+        response = self.client.get(reverse('wallet_balance_api'))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['status'], 'success')
+        self.assertEqual(data['coin_balance'], 30)
+
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 30)
+        self.assertTrue(
+            CoinTransaction.objects.filter(
+                user=self.alice,
+                transaction_type='WELCOME_BONUS',
+            ).exists()
+        )
+
+        # Subsequent call does not grant duplicate welcome bonus
+        response2 = self.client.get(reverse('wallet_balance_api'))
+        self.assertEqual(response2.json()['coin_balance'], 30)
+        self.assertEqual(
+            CoinTransaction.objects.filter(
+                user=self.alice,
+                transaction_type='WELCOME_BONUS',
+            ).count(),
+            1,
+        )
+
+    def test_coin_packages_api(self):
+        package = CoinPackage.objects.create(
+            name='Test Starter',
+            coins=100,
+            bonus_coins=20,
+            price=Decimal('1500.00'),
+            is_popular=True,
+            order=1,
+        )
+        response = self.client.get(reverse('coin_packages_api'))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['status'], 'success')
+        self.assertTrue(len(data['packages']) >= 1)
+        found = next((p for p in data['packages'] if p['id'] == package.pk), None)
+        self.assertIsNotNone(found)
+        self.assertEqual(found['total_coins'], 120)
+
+    def test_verify_payment_for_coins(self):
+        self.client.force_login(self.alice)
+        package = CoinPackage.objects.create(
+            name='100 Coins Pack',
+            coins=100,
+            bonus_coins=10,
+            price=Decimal('1500.00'),
+            order=1,
+        )
+        self.alice_profile.coin_balance = 0
+        self.alice_profile.save(update_fields=['coin_balance'])
+
+        with patch('dating.views._provider_payment', return_value=(True, 150000, 'NGN', self.alice.email)):
+            response = self.post_json(reverse('verify_payment'), {
+                'product': 'COINS',
+                'package_id': package.pk,
+                'provider': 'paystack',
+                'reference': 'ref-coin-test-123',
+            })
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['status'], 'success')
+        self.assertEqual(data['added_coins'], 110)
+        self.assertEqual(data['coin_balance'], 110)
+
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 110)
+        self.assertTrue(
+            PaymentTransaction.objects.filter(reference='ref-coin-test-123', product='COINS').exists()
+        )
+        self.assertTrue(
+            CoinTransaction.objects.filter(user=self.alice, transaction_type='PURCHASE', amount=110).exists()
+        )
+
+    def test_call_billing_grace_period_under_20_seconds(self):
+        Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.coin_balance = 100
+        self.alice_profile.save(update_fields=['relationship_mode', 'coin_balance'])
+
+        self.client.force_login(self.alice)
+        init_res = self.post_json(reverse('call_initiate_api'), {'receiver_id': self.bob.pk})
+        self.assertEqual(init_res.status_code, 201)
+        room_id = init_res.json()['call']['room_id']
+
+        self.client.force_login(self.bob)
+        resp_res = self.post_json(reverse('call_respond_api', args=[room_id]), {'action': 'accept'})
+        self.assertEqual(resp_res.status_code, 200)
+
+        call = CallSession.objects.get(room_id=room_id)
+        call.started_at = timezone.now() - timedelta(seconds=12)
+        call.save(update_fields=['started_at'])
+
+        self.client.force_login(self.alice)
+        end_res = self.post_json(reverse('call_end_api', args=[room_id]), {})
+        self.assertEqual(end_res.status_code, 200)
+        end_data = end_res.json()
+        self.assertTrue(end_data['call']['grace_period_applied'])
+        self.assertEqual(end_data['call']['coins_spent'], 0)
+
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 100)
+        self.assertTrue(
+            CoinTransaction.objects.filter(
+                user=self.alice,
+                transaction_type='CALL_REFUND',
+                call=call,
+            ).exists()
+        )
+
+    def test_call_billing_over_20_seconds_and_diamond_earning(self):
+        Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.coin_balance = 100
+        self.alice_profile.save(update_fields=['relationship_mode', 'coin_balance'])
+        self.bob_profile.earned_diamonds = 0
+        self.bob_profile.save(update_fields=['earned_diamonds'])
+
+        self.client.force_login(self.alice)
+        init_res = self.post_json(reverse('call_initiate_api'), {'receiver_id': self.bob.pk})
+        room_id = init_res.json()['call']['room_id']
+
+        self.client.force_login(self.bob)
+        self.post_json(reverse('call_respond_api', args=[room_id]), {'action': 'accept'})
+
+        call = CallSession.objects.get(room_id=room_id)
+        # 95 seconds = 20s grace + 75s billable (2 minutes * 20 = 40 coins)
+        call.started_at = timezone.now() - timedelta(seconds=95)
+        call.save(update_fields=['started_at'])
+
+        self.client.force_login(self.alice)
+        end_res = self.post_json(reverse('call_end_api', args=[room_id]), {})
+        self.assertEqual(end_res.status_code, 200)
+        end_data = end_res.json()
+        self.assertFalse(end_data['call']['grace_period_applied'])
+        self.assertEqual(end_data['call']['coins_spent'], 40)
+
+        self.alice_profile.refresh_from_db()
+        self.bob_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 60)
+        # 70% of 40 coins = 28 diamonds
+        self.assertEqual(self.bob_profile.earned_diamonds, 28)
+
+        self.assertTrue(
+            CoinTransaction.objects.filter(
+                user=self.alice,
+                transaction_type='CALL_DEDUCTION',
+                amount=-40,
+                call=call,
+            ).exists()
+        )
+        self.assertTrue(
+            CoinTransaction.objects.filter(
+                user=self.bob,
+                transaction_type='CALL_EARNING',
+                amount=28,
+                call=call,
+            ).exists()
+        )
+
+    def test_call_in_call_gifting_and_diamond_conversion(self):
+        Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.coin_balance = 100
+        self.alice_profile.save(update_fields=['relationship_mode', 'coin_balance'])
+        self.bob_profile.earned_diamonds = 0
+        self.bob_profile.save(update_fields=['earned_diamonds'])
+
+        self.client.force_login(self.alice)
+        init_res = self.post_json(reverse('call_initiate_api'), {'receiver_id': self.bob.pk})
+        room_id = init_res.json()['call']['room_id']
+
+        self.client.force_login(self.bob)
+        self.post_json(reverse('call_respond_api', args=[room_id]), {'action': 'accept'})
+
+        # Alice sends champagne gift (50 coins)
+        self.client.force_login(self.alice)
+        gift_res = self.post_json(reverse('call_gift_api', args=[room_id]), {'gift_type': 'champagne'})
+        self.assertEqual(gift_res.status_code, 200)
+        gift_data = gift_res.json()
+        self.assertEqual(gift_data['status'], 'success')
+        self.assertEqual(gift_data['caller_coins'], 50)
+        # 70% of 50 = 35 diamonds
+        self.assertEqual(gift_data['diamond_award'], 35)
+
+        self.alice_profile.refresh_from_db()
+        self.bob_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 50)
+        self.assertEqual(self.bob_profile.earned_diamonds, 35)
+
+        self.assertTrue(
+            CallGift.objects.filter(
+                sender=self.alice,
+                receiver=self.bob,
+                gift_type='champagne',
+                coins_cost=50,
+            ).exists()
+        )
+
+    def test_call_heartbeat_auto_ends_when_coins_depleted(self):
+        Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.coin_balance = 20
+        self.alice_profile.save(update_fields=['relationship_mode', 'coin_balance'])
+
+        self.client.force_login(self.alice)
+        init_res = self.post_json(reverse('call_initiate_api'), {'receiver_id': self.bob.pk})
+        room_id = init_res.json()['call']['room_id']
+
+        self.client.force_login(self.bob)
+        self.post_json(reverse('call_respond_api', args=[room_id]), {'action': 'accept'})
+
+        call = CallSession.objects.get(room_id=room_id)
+        call.started_at = timezone.now() - timedelta(seconds=90)
+        call.save(update_fields=['started_at'])
+
+        # Alice heartbeats at 90s, requiring 40 coins, but only has 20
+        self.client.force_login(self.alice)
+        hb_res = self.post_json(reverse('call_heartbeat_api', args=[room_id]), {'duration_seconds': 90})
+        self.assertEqual(hb_res.status_code, 200)
+        hb_data = hb_res.json()
+        self.assertEqual(hb_data['call']['status'], 'ended')
+        self.assertEqual(hb_data['reason'], 'coins_exhausted')
+
+        call.refresh_from_db()
+        self.assertEqual(call.status, 'ended')
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 0)
+

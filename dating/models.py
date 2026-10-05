@@ -106,6 +106,13 @@ class Profile(models.Model):
     is_verified = models.BooleanField(default=False)
     is_vip = models.BooleanField(default=False)
 
+    # --- COIN & DIAMOND WALLET ---
+    coin_balance = models.PositiveIntegerField(default=0, help_text="Available coin balance for video calls & gifts")
+    earned_diamonds = models.PositiveIntegerField(default=0, help_text="Diamonds earned by hosts from received calls & gifts")
+
+    def can_call_with_coins(self, min_coins=20):
+        return self.coin_balance >= min_coins
+
     @property
     def is_dating_premium(self):
         return bool(
@@ -309,6 +316,32 @@ class SubscriptionPlan(models.Model):
         return f'{self.get_category_display()} {self.tier_name} ({self.duration_days} days)'
 
 
+class CoinPackage(models.Model):
+    name = models.CharField(max_length=50)
+    coins = models.PositiveIntegerField(help_text="Base coins")
+    bonus_coins = models.PositiveIntegerField(default=0, help_text="Extra free bonus coins")
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0.01)],
+        help_text='Price in Nigerian naira (₦).',
+    )
+    is_popular = models.BooleanField(default=False)
+    badge = models.CharField(max_length=50, blank=True)
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ('order', 'price')
+
+    @property
+    def total_coins(self):
+        return self.coins + self.bonus_coins
+
+    def __str__(self):
+        return f"{self.name}: {self.total_coins} Coins (₦{self.price})"
+
+
 class PaymentTransaction(models.Model):
     PROVIDER_CHOICES = (
         ('paystack', 'Paystack'),
@@ -318,6 +351,7 @@ class PaymentTransaction(models.Model):
         ('DATING', 'Dating Premium'),
         ('HOOKUP', 'Hookup Premium'),
         ('SEX_CALL', 'Sex Call Premium'),
+        ('COINS', 'Coin Pack'),
     )
 
     user = models.ForeignKey(User, related_name='premium_payments', on_delete=models.CASCADE)
@@ -327,6 +361,13 @@ class PaymentTransaction(models.Model):
     plan_type = models.CharField(max_length=50)
     plan = models.ForeignKey(
         SubscriptionPlan,
+        related_name='payments',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+    )
+    coin_package = models.ForeignKey(
+        CoinPackage,
         related_name='payments',
         on_delete=models.PROTECT,
         null=True,
@@ -364,6 +405,9 @@ class CallSession(models.Model):
     )
     room_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='initiated', db_index=True)
+    rate_per_minute = models.PositiveIntegerField(default=20, help_text="Coins per minute")
+    coins_spent = models.PositiveIntegerField(default=0, help_text="Total coins deducted for this call")
+    duration_seconds = models.PositiveIntegerField(default=0, help_text="Connected call duration in seconds")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     started_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)
@@ -378,11 +422,71 @@ class CallSession(models.Model):
         return f'Call {self.room_id}: {self.caller} → {self.receiver} ({self.status})'
 
 
+class CallGift(models.Model):
+    GIFT_CHOICES = (
+        ('rose', 'Rose 🌹'),
+        ('kiss', 'Kiss 💋'),
+        ('champagne', 'Champagne 🥂'),
+        ('crown', 'Crown 👑'),
+        ('car', 'Supercar 🏎️'),
+    )
+    GIFT_PRICES = {
+        'rose': 10,
+        'kiss': 25,
+        'champagne': 50,
+        'crown': 100,
+        'car': 300,
+    }
+
+    call = models.ForeignKey(CallSession, related_name='gifts', on_delete=models.CASCADE)
+    sender = models.ForeignKey(User, related_name='sent_call_gifts', on_delete=models.CASCADE)
+    receiver = models.ForeignKey(User, related_name='received_call_gifts', on_delete=models.CASCADE)
+    gift_type = models.CharField(max_length=20, choices=GIFT_CHOICES)
+    coins_cost = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+
+    def __str__(self):
+        return f"{self.sender.username} sent {self.gift_type} ({self.coins_cost} coins) in Call {self.call.room_id}"
+
+
+class CoinTransaction(models.Model):
+    TRANSACTION_TYPES = (
+        ('PURCHASE', 'Coin Purchase'),
+        ('WELCOME_BONUS', 'Welcome Bonus'),
+        ('CALL_DEDUCTION', 'Call Minute Deduction'),
+        ('CALL_EARNING', 'Host Call Diamond Earning'),
+        ('CALL_REFUND', 'Call Refund / Grace Period'),
+        ('GIFT_SENT', 'Gift Sent'),
+        ('GIFT_RECEIVED', 'Gift Received'),
+    )
+
+    user = models.ForeignKey(User, related_name='coin_transactions', on_delete=models.CASCADE)
+    amount = models.IntegerField(help_text="Coins (positive for credit, negative for debit) or Diamonds")
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
+    description = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    call = models.ForeignKey(CallSession, null=True, blank=True, on_delete=models.SET_NULL, related_name='coin_transactions')
+    payment = models.ForeignKey(PaymentTransaction, null=True, blank=True, on_delete=models.SET_NULL, related_name='coin_transactions')
+
+    class Meta:
+        ordering = ('-created_at',)
+        indexes = [
+            models.Index(fields=('user', 'created_at')),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username}: {self.amount} ({self.transaction_type})"
+
+
 class CallSignal(models.Model):
     SIGNAL_TYPES = (
         ('offer', 'Offer'),
         ('answer', 'Answer'),
         ('candidate', 'ICE candidate'),
+        ('gift', 'In-call gift'),
     )
 
     call = models.ForeignKey(CallSession, related_name='signals', on_delete=models.CASCADE)

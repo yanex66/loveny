@@ -7,6 +7,7 @@ from dating import views as dating_views
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('accounts/login/', dating_views.login_view, name='account_login'),
+    path('accounts/password_reset/', dating_views.SafePasswordResetView.as_view(), name='password_reset'),
     path('accounts/', include('django.contrib.auth.urls')), 
     path('', include('dating.urls')), 
 ]

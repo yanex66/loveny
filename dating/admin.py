@@ -3,9 +3,12 @@ from django import forms
 # Import VersionAdmin now that the package is installed
 from reversion.admin import VersionAdmin 
 from .models import (
+    CallGift,
     CallSession,
     CallSignal,
     ChatMessage,
+    CoinPackage,
+    CoinTransaction,
     Conversation,
     Match,
     PaymentTransaction,
@@ -127,10 +130,57 @@ class ConversationAdmin(admin.ModelAdmin):
 
 @admin.register(PaymentTransaction)
 class PaymentTransactionAdmin(admin.ModelAdmin):
-    list_display = ('user', 'provider', 'plan_type', 'amount_kobo', 'verified_at')
-    list_filter = ('provider', 'plan_type')
+    list_display = ('user', 'provider', 'product', 'plan_type', 'coin_package', 'amount_kobo', 'verified_at')
+    list_filter = ('provider', 'product', 'plan_type')
     search_fields = ('user__username', 'reference')
-    readonly_fields = ('user', 'reference', 'provider', 'plan_type', 'amount_kobo', 'currency', 'verified_at')
+    readonly_fields = ('user', 'reference', 'provider', 'product', 'plan_type', 'coin_package', 'amount_kobo', 'currency', 'verified_at')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(CoinPackage)
+class CoinPackageAdmin(admin.ModelAdmin):
+    list_display = ('name', 'coins', 'bonus_coins', 'total_coins_display', 'price', 'badge', 'is_popular', 'is_active', 'order')
+    list_editable = ('price', 'badge', 'is_popular', 'is_active', 'order')
+    list_filter = ('is_popular', 'is_active')
+    search_fields = ('name',)
+    ordering = ('order', 'price')
+
+    def total_coins_display(self, obj):
+        return obj.total_coins
+    total_coins_display.short_description = 'Total Coins'
+
+
+@admin.register(CoinTransaction)
+class CoinTransactionAdmin(admin.ModelAdmin):
+    list_display = ('user', 'transaction_type', 'amount', 'call', 'payment', 'created_at')
+    list_filter = ('transaction_type',)
+    search_fields = ('user__username', 'description')
+    readonly_fields = ('user', 'transaction_type', 'amount', 'description', 'call', 'payment', 'created_at')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(CallGift)
+class CallGiftAdmin(admin.ModelAdmin):
+    list_display = ('call', 'sender', 'receiver', 'gift_type', 'coins_cost', 'created_at')
+    list_filter = ('gift_type',)
+    search_fields = ('sender__username', 'receiver__username', 'call__room_id')
+    readonly_fields = ('call', 'sender', 'receiver', 'gift_type', 'coins_cost', 'created_at')
 
     def has_add_permission(self, request):
         return False
@@ -160,10 +210,10 @@ class SubscriptionPlanAdmin(admin.ModelAdmin):
 
 @admin.register(CallSession)
 class CallSessionAdmin(admin.ModelAdmin):
-    list_display = ('room_id', 'caller', 'receiver', 'status', 'created_at', 'started_at', 'ended_at')
+    list_display = ('room_id', 'caller', 'receiver', 'status', 'rate_per_minute', 'duration_seconds', 'coins_spent', 'created_at', 'started_at', 'ended_at')
     list_filter = ('status',)
     search_fields = ('room_id', 'caller__username', 'receiver__username')
-    readonly_fields = ('room_id', 'caller', 'receiver', 'status', 'created_at', 'started_at', 'ended_at')
+    readonly_fields = ('room_id', 'caller', 'receiver', 'status', 'rate_per_minute', 'duration_seconds', 'coins_spent', 'created_at', 'started_at', 'ended_at')
 
     def has_add_permission(self, request):
         return False

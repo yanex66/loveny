@@ -2,12 +2,13 @@ import json
 import logging
 import math
 import random
+import smtplib
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import Http404, HttpResponseBadRequest, JsonResponse
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth import login, logout
+from django.contrib.auth import login, logout, views as auth_views
 from django.db import IntegrityError, transaction
 from django.db.models import Count, IntegerField, OuterRef, Q, Subquery
 from django.utils import timezone
@@ -22,9 +23,12 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 from .models import (
+    CallGift,
     CallSession,
     CallSignal,
     ChatMessage,
+    CoinPackage,
+    CoinTransaction,
     Conversation,
     Match,
     PaymentTransaction,
@@ -33,7 +37,14 @@ from .models import (
     SubscriptionPlan,
     Swipe,
 )
-from .forms import LoginForm, SignUpForm, ProfileCreationForm, ProfileForm, SettingsForm
+from .forms import (
+    LoginForm,
+    SignUpForm,
+    ProfileCreationForm,
+    ProfileForm,
+    SettingsForm,
+    SafePasswordResetForm,
+)
 from .serializers import serialize_chat_message, serialize_conversation
 
 PREMIUM_PRODUCTS = {
@@ -732,6 +743,84 @@ def verify_payment(request):
     provider = data.get('provider')
     reference = str(data.get('reference', '')).strip()
     transaction_id = str(data.get('transaction_id', '')).strip()
+
+    if product_type == 'COINS':
+        package_id = data.get('package_id')
+        if (
+            not package_id
+            or provider not in ('paystack', 'flutterwave')
+            or not reference
+            or len(reference) > 100
+            or not request.user.email
+        ):
+            return JsonResponse({'status': 'error', 'message': 'invalid_payment'}, status=400)
+        if provider == 'flutterwave' and not transaction_id.isdigit():
+            return JsonResponse({'status': 'error', 'message': 'invalid_payment'}, status=400)
+
+        package = CoinPackage.objects.filter(pk=package_id, is_active=True).first()
+        if not package:
+            return JsonResponse({'status': 'error', 'message': 'invalid_package'}, status=404)
+
+        existing_payment = PaymentTransaction.objects.filter(reference=reference).first()
+        if existing_payment:
+            if existing_payment.user_id != request.user.id or existing_payment.provider != provider:
+                return JsonResponse({'status': 'error', 'message': 'payment_reference_used'}, status=409)
+            return JsonResponse({'status': 'success', 'already_applied': True, 'coin_balance': profile.coin_balance})
+
+        try:
+            verification = _provider_payment(provider, reference, transaction_id)
+        except (ValueError, TypeError):
+            verification = None
+        if verification is None:
+            return JsonResponse({'status': 'error', 'message': 'payment_verification_unavailable'}, status=503)
+
+        verified, amount_kobo, currency, customer_email = verification
+        expected_amount = int(package.price * 100)
+        if (
+            not verified
+            or amount_kobo != expected_amount
+            or currency != 'NGN'
+            or not isinstance(customer_email, str)
+            or customer_email.casefold() != request.user.email.casefold()
+        ):
+            return JsonResponse({'status': 'error', 'message': 'payment_not_verified'}, status=400)
+
+        try:
+            with transaction.atomic():
+                payment, created = PaymentTransaction.objects.get_or_create(
+                    reference=reference,
+                    defaults={
+                        'user': request.user,
+                        'provider': provider,
+                        'product': 'COINS',
+                        'plan_type': package.name,
+                        'coin_package': package,
+                        'amount_kobo': expected_amount,
+                    },
+                )
+                if not created:
+                    return JsonResponse({'status': 'success', 'already_applied': True, 'coin_balance': profile.coin_balance})
+
+                profile = Profile.objects.select_for_update().get(pk=profile.pk)
+                profile.coin_balance += package.total_coins
+                profile.save(update_fields=['coin_balance'])
+
+                CoinTransaction.objects.create(
+                    user=request.user,
+                    amount=package.total_coins,
+                    transaction_type='PURCHASE',
+                    payment=payment,
+                    description=f'Purchased {package.name} (+{package.total_coins} coins)',
+                )
+        except IntegrityError:
+            return JsonResponse({'status': 'error', 'message': 'payment_reference_used'}, status=409)
+
+        return JsonResponse({
+            'status': 'success',
+            'coin_balance': profile.coin_balance,
+            'added_coins': package.total_coins,
+        })
+
     if product_type != profile.relationship_mode:
         return JsonResponse({'status': 'error', 'message': 'plan_mode_mismatch'}, status=400)
     product = PREMIUM_PRODUCTS.get(product_type)
@@ -827,6 +916,7 @@ def _call_participants(call, user):
 
 def _call_payload(call):
     caller_profile = Profile.objects.filter(user_id=call.caller_id).first()
+    receiver_profile = Profile.objects.filter(user_id=call.receiver_id).first()
     caller_photo = (
         caller_profile.photos.filter(is_main=True).first() or caller_profile.photos.first()
         if caller_profile else None
@@ -834,6 +924,18 @@ def _call_payload(call):
     photo_url = ''
     if caller_photo and caller_photo.image and caller_photo.image.storage.exists(caller_photo.image.name):
         photo_url = caller_photo.image.url
+
+    caller_coins = caller_profile.coin_balance if caller_profile else 0
+    is_unlimited = bool(caller_profile and (caller_profile.user.is_superuser or caller_profile.is_sex_call_premium))
+    rate = getattr(call, 'rate_per_minute', 20) or 20
+    max_seconds = 86400 if is_unlimited else ((caller_coins // rate) * 60)
+
+    elapsed_seconds = 0
+    if call.started_at and call.status == 'connected':
+        elapsed_seconds = max(0, int((timezone.now() - call.started_at).total_seconds()))
+
+    remaining_seconds = 86400 if is_unlimited else max(0, max_seconds - elapsed_seconds)
+
     return {
         'room_id': str(call.room_id),
         'status': call.status,
@@ -841,6 +943,18 @@ def _call_payload(call):
         'caller_name': call.caller.first_name or call.caller.username,
         'caller_photo': photo_url,
         'receiver_id': call.receiver_id,
+        'receiver_name': call.receiver.first_name or call.receiver.username,
+        'rate_per_minute': rate,
+        'caller_coins': caller_coins,
+        'receiver_diamonds': receiver_profile.earned_diamonds if receiver_profile else 0,
+        'is_unlimited': is_unlimited,
+        'max_seconds': max_seconds,
+        'elapsed_seconds': elapsed_seconds,
+        'remaining_seconds': remaining_seconds,
+        'grace_period_seconds': 20,
+        'coins_spent': getattr(call, 'coins_spent', 0),
+        'duration_seconds': getattr(call, 'duration_seconds', 0),
+        'grace_period_applied': bool(getattr(call, 'duration_seconds', 0) < 20 and call.status in ('ended', 'declined')),
     }
 
 
@@ -848,8 +962,9 @@ def _can_use_sex_call(profile):
     return bool(
         profile
         and (
-            profile.relationship_mode == 'SEX_CALL'
+            profile.user.is_superuser
             or profile.is_sex_call_premium
+            or profile.coin_balance >= 20
         )
     )
 
@@ -869,6 +984,8 @@ def call_initiate_api(request):
         return JsonResponse({
             'status': 'error',
             'message': 'sex_call_pass_required',
+            'coin_balance': caller_profile.coin_balance if caller_profile else 0,
+            'required_coins': 20,
             'subscribe_url': reverse('premium_landing'),
         }, status=403)
     try:
@@ -890,6 +1007,7 @@ def call_initiate_api(request):
         caller=request.user,
         receiver=receiver,
         status='ringing',
+        rate_per_minute=20,
     )
     return JsonResponse({'status': 'success', 'call': _call_payload(call)}, status=201)
 
@@ -940,6 +1058,12 @@ def call_respond_api(request, room_id):
             call.save(update_fields=['status', 'ended_at'])
             return JsonResponse({'status': 'error', 'message': 'call_expired'}, status=409)
         if action == 'accept':
+            caller_profile = Profile.objects.filter(user=call.caller).first()
+            if not _can_use_sex_call(caller_profile):
+                call.status = 'declined'
+                call.ended_at = timezone.now()
+                call.save(update_fields=['status', 'ended_at'])
+                return JsonResponse({'status': 'error', 'message': 'caller_insufficient_coins'}, status=409)
             call.status = 'connected'
             call.started_at = timezone.now()
         else:
@@ -961,7 +1085,54 @@ def call_end_api(request, room_id):
         if call.status not in ('ended', 'declined'):
             call.status = 'ended'
             call.ended_at = timezone.now()
-            call.save(update_fields=['status', 'ended_at'])
+            if call.started_at:
+                duration = int((call.ended_at - call.started_at).total_seconds())
+                call.duration_seconds = max(0, duration)
+                caller_profile = Profile.objects.select_for_update().filter(user_id=call.caller_id).first()
+                receiver_profile = Profile.objects.select_for_update().filter(user_id=call.receiver_id).first()
+                is_unlimited = bool(caller_profile and (caller_profile.user.is_superuser or caller_profile.is_sex_call_premium))
+
+                if call.duration_seconds < 20:
+                    call.coins_spent = 0
+                    if caller_profile:
+                        CoinTransaction.objects.create(
+                            user=call.caller,
+                            amount=0,
+                            transaction_type='CALL_REFUND',
+                            call=call,
+                            description=f'Grace period protected: {call.duration_seconds}s < 20s. 0 coins charged.',
+                        )
+                elif not is_unlimited and caller_profile:
+                    billed_minutes = max(1, math.ceil(call.duration_seconds / 60))
+                    rate = getattr(call, 'rate_per_minute', 20) or 20
+                    coins_due = billed_minutes * rate
+                    coins_deducted = min(caller_profile.coin_balance, coins_due)
+
+                    if coins_deducted > 0:
+                        caller_profile.coin_balance = max(0, caller_profile.coin_balance - coins_deducted)
+                        caller_profile.save(update_fields=['coin_balance'])
+                        call.coins_spent = coins_deducted
+
+                        diamonds_earned = int(coins_deducted * 0.70)
+                        if receiver_profile and diamonds_earned > 0:
+                            receiver_profile.earned_diamonds += diamonds_earned
+                            receiver_profile.save(update_fields=['earned_diamonds'])
+                            CoinTransaction.objects.create(
+                                user=call.receiver,
+                                amount=diamonds_earned,
+                                transaction_type='CALL_EARNING',
+                                call=call,
+                                description=f'Earned {diamonds_earned} diamonds from {call.duration_seconds}s video call with {call.caller.username}',
+                            )
+
+                        CoinTransaction.objects.create(
+                            user=call.caller,
+                            amount=-coins_deducted,
+                            transaction_type='CALL_DEDUCTION',
+                            call=call,
+                            description=f'Deducted {coins_deducted} coins for {call.duration_seconds}s video call ({billed_minutes}m @ {rate}/min)',
+                        )
+            call.save(update_fields=['status', 'ended_at', 'duration_seconds', 'coins_spent'])
     return JsonResponse({'status': 'success', 'call': _call_payload(call)})
 
 
@@ -1009,7 +1180,7 @@ def call_signal_send_api(request, room_id):
         return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
     signal_type = data.get('type')
     payload = data.get('payload')
-    if signal_type not in ('offer', 'answer', 'candidate') or not isinstance(payload, dict):
+    if signal_type not in ('offer', 'answer', 'candidate', 'gift') or not isinstance(payload, dict):
         return JsonResponse({'status': 'error', 'message': 'invalid_signal'}, status=400)
     if len(json.dumps(payload)) > 20000:
         return JsonResponse({'status': 'error', 'message': 'signal_too_large'}, status=400)
@@ -1031,6 +1202,220 @@ def call_signal_send_api(request, room_id):
         payload=payload,
     )
     return JsonResponse({'status': 'success', 'id': signal.pk}, status=201)
+
+
+@login_required
+@require_POST
+def call_heartbeat_api(request, room_id):
+    call = get_object_or_404(
+        CallSession.objects.select_related('caller', 'receiver'),
+        room_id=room_id,
+    )
+    _call_participants(call, request.user)
+    if call.status != 'connected' or not call.started_at:
+        return JsonResponse({'status': 'ok', 'call': _call_payload(call)})
+
+    elapsed = max(0, int((timezone.now() - call.started_at).total_seconds()))
+    caller_profile = Profile.objects.filter(user_id=call.caller_id).first()
+    is_unlimited = bool(caller_profile and (caller_profile.user.is_superuser or caller_profile.is_sex_call_premium))
+    rate = getattr(call, 'rate_per_minute', 20) or 20
+    max_sec = 86400 if is_unlimited else ((caller_profile.coin_balance // rate) * 60 if caller_profile else 0)
+
+    # If caller exceeded their available coins (after the 20s grace period)
+    if not is_unlimited and elapsed >= max_sec and elapsed >= 20:
+        with transaction.atomic():
+            call = CallSession.objects.select_for_update().get(pk=call.pk)
+            if call.status == 'connected':
+                call.status = 'ended'
+                call.ended_at = timezone.now()
+                call.duration_seconds = max_sec
+                if caller_profile:
+                    caller_p = Profile.objects.select_for_update().get(pk=caller_profile.pk)
+                    receiver_p = Profile.objects.select_for_update().get(user_id=call.receiver_id)
+                    coins_to_take = caller_p.coin_balance
+                    caller_p.coin_balance = 0
+                    caller_p.save(update_fields=['coin_balance'])
+                    call.coins_spent = coins_to_take
+
+                    diamonds = int(coins_to_take * 0.70)
+                    if diamonds > 0:
+                        receiver_p.earned_diamonds += diamonds
+                        receiver_p.save(update_fields=['earned_diamonds'])
+                        CoinTransaction.objects.create(
+                            user=call.receiver,
+                            amount=diamonds,
+                            transaction_type='CALL_EARNING',
+                            call=call,
+                            description=f'Earned {diamonds} diamonds from video call with {call.caller.username}',
+                        )
+
+                    CoinTransaction.objects.create(
+                        user=call.caller,
+                        amount=-coins_to_take,
+                        transaction_type='CALL_DEDUCTION',
+                        call=call,
+                        description=f'Coins depleted: {coins_to_take} coins deducted for {call.duration_seconds}s video call.',
+                    )
+                call.save(update_fields=['status', 'ended_at', 'duration_seconds', 'coins_spent'])
+        return JsonResponse({
+            'status': 'depleted',
+            'reason': 'coins_exhausted',
+            'message': 'coins_depleted',
+            'call': _call_payload(call),
+        })
+
+    return JsonResponse({'status': 'ok', 'call': _call_payload(call)})
+
+
+@login_required
+@require_POST
+def call_gift_api(request, room_id):
+    call = get_object_or_404(
+        CallSession.objects.select_related('caller', 'receiver'),
+        room_id=room_id,
+    )
+    _call_participants(call, request.user)
+    if call.status != 'connected':
+        return JsonResponse({'status': 'error', 'message': 'call_not_connected'}, status=400)
+
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+
+    gift_type = str(data.get('gift_type', '')).lower()
+    if gift_type not in CallGift.GIFT_PRICES:
+        return JsonResponse({'status': 'error', 'message': 'invalid_gift_type'}, status=400)
+
+    cost = CallGift.GIFT_PRICES[gift_type]
+    recipient_user = call.receiver if request.user == call.caller else call.caller
+
+    with transaction.atomic():
+        sender_profile = Profile.objects.select_for_update().filter(user=request.user).first()
+        if not sender_profile or sender_profile.coin_balance < cost:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'insufficient_coins',
+                'required_coins': cost,
+                'coin_balance': sender_profile.coin_balance if sender_profile else 0,
+            }, status=400)
+
+        sender_profile.coin_balance -= cost
+        sender_profile.save(update_fields=['coin_balance'])
+
+        diamonds = int(cost * 0.70)
+        recipient_profile = Profile.objects.select_for_update().filter(user=recipient_user).first()
+        if recipient_profile:
+            recipient_profile.earned_diamonds += diamonds
+            recipient_profile.save(update_fields=['earned_diamonds'])
+
+        gift = CallGift.objects.create(
+            call=call,
+            sender=request.user,
+            receiver=recipient_user,
+            gift_type=gift_type,
+            coins_cost=cost,
+        )
+
+        CoinTransaction.objects.create(
+            user=request.user,
+            amount=-cost,
+            transaction_type='GIFT_SENT',
+            call=call,
+            description=f'Sent {gift.get_gift_type_display()} to {recipient_user.username}',
+        )
+        if recipient_profile:
+            CoinTransaction.objects.create(
+                user=recipient_user,
+                amount=diamonds,
+                transaction_type='GIFT_RECEIVED',
+                call=call,
+                description=f'Received {gift.get_gift_type_display()} from {request.user.username} (+{diamonds} 💎)',
+            )
+
+        CallSignal.objects.create(
+            call=call,
+            sender=request.user,
+            signal_type='gift',
+            payload={
+                'gift_type': gift_type,
+                'coins': cost,
+                'diamonds': diamonds,
+                'sender_name': request.user.first_name or request.user.username,
+            },
+        )
+
+    return JsonResponse({
+        'status': 'success',
+        'remaining_coins': sender_profile.coin_balance,
+        'caller_coins': sender_profile.coin_balance,
+        'diamond_award': diamonds,
+        'gift': {
+            'gift_type': gift_type,
+            'coins': cost,
+            'diamonds': diamonds,
+        },
+    })
+
+
+@login_required
+@require_GET
+def wallet_balance_api(request):
+    profile = Profile.objects.filter(user=request.user).first()
+    if not profile:
+        return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
+
+    # Starter welcome bonus: if 0 coins and no transaction history, give 30 free coins!
+    if profile.coin_balance == 0 and not CoinTransaction.objects.filter(user=request.user).exists():
+        with transaction.atomic():
+            p = Profile.objects.select_for_update().get(pk=profile.pk)
+            if p.coin_balance == 0 and not CoinTransaction.objects.filter(user=request.user).exists():
+                p.coin_balance = 30
+                p.save(update_fields=['coin_balance'])
+                CoinTransaction.objects.create(
+                    user=request.user,
+                    amount=30,
+                    transaction_type='WELCOME_BONUS',
+                    description='Welcome gift: 30 free coins to experience Sex Call!',
+                )
+                profile.refresh_from_db()
+
+    return JsonResponse({
+        'status': 'success',
+        'coin_balance': profile.coin_balance,
+        'earned_diamonds': profile.earned_diamonds,
+        'is_sex_call_premium': profile.is_sex_call_premium,
+        'relationship_mode': profile.relationship_mode,
+    })
+
+
+@require_GET
+def coin_packages_api(request):
+    packages = CoinPackage.objects.filter(is_active=True).order_by('order', 'price')
+    return JsonResponse({
+        'status': 'success',
+        'packages': [{
+            'id': p.pk,
+            'name': p.name,
+            'coins': p.coins,
+            'bonus_coins': p.bonus_coins,
+            'total_coins': p.total_coins,
+            'price': str(p.price),
+            'is_popular': p.is_popular,
+            'badge': p.badge,
+        } for p in packages],
+        'paystack_public_key': getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''),
+        'flutterwave_public_key': getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', ''),
+        'paystack_enabled': bool(
+            getattr(settings, 'PAYSTACK_PUBLIC_KEY', '')
+            and getattr(settings, 'PAYSTACK_SECRET_KEY', '')
+        ),
+        'flutterwave_enabled': bool(
+            getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', '')
+            and getattr(settings, 'FLUTTERWAVE_SECRET_KEY', '')
+        ),
+        'user_email': request.user.email if request.user.is_authenticated else '',
+    })
 
 
 def _get_active_match(match_id, user):
@@ -1336,6 +1721,27 @@ def login_view(request):
             return redirect(next_url)
         return redirect('swipe_card' if profile else 'create_profile')
     return render(request, 'registration/login.html', {'form': form, 'next': request.GET.get('next', '')})
+
+
+class SafePasswordResetView(auth_views.PasswordResetView):
+    form_class = SafePasswordResetForm
+    template_name = 'registration/password_reset_form.html'
+    email_template_name = 'registration/password_reset_email.txt'
+    html_email_template_name = 'registration/password_reset_email.html'
+    subject_template_name = 'registration/password_reset_subject.txt'
+
+    def form_valid(self, form):
+        try:
+            return super().form_valid(form)
+        except Exception as exc:
+            logger.exception("Password reset email delivery failed: %s", exc)
+            form.add_error(
+                None,
+                "Unable to deliver the reset email due to a mail server connection issue. "
+                "Please verify the email configuration or try again shortly."
+            )
+            return self.form_invalid(form)
+
 
 
 @login_required
