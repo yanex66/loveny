@@ -6,7 +6,7 @@ import smtplib
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import Http404, HttpResponseBadRequest, JsonResponse
+from django.http import Http404, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login, logout, views as auth_views
 from django.db import IntegrityError, transaction
@@ -29,6 +29,7 @@ from .models import (
     ChatMessage,
     CoinPackage,
     CoinTransaction,
+    CoinWallet,
     Conversation,
     GiftItem,
     Match,
@@ -38,7 +39,6 @@ from .models import (
     SiteConfiguration,
     SubscriptionPlan,
     Swipe,
-    WithdrawalRequest,
 )
 from .forms import (
     LoginForm,
@@ -60,8 +60,8 @@ PREMIUM_PRODUCTS = {
         'description': 'Premium access for Hookup connections.',
     },
     'SEX_CALL': {
-        'name': 'Sex Call Premium',
-        'description': 'Premium access for Sex Call connections.',
+        'name': 'Sex Call (Coins Fueled)',
+        'description': 'Sex Call uses Coins — no recurring subscriptions.',
     },
 }
 PREMIUM_CATEGORY_NAMES = {
@@ -84,6 +84,9 @@ def _subscription_details(profile, product):
 
 
 def _subscription_plans_payload(category):
+    if category == 'SEX_CALL':
+        # Sex Call is strictly closed-loop and fueled by Coins — zero recurring subscriptions
+        return {'sex_call': []}
     category_key = PREMIUM_CATEGORY_NAMES[category]
     grouped = {category_key: []}
     plans = SubscriptionPlan.objects.filter(
@@ -114,26 +117,41 @@ def subscription_plans_api(request):
 
 def _candidate_queryset(user, include_test_profiles=False):
     current_profile = Profile.objects.filter(user=user).first()
-    if not current_profile or not current_profile.age or current_profile.age < 18:
+    if not current_profile:
+        return Profile.objects.none()
+
+    if include_test_profiles:
+        # Staff/admin preview mode:
+        # Guarantee seeded test profiles immediately appear without being blocked
+        # by location, distance, last_active, show_in_discovery, or swipe history filters.
+        qs = Profile.objects.exclude(user=user).filter(is_test_profile=True)
+        if current_profile.relationship_mode == 'SEX_CALL':
+            sc_qs = qs.filter(relationship_mode='SEX_CALL')
+            if sc_qs.exists():
+                return sc_qs.select_related('user').prefetch_related('photos', 'tags')
+        elif current_profile.relationship_mode:
+            mode_qs = qs.filter(relationship_mode=current_profile.relationship_mode)
+            if mode_qs.exists():
+                return mode_qs.select_related('user').prefetch_related('photos', 'tags')
+        return qs.select_related('user').prefetch_related('photos', 'tags')
+
+    if not current_profile.age or current_profile.age < 18:
         return Profile.objects.none()
 
     active_limit = timezone.now() - timedelta(days=60)
     swiped_ids = Swipe.objects.filter(swiper=user).values('swiped_id')
     filters = {
         'show_in_discovery': True,
-        'is_test_profile': include_test_profiles,
+        'is_test_profile': False,
         'relationship_mode': current_profile.relationship_mode,
         'last_active__gte': active_limit,
+        'gender': current_profile.preferred_gender,
+        'preferred_gender': current_profile.gender,
+        'age__gte': max(18, current_profile.min_age_pref),
+        'age__lte': current_profile.max_age_pref,
+        'min_age_pref__lte': current_profile.age,
+        'max_age_pref__gte': current_profile.age,
     }
-    if not include_test_profiles:
-        filters.update({
-            'gender': current_profile.preferred_gender,
-            'preferred_gender': current_profile.gender,
-            'age__gte': max(18, current_profile.min_age_pref),
-            'age__lte': current_profile.max_age_pref,
-            'min_age_pref__lte': current_profile.age,
-            'max_age_pref__gte': current_profile.age,
-        })
 
     candidates = (
         Profile.objects.exclude(user=user)
@@ -226,29 +244,35 @@ def get_profile_batch(user, limit=10, include_test_profiles=False):
 
 def _profile_payload(profile):
     photo = profile.photos.filter(is_main=True).first() or profile.photos.first()
-    media_url = (
-        photo.image.url
-        if photo and photo.image and photo.image.storage.exists(photo.image.name)
-        else ''
-    )
-    bio = profile.bio
+    media_url = ''
+    if photo and photo.image:
+        try:
+            if photo.image.storage.exists(photo.image.name):
+                media_url = photo.image.url
+        except Exception:
+            pass
+    if not media_url:
+        username = profile.user.username if profile.user else 'user'
+        media_url = f"https://api.dicebear.com/7.x/avataaars/svg?seed={username}"
+    bio = profile.bio or ''
     config = SiteConfiguration.get_solo()
     return {
         'id': profile.user_id,
-        'username': profile.user.username,
+        'username': profile.user.username if profile.user else '',
         'age': profile.age or '??',
-        'location': profile.location,
+        'location': profile.location or 'Online',
         'job_title': profile.job_title,
         'bio': bio[:100] + '...' if len(bio) > 100 else bio,
         'first_date_idea': profile.first_date_idea,
         'image_url': media_url,
+        'avatar': media_url,
         'is_video': photo.is_video if photo else False,
         'tags': [tag.name for tag in profile.tags.all()[:3]],
         'relationship_mode': profile.relationship_mode,
         'is_verified': profile.is_verified,
         'is_vip': profile.is_vip,
         'is_test_profile': profile.is_test_profile,
-        'is_online': profile.last_active >= timezone.now() - timedelta(minutes=10),
+        'is_online': profile.is_host_ready or (profile.last_active and (timezone.now() - profile.last_active).total_seconds() < 1800),
         'response_rate': getattr(profile, 'response_rate', 98),
         'total_calls_completed': getattr(profile, 'total_calls_completed', 0),
         'is_host_ready': getattr(profile, 'is_host_ready', True),
@@ -259,8 +283,13 @@ def _profile_payload(profile):
 @login_required
 def get_profiles_json(request):
     include_test_profiles = bool(
-        request.user.is_staff
-        and request.session.get('staff_test_profile_preview')
+        (request.user.is_staff or request.user.is_superuser)
+        and (
+            request.session.get('staff_test_profile_preview')
+            or request.session.get('preview_test_profiles')
+            or request.GET.get('test_profiles') == 'on'
+            or request.GET.get('preview_test_profiles') == 'on'
+        )
     )
     profiles = get_profile_batch(
         request.user,
@@ -392,10 +421,11 @@ def edit_profile(request):
 # --- ACTION: Swiping ---
 @login_required
 def swipe_view(request):
-    if request.GET.get('test_profiles') in {'on', 'off'}:
-        request.session['staff_test_profile_preview'] = bool(
-            request.user.is_staff and request.GET['test_profiles'] == 'on'
-        )
+    toggle = request.GET.get('test_profiles') or request.GET.get('preview_test_profiles')
+    if toggle in {'on', 'off'}:
+        enabled = bool((request.user.is_staff or request.user.is_superuser) and toggle == 'on')
+        request.session['staff_test_profile_preview'] = enabled
+        request.session['preview_test_profiles'] = enabled
         return redirect('swipe_card')
 
     profile = Profile.objects.filter(user=request.user).first()
@@ -406,6 +436,13 @@ def swipe_view(request):
     profile.last_active = timezone.now()
     profile.save(update_fields=['last_active'])
     product_type = profile.relationship_mode
+    is_preview = bool(
+        (request.user.is_staff or request.user.is_superuser)
+        and (
+            request.session.get('staff_test_profile_preview')
+            or request.session.get('preview_test_profiles')
+        )
+    )
     return render(request, 'dating/swipe_card.html', {
         'SWIPE_URL': reverse('swipe_action'),
         'PROFILES_URL': reverse('get_profiles_json'),
@@ -414,11 +451,8 @@ def swipe_view(request):
         'relationship_mode': profile.get_relationship_mode_display(),
         'product_type': product_type,
         'is_premium': profile.is_premium(),
-        'staff_test_profile_preview': bool(
-            request.user.is_staff
-            and request.session.get('staff_test_profile_preview')
-        ),
-        'is_staff': request.user.is_staff,
+        'staff_test_profile_preview': is_preview,
+        'is_staff': request.user.is_staff or request.user.is_superuser,
     })
 
 @login_required
@@ -444,8 +478,11 @@ def swipe_action(request):
         return JsonResponse({'status': 'error', 'message': 'already_swiped'}, status=409)
 
     include_test_profiles = bool(
-        request.user.is_staff
-        and request.session.get('staff_test_profile_preview')
+        (request.user.is_staff or request.user.is_superuser)
+        and (
+            request.session.get('staff_test_profile_preview')
+            or request.session.get('preview_test_profiles')
+        )
     )
     target_profile = get_object_or_404(
         _candidate_queryset(
@@ -603,13 +640,15 @@ def premium_landing(request):
     if not profile:
         return redirect('create_profile')
     product_type = profile.relationship_mode
+    if product_type == 'SEX_CALL':
+        return redirect('sex_call_hub')
     product = PREMIUM_PRODUCTS[product_type]
     tier, expiry = _subscription_details(profile, product_type) if profile else ('', None)
     return render(request, 'dating/premium_landing.html', {
         'profile': profile,
         'product_type': product_type,
         'mode_name': dict(SubscriptionPlan.CATEGORY_CHOICES)[product_type],
-        'status_name': 'Sex Call Pass' if product_type == 'SEX_CALL' else f'{dict(SubscriptionPlan.CATEGORY_CHOICES)[product_type]} Premium',
+        'status_name': f'{dict(SubscriptionPlan.CATEGORY_CHOICES)[product_type]} Premium',
         'product': product,
         'plans_api_url': reverse('subscription_plans_api'),
         'premium_tier': tier,
@@ -623,11 +662,13 @@ def premium_checkout(request):
     if not profile:
         return redirect('create_profile')
     product_type = profile.relationship_mode
+    if product_type == 'SEX_CALL':
+        return HttpResponseBadRequest('Sex Call mode uses coins instead of recurring subscriptions.')
     plan_id = request.GET.get('plan_id')
     if not plan_id and request.GET.get('plan'):
         plan_id = request.GET.get('plan')
     plan = get_object_or_404(SubscriptionPlan, pk=plan_id, is_active=True)
-    if plan.category != product_type:
+    if plan.category != product_type or plan.category == 'SEX_CALL':
         return HttpResponseBadRequest('The selected pass does not match your connection mode.')
     product = PREMIUM_PRODUCTS[product_type]
     tier, expiry = _subscription_details(profile, product_type) if profile else ('', None)
@@ -1003,14 +1044,14 @@ def call_initiate_api(request):
     caller_profile = Profile.objects.filter(user=request.user).first()
     config = SiteConfiguration.get_solo()
     min_coins = getattr(config, 'call_rate_per_minute', 20) or 20
-    if not _can_use_sex_call(caller_profile):
+    if not caller_profile or (not request.user.is_superuser and caller_profile.coin_balance < min_coins):
         return JsonResponse({
             'status': 'error',
-            'message': 'sex_call_pass_required',
+            'message': 'insufficient_coins',
+            'detail': f'You need at least {min_coins} coins to start a video call.',
             'coin_balance': caller_profile.coin_balance if caller_profile else 0,
             'required_coins': min_coins,
-            'subscribe_url': reverse('premium_landing'),
-        }, status=403)
+        }, status=402)
     try:
         receiver_id = int(data.get('receiver_id'))
     except (TypeError, ValueError):
@@ -1430,8 +1471,7 @@ def wallet_balance_api(request):
         'status': 'success',
         'coin_balance': profile.coin_balance,
         'earned_diamonds': profile.earned_diamonds,
-        'min_diamond_withdrawal': site_config.min_diamond_withdrawal,
-        'diamond_exchange_rate_naira': str(site_config.diamond_exchange_rate_naira),
+        'diamond_to_coin_percentage': getattr(site_config, 'diamond_to_coin_percentage', 70),
         'call_rate_per_minute': site_config.call_rate_per_minute,
         'is_sex_call_premium': profile.is_sex_call_premium,
         'relationship_mode': profile.relationship_mode,
@@ -1472,9 +1512,8 @@ def site_config_api(request):
         'call_rate_per_minute': cfg.call_rate_per_minute,
         'grace_period_seconds': cfg.grace_period_seconds,
         'host_commission_percentage': cfg.host_commission_percentage,
+        'diamond_to_coin_percentage': getattr(cfg, 'diamond_to_coin_percentage', 70),
         'welcome_bonus_coins': cfg.welcome_bonus_coins,
-        'min_diamond_withdrawal': cfg.min_diamond_withdrawal,
-        'diamond_exchange_rate_naira': str(cfg.diamond_exchange_rate_naira),
         'announcement_banner': cfg.announcement_banner if cfg.is_announcement_active else '',
         'is_announcement_active': cfg.is_announcement_active,
     })
@@ -1595,94 +1634,106 @@ def quick_call_match_api(request):
 
 @login_required
 @require_POST
-def withdrawal_request_api(request):
-    """Host diamond cashout request to admin."""
-    profile = Profile.objects.filter(user=request.user).first()
-    if not profile:
-        return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
-
+def convert_diamonds_api(request):
+    """
+    Closed-Loop Economy:
+    Users convert their accumulated Diamonds back into spendable Coins.
+    Zero real-money cashout / fiat withdrawals.
+    """
     try:
         data = json.loads(request.body)
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
-
-    diamonds_raw = data.get('diamonds')
-    bank_name = str(data.get('bank_name', '')).strip()
-    account_number = str(data.get('account_number', '')).strip()
-    account_name = str(data.get('account_name', '')).strip()
+    if not isinstance(data, dict):
+        return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
 
     try:
-        diamonds = int(diamonds_raw)
+        diamonds = int(data.get('diamonds', 0))
         if diamonds <= 0:
             raise ValueError
     except (TypeError, ValueError):
         return JsonResponse({'status': 'error', 'message': 'invalid_diamond_amount', 'detail': 'Enter a valid positive number of diamonds.'}, status=400)
 
+    profile = Profile.objects.filter(user=request.user).first()
+    if not profile:
+        return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
+
+    if profile.earned_diamonds < diamonds:
+        return JsonResponse({
+            'status': 'error',
+            'error': 'insufficient_diamonds',
+            'message': 'insufficient_diamonds',
+            'detail': f'You only have {profile.earned_diamonds} diamonds available.',
+            'earned_diamonds': profile.earned_diamonds,
+        }, status=400)
+
     site_config = SiteConfiguration.get_solo()
-    if diamonds < site_config.min_diamond_withdrawal:
+    percentage = getattr(site_config, 'diamond_to_coin_percentage', 70) or 70
+    coins_awarded = int(Decimal(diamonds) * Decimal(percentage) / Decimal(100))
+
+    if coins_awarded < 1:
         return JsonResponse({
             'status': 'error',
-            'message': 'below_minimum',
-            'min_diamonds': site_config.min_diamond_withdrawal,
-            'detail': f'Minimum cashout is {site_config.min_diamond_withdrawal} diamonds.',
+            'message': 'amount_too_low',
+            'detail': 'Enter more diamonds to receive at least 1 coin.',
         }, status=400)
-
-    if not bank_name or not account_number or not account_name:
-        return JsonResponse({
-            'status': 'error',
-            'message': 'missing_bank_details',
-            'detail': 'Bank name, account number, and account name are required.',
-        }, status=400)
-
-    naira_amount = Decimal(diamonds) * Decimal(str(site_config.diamond_exchange_rate_naira))
 
     with transaction.atomic():
         p = Profile.objects.select_for_update().get(pk=profile.pk)
         if p.earned_diamonds < diamonds:
-            return JsonResponse({
-                'status': 'error',
-                'message': 'insufficient_diamonds',
-                'earned_diamonds': p.earned_diamonds,
-                'detail': f'You only have {p.earned_diamonds} diamonds available.',
-            }, status=400)
+            return JsonResponse({'status': 'error', 'message': 'insufficient_diamonds'}, status=400)
+
+        wallet, _ = CoinWallet.objects.select_for_update().get_or_create(
+            user=request.user,
+            defaults={'coin_balance': p.coin_balance},
+        )
 
         p.earned_diamonds -= diamonds
-        p.save(update_fields=['earned_diamonds'])
+        p.coin_balance += coins_awarded
+        wallet.coin_balance = p.coin_balance
 
-        req = WithdrawalRequest.objects.create(
-            user=request.user,
-            diamonds_amount=diamonds,
-            naira_amount=naira_amount,
-            bank_name=bank_name,
-            account_number=account_number,
-            account_name=account_name,
-            status='PENDING',
-        )
+        p.save(update_fields=['earned_diamonds', 'coin_balance'])
+        wallet.save(update_fields=['coin_balance'])
 
         CoinTransaction.objects.create(
             user=request.user,
-            amount=-diamonds,
-            transaction_type='DIAMOND_CASHOUT',
-            description=f'Cashout request #{req.id}: {diamonds} diamonds (₦{naira_amount:,.2f}) to {bank_name} ({account_number})',
+            amount=coins_awarded,
+            transaction_type='DIAMOND_CONVERSION',
+            description=f'Exchanged {diamonds} 💎 for {coins_awarded} 🪙 (Rate: {percentage}%)',
         )
 
     return JsonResponse({
         'status': 'success',
-        'withdrawal_id': req.id,
-        'diamonds_withdrawn': diamonds,
-        'naira_amount': str(naira_amount),
+        'success': True,
+        'message': f'Successfully exchanged {diamonds} Diamonds for {coins_awarded} Coins!',
+        'diamonds_converted': diamonds,
+        'diamonds_deducted': diamonds,
+        'coins_added': coins_awarded,
+        'coins_credited': coins_awarded,
+        'coin_balance': p.coin_balance,
+        'new_coin_balance': p.coin_balance,
         'remaining_diamonds': p.earned_diamonds,
-        'message': f'Withdrawal of ₦{naira_amount:,.2f} submitted for admin approval!',
+        'earned_diamonds': p.earned_diamonds,
     })
+
+
+@login_required
+@require_POST
+def withdrawal_request_api(request):
+    """Closed-loop economy notice: real-money cashouts are permanently removed."""
+    return JsonResponse({
+        'status': 'error',
+        'notice': 'closed_loop_economy',
+        'message': 'withdrawals_disabled',
+        'detail': 'Cash withdrawals are disabled. You can convert your Diamonds to Coins in the app!',
+    }, status=410)
 
 
 @login_required
 @require_GET
 def wallet_history_api(request):
-    """Returns recent transactions and withdrawal requests for the logged-in user."""
+    """Returns recent transactions and diamond activity for the logged-in user."""
     txs = CoinTransaction.objects.filter(user=request.user).order_by('-created_at')[:30]
-    withdrawals = WithdrawalRequest.objects.filter(user=request.user).order_by('-created_at')[:20]
-
     return JsonResponse({
         'status': 'success',
         'transactions': [{
@@ -1693,18 +1744,7 @@ def wallet_history_api(request):
             'description': t.description,
             'created_at': t.created_at.strftime('%b %d, %Y %H:%M'),
         } for t in txs],
-        'withdrawals': [{
-            'id': w.id,
-            'diamonds': w.diamonds_amount,
-            'naira': str(w.naira_amount),
-            'bank_name': w.bank_name,
-            'account_number': w.account_number,
-            'account_name': w.account_name,
-            'status': w.status,
-            'status_display': w.get_status_display(),
-            'admin_note': w.admin_note,
-            'created_at': w.created_at.strftime('%b %d, %Y %H:%M'),
-        } for w in withdrawals],
+        'withdrawals': [],
     })
 
 
@@ -1799,6 +1839,140 @@ def _get_active_conversation(conversation_id, user):
     return conversation, match, other_user
 
 
+DEFAULT_CHAT_GIFTS = {
+    'rose': {'name': 'Red Rose', 'icon': '🌹', 'coins': 10},
+    'heart': {'name': 'Love Heart', 'icon': '💖', 'coins': 20},
+    'beer': {'name': 'Cold Beer', 'icon': '🍻', 'coins': 25},
+    'cocktail': {'name': 'Cocktail', 'icon': '🍸', 'coins': 25},
+    'kiss': {'name': 'Sweet Kiss', 'icon': '💋', 'coins': 35},
+    'champagne': {'name': 'Champagne', 'icon': '🍾', 'coins': 100},
+    'crown': {'name': 'Royal Crown', 'icon': '👑', 'coins': 200},
+    'car': {'name': 'Sports Car', 'icon': '🏎️', 'coins': 500},
+    'diamond': {'name': 'Diamond', 'icon': '💎', 'coins': 500},
+    'ring': {'name': 'Diamond Ring', 'icon': '💍', 'coins': 500},
+    'yacht': {'name': 'Luxury Yacht', 'icon': '🛥️', 'coins': 1000},
+}
+
+STICKER_PACKS = [
+    {
+        'id': 'flirty',
+        'name': 'Flirty',
+        'icon': '💋',
+        'stickers': [
+            {'id': 'kiss', 'name': 'Kiss', 'icon': '💋', 'caption': 'Smooch!'},
+            {'id': 'blow_kiss', 'name': 'Blow Kiss', 'icon': '😘', 'caption': 'Muah!'},
+            {'id': 'heart_eyes', 'name': 'Heart Eyes', 'icon': '😍', 'caption': 'In love'},
+            {'id': 'love_letter', 'name': 'Love Note', 'icon': '💌', 'caption': 'For you'},
+            {'id': 'hug', 'name': 'Warm Hug', 'icon': '🤗', 'caption': 'Hug me'},
+            {'id': 'sparkle_heart', 'name': 'Sparkle Heart', 'icon': '💖', 'caption': 'Sweet'},
+            {'id': 'wink', 'name': 'Flirty Wink', 'icon': '😉', 'caption': 'Hey you'},
+            {'id': 'blush', 'name': 'Blushing', 'icon': '😊', 'caption': 'Shy'},
+        ]
+    },
+    {
+        'id': 'spicy',
+        'name': 'Spicy',
+        'icon': '🔥',
+        'stickers': [
+            {'id': 'fire', 'name': 'Pure Fire', 'icon': '🔥', 'caption': 'So hot!'},
+            {'id': 'devil', 'name': 'Naughty', 'icon': '😈', 'caption': 'Be bad'},
+            {'id': 'peach', 'name': 'Peach', 'icon': '🍑', 'caption': 'Juicy'},
+            {'id': 'hot_lips', 'name': 'Biting Lips', 'icon': '🫦', 'caption': 'Bite me'},
+            {'id': 'smirk', 'name': 'Wild Smirk', 'icon': '😏', 'caption': 'You know it'},
+            {'id': 'cherry', 'name': 'Cherries', 'icon': '🍒', 'caption': 'Taste good'},
+            {'id': 'sweat', 'name': 'Getting Hot', 'icon': '🥵', 'caption': 'Phew!'},
+            {'id': 'drool', 'name': 'Drooling', 'icon': '🤤', 'caption': 'Delicious'},
+        ]
+    },
+    {
+        'id': 'party',
+        'name': 'Party',
+        'icon': '🍾',
+        'stickers': [
+            {'id': 'dance', 'name': 'Dancing', 'icon': '💃', 'caption': 'Let’s dance'},
+            {'id': 'cocktail', 'name': 'Drinks', 'icon': '🍸', 'caption': 'Cheers!'},
+            {'id': 'champagne', 'name': 'Champagne', 'icon': '🍾', 'caption': 'Celebrate'},
+            {'id': 'sunglasses', 'name': 'Cool Vibe', 'icon': '😎', 'caption': 'Too cool'},
+            {'id': 'party', 'name': 'Confetti', 'icon': '🎉', 'caption': 'Party time'},
+            {'id': 'music', 'name': 'Vibing', 'icon': '🎶', 'caption': 'Our tune'},
+            {'id': 'rose', 'name': 'Red Rose', 'icon': '🌹', 'caption': 'Romantic'},
+            {'id': 'clinking', 'name': 'Toast', 'icon': '🥂', 'caption': 'To us'},
+        ]
+    },
+    {
+        'id': 'vip',
+        'name': 'VIP',
+        'icon': '👑',
+        'stickers': [
+            {'id': 'crown', 'name': 'Crown', 'icon': '👑', 'caption': 'Royalty'},
+            {'id': 'diamond', 'name': 'Diamond', 'icon': '💎', 'caption': 'Priceless'},
+            {'id': 'ring', 'name': 'Diamond Ring', 'icon': '💍', 'caption': 'Marry me?'},
+            {'id': 'car', 'name': 'Supercar', 'icon': '🏎️', 'caption': 'Fast lane'},
+            {'id': 'yacht', 'name': 'Mega Yacht', 'icon': '🛥️', 'caption': 'Private cruise'},
+            {'id': 'money', 'name': 'Money Bag', 'icon': '💰', 'caption': 'Rich taste'},
+            {'id': 'sparkles', 'name': 'Golden Aura', 'icon': '✨', 'caption': 'Stunning'},
+            {'id': 'trophy', 'name': 'Winner', 'icon': '🏆', 'caption': 'You won me'},
+        ]
+    }
+]
+
+
+def _build_chat_context(request, conversation, match, other_user, other_profile, current_profile):
+    site_config = SiteConfiguration.get_solo()
+    gifts = list(GiftItem.objects.filter(is_active=True).order_by('order', 'coin_cost'))
+    gift_list = [{
+        'slug': g.slug,
+        'name': g.name,
+        'icon': g.icon,
+        'coins': g.coin_cost,
+    } for g in gifts] if gifts else [
+        {'slug': k, 'name': v['name'], 'icon': v['icon'], 'coins': v['coins']}
+        for k, v in DEFAULT_CHAT_GIFTS.items()
+    ]
+    other_avatar = ''
+    if other_profile:
+        photo = other_profile.photos.filter(is_main=True).first() or other_profile.photos.first()
+        if photo and photo.image and photo.image.storage.exists(photo.image.name):
+            other_avatar = photo.image.url
+        else:
+            other_avatar = f"https://api.dicebear.com/7.x/avataaars/svg?seed={other_user.username}"
+
+    is_online = bool(
+        other_profile and (
+            other_profile.is_host_ready
+            or (other_profile.last_active and (timezone.now() - other_profile.last_active).total_seconds() < 1800)
+        )
+    )
+
+    return {
+        'conversation': conversation,
+        'match': match,
+        'other_user': other_user,
+        'other_profile': other_profile,
+        'other_avatar': other_avatar,
+        'is_other_online': is_online,
+        'current_profile': current_profile,
+        'site_config': site_config,
+        'call_rate_per_minute': site_config.call_rate_per_minute,
+        'user_coin_balance': current_profile.coin_balance if current_profile else 100,
+        'gifts': gift_list,
+        'sticker_packs': STICKER_PACKS,
+        'messages_url': reverse('conversation_messages_api', args=[conversation.pk]),
+        'send_url': reverse('conversation_send_api', args=[conversation.pk]),
+        'send_gift_url': reverse('chat_send_gift_api'),
+        'stickers_api_url': reverse('chat_stickers_api'),
+        'coin_packages_api_url': reverse('coin_packages_api'),
+        'wallet_balance_api_url': reverse('wallet_balance_api'),
+        'messages_allowed': bool(
+            current_profile
+            and other_profile
+            and current_profile.allow_messages
+            and other_profile.allow_messages
+        ),
+        'max_message_length': MAX_MESSAGE_LENGTH,
+    }
+
+
 @login_required
 def chat_room(request, match_id):
     match = _get_active_match(match_id, request.user)
@@ -1808,19 +1982,164 @@ def chat_room(request, match_id):
         return redirect('match_list')
     current_profile = Profile.objects.filter(user=request.user).first()
     conversation = _get_or_create_conversation(match)
-    return render(request, 'dating/chat_room.html', {
-        'conversation': conversation,
-        'match': match,
-        'other_user': other_user,
-        'messages_url': reverse('conversation_messages_api', args=[conversation.pk]),
-        'send_url': reverse('conversation_send_api', args=[conversation.pk]),
-        'messages_allowed': bool(
-            current_profile
-            and current_profile.allow_messages
-            and other_profile.allow_messages
-        ),
-        'max_message_length': MAX_MESSAGE_LENGTH,
+    context = _build_chat_context(request, conversation, match, other_user, other_profile, current_profile)
+    return render(request, 'dating/chat_room.html', context)
+
+
+@require_GET
+def chat_stickers_api(request):
+    return JsonResponse({
+        'status': 'success',
+        'packs': STICKER_PACKS,
     })
+
+
+@login_required
+@require_POST
+def chat_send_gift_api(request):
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
+
+    conversation_id = data.get('conversation_id')
+    recipient_id = data.get('recipient_id')
+    match_id = data.get('match_id')
+
+    conversation = None
+    other_user = None
+
+    if conversation_id:
+        conversation, _, other_user = _get_active_conversation(conversation_id, request.user)
+    elif match_id:
+        match = _get_active_match(match_id, request.user)
+        conversation = _get_or_create_conversation(match)
+        other_user = match.user2 if match.user1_id == request.user.id else match.user1
+    elif recipient_id:
+        other_user = get_object_or_404(User, pk=recipient_id)
+        match = Match.objects.filter(
+            (Q(user1=request.user, user2=other_user) | Q(user1=other_user, user2=request.user)),
+            expires_at__gt=timezone.now(),
+        ).first()
+        if not match:
+            return JsonResponse({'status': 'error', 'message': 'active_match_required'}, status=403)
+        conversation = _get_or_create_conversation(match)
+    else:
+        return JsonResponse({'status': 'error', 'message': 'missing_conversation_or_recipient'}, status=400)
+
+    gift_type = str(data.get('gift_type', '')).strip().lower()
+    gift_item = GiftItem.objects.filter(slug=gift_type, is_active=True).first()
+    if gift_item:
+        gift_name = gift_item.name
+        gift_icon = gift_item.icon
+        gift_cost = gift_item.coin_cost
+    elif gift_type in DEFAULT_CHAT_GIFTS:
+        gift_meta = DEFAULT_CHAT_GIFTS[gift_type]
+        gift_name = gift_meta['name']
+        gift_icon = gift_meta['icon']
+        gift_cost = gift_meta['coins']
+    else:
+        return JsonResponse({'status': 'error', 'message': 'invalid_gift_type'}, status=400)
+
+    sender_profile = Profile.objects.filter(user=request.user).first()
+    if not sender_profile:
+        return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
+
+    if sender_profile.coin_balance < gift_cost:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'insufficient_coins',
+            'required_coins': gift_cost,
+            'coin_balance': sender_profile.coin_balance,
+            'detail': f"You need {gift_cost} coins to send {gift_icon} {gift_name}.",
+        }, status=400)
+
+    site_config = SiteConfiguration.get_solo()
+    commission = Decimal(str(site_config.host_commission_percentage)) / Decimal('100')
+    diamonds_earned = int(Decimal(gift_cost) * commission)
+
+    with transaction.atomic():
+        p_sender = Profile.objects.select_for_update().get(pk=sender_profile.pk)
+        w_sender, _ = CoinWallet.objects.select_for_update().get_or_create(
+            user=request.user,
+            defaults={'coin_balance': p_sender.coin_balance},
+        )
+        if p_sender.coin_balance < gift_cost:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'insufficient_coins',
+                'required_coins': gift_cost,
+                'coin_balance': p_sender.coin_balance,
+            }, status=400)
+
+        p_sender.coin_balance -= gift_cost
+        w_sender.coin_balance = p_sender.coin_balance
+        p_sender.save(update_fields=['coin_balance'])
+        w_sender.save(update_fields=['coin_balance'])
+
+        p_recipient = Profile.objects.select_for_update().filter(user=other_user).first()
+        w_recipient, _ = CoinWallet.objects.select_for_update().get_or_create(
+            user=other_user,
+            defaults={'coin_balance': p_recipient.coin_balance if p_recipient else 100},
+        )
+        if p_recipient and diamonds_earned > 0:
+            p_recipient.earned_diamonds += diamonds_earned
+            p_recipient.save(update_fields=['earned_diamonds'])
+
+        CoinTransaction.objects.create(
+            user=request.user,
+            sender=request.user,
+            recipient=other_user,
+            amount=-gift_cost,
+            gift_type=gift_type,
+            transaction_type='GIFT_SENT',
+            description=f"Sent {gift_icon} {gift_name} ({gift_cost} coins) in chat to {other_user.username}",
+        )
+
+        CoinTransaction.objects.create(
+            user=other_user,
+            sender=request.user,
+            recipient=other_user,
+            amount=diamonds_earned,
+            gift_type=gift_type,
+            transaction_type='GIFT_RECEIVED',
+            description=f"Received {gift_icon} {gift_name} from {request.user.username} (+{diamonds_earned}💎)",
+        )
+
+        chat_msg = ChatMessage.objects.create(
+            conversation=conversation,
+            sender=request.user,
+            message_type='gift',
+            text=f"Sent a {gift_name} ({gift_cost} coins)",
+            metadata={
+                'gift_type': gift_type,
+                'name': gift_name,
+                'icon': gift_icon,
+                'coins': gift_cost,
+                'diamonds': diamonds_earned,
+                'sender_name': request.user.first_name or request.user.username,
+                'recipient_name': other_user.first_name or other_user.username,
+            },
+        )
+        chat_msg.read_by.add(request.user)
+        conversation.save(update_fields=['updated_at'])
+
+    return JsonResponse({
+        'status': 'success',
+        'sender_balance': p_sender.coin_balance,
+        'coin_balance': p_sender.coin_balance,
+        'diamonds_awarded': diamonds_earned,
+        'gift': {
+            'gift_type': gift_type,
+            'name': gift_name,
+            'icon': gift_icon,
+            'coins': gift_cost,
+            'diamonds': diamonds_earned,
+        },
+        'message': serialize_chat_message(chat_msg, other_user.pk),
+    }, status=201)
 
 
 @login_required
@@ -1887,6 +2206,11 @@ def conversation_send_api(request, conversation_id):
     if not isinstance(data, dict):
         return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
     text = str(data.get('text', '')).strip()
+    message_type = str(data.get('message_type', 'text')).lower()
+    if message_type not in ('text', 'sticker', 'gift'):
+        message_type = 'text'
+    metadata = data.get('metadata') if isinstance(data.get('metadata'), dict) else {}
+
     if not text or len(text) > MAX_MESSAGE_LENGTH:
         return JsonResponse({'status': 'error', 'message': 'invalid_message'}, status=400)
     recent_messages = conversation.messages.filter(
@@ -1901,6 +2225,8 @@ def conversation_send_api(request, conversation_id):
             conversation=conversation,
             sender=request.user,
             text=text,
+            message_type=message_type,
+            metadata=metadata,
         )
         message.read_by.add(request.user)
         conversation.save(update_fields=['updated_at'])
@@ -1981,20 +2307,8 @@ def conversation_room(request, conversation_id):
     conversation, match, other_user = _get_active_conversation(conversation_id, request.user)
     other_profile = Profile.objects.filter(user=other_user).first()
     current_profile = Profile.objects.filter(user=request.user).first()
-    return render(request, 'dating/chat_room.html', {
-        'conversation': conversation,
-        'match': match,
-        'other_user': other_user,
-        'messages_url': reverse('conversation_messages_api', args=[conversation.pk]),
-        'send_url': reverse('conversation_send_api', args=[conversation.pk]),
-        'messages_allowed': bool(
-            current_profile
-            and other_profile
-            and current_profile.allow_messages
-            and other_profile.allow_messages
-        ),
-        'max_message_length': MAX_MESSAGE_LENGTH,
-    })
+    context = _build_chat_context(request, conversation, match, other_user, other_profile, current_profile)
+    return render(request, 'dating/chat_room.html', context)
 
 # --- ACCOUNT FLOW & STATIC ---
 def index(request): return render(request, 'dating/landing.html')
@@ -2118,3 +2432,147 @@ def privacy(request): return render(request, 'dating/privacy.html')
 def terms(request): return render(request, 'dating/terms.html')
 def contact(request):
     return render(request, 'dating/contact.html')
+
+
+# --- SEX CALL DISCOVERY & HOST GRID ---
+@login_required
+def sex_call_hub(request):
+    """
+    Sex Call Hub Page (/sex-call/):
+    Tabs: 'Hot' and 'Nearby' filter toggle.
+    Top-bar: Live Coin Badge (topup trigger) & Diamond Badge (exchange trigger).
+    Cosmic Random Match entry point.
+    2-column card grid with portrait photos, online badges, and direct video call buttons.
+    """
+    profile = Profile.objects.filter(user=request.user).first()
+    if not profile:
+        return redirect('create_profile')
+
+    profile.last_active = timezone.now()
+    profile.save(update_fields=['last_active'])
+
+    site_config = SiteConfiguration.get_solo()
+    CoinWallet.objects.get_or_create(
+        user=request.user,
+        defaults={'coin_balance': profile.coin_balance},
+    )
+
+    is_preview = bool(
+        (request.user.is_staff or request.user.is_superuser)
+        and (
+            request.session.get('staff_test_profile_preview')
+            or request.session.get('preview_test_profiles')
+        )
+    )
+
+    return render(request, 'dating/sex_call_hub.html', {
+        'profile': profile,
+        'user_coin_balance': profile.coin_balance,
+        'user_earned_diamonds': profile.earned_diamonds,
+        'site_config': site_config,
+        'call_rate_per_minute': site_config.call_rate_per_minute,
+        'diamond_to_coin_percentage': getattr(site_config, 'diamond_to_coin_percentage', 70),
+        'staff_test_profile_preview': is_preview,
+        'is_staff': request.user.is_staff or request.user.is_superuser,
+    })
+
+
+@login_required
+@require_GET
+def sex_call_hosts_api(request):
+    """
+    Returns active hosts for the Sex Call grid.
+    Supports ?tab=hot and ?tab=nearby.
+    Includes test profiles when staff preview is enabled.
+    """
+    current_profile = Profile.objects.filter(user=request.user).first()
+    tab = request.GET.get('tab', 'hot').lower()
+
+    include_test_profiles = bool(
+        (request.user.is_staff or request.user.is_superuser)
+        and (
+            request.session.get('staff_test_profile_preview')
+            or request.session.get('preview_test_profiles')
+            or request.GET.get('test_profiles') == 'on'
+            or request.GET.get('preview_test_profiles') == 'on'
+        )
+    )
+
+    qs = Profile.objects.exclude(user=request.user)
+
+    if include_test_profiles:
+        test_qs = qs.filter(is_test_profile=True)
+        sc_test = test_qs.filter(relationship_mode='SEX_CALL')
+        qs = sc_test if sc_test.exists() else test_qs
+    else:
+        qs = qs.filter(is_test_profile=False, show_in_discovery=True)
+        sc_qs = qs.filter(Q(relationship_mode='SEX_CALL') | Q(is_host_ready=True))
+        if sc_qs.exists():
+            qs = sc_qs
+
+    hosts_list = list(qs.select_related('user').prefetch_related('photos')[:40])
+
+    if tab == 'nearby' and current_profile and current_profile.latitude and current_profile.longitude:
+        try:
+            origin = (float(current_profile.latitude), float(current_profile.longitude))
+            hosts_list.sort(key=lambda h: _distance_km(*origin, float(h.latitude or 0), float(h.longitude or 0)) if (h.latitude and h.longitude) else 99999)
+        except Exception:
+            pass
+    else:
+        hosts_list.sort(key=lambda h: (not getattr(h, 'is_host_ready', True), -(h.last_active.timestamp() if h.last_active else 0)))
+
+    site_config = SiteConfiguration.get_solo()
+    data = []
+    for h in hosts_list[:30]:
+        payload = _profile_payload(h)
+        data.append({
+            'id': h.user_id,
+            'username': h.user.username,
+            'age': h.age or 22,
+            'location': h.location or 'Online',
+            'avatar_url': payload['image_url'],
+            'is_online': h.is_host_ready or (h.last_active and (timezone.now() - h.last_active).total_seconds() < 1800),
+            'rate_per_minute': site_config.call_rate_per_minute,
+            'is_verified': h.is_verified,
+            'is_vip': h.is_vip,
+            'is_test_profile': h.is_test_profile,
+        })
+
+    return JsonResponse({'status': 'success', 'success': True, 'tab': tab, 'hosts': data})
+
+
+@login_required
+def call_room_page(request, room_id):
+    """
+    Dedicated 1-on-1 In-Call Video Room (/call/<room_id>/):
+    Full-bleed remote video, PiP local preview, floating live chat, in-call gifts.
+    """
+    call = get_object_or_404(CallSession, room_id=room_id)
+    if request.user not in (call.caller, call.receiver):
+        return HttpResponseForbidden("You are not a participant in this call.")
+
+    other_user = call.receiver if request.user == call.caller else call.caller
+    other_profile = Profile.objects.filter(user=other_user).first()
+    current_profile = Profile.objects.filter(user=request.user).first()
+    site_config = SiteConfiguration.get_solo()
+
+    other_payload = _profile_payload(other_profile) if other_profile else {
+        'image_url': f"https://api.dicebear.com/7.x/avataaars/svg?seed={other_user.username}",
+        'username': other_user.username,
+        'age': 22,
+    }
+
+    return render(request, 'dating/call_room.html', {
+        'call': call,
+        'room_id': str(call.room_id),
+        'other_user': other_user,
+        'other_profile': other_profile,
+        'other_avatar': other_payload.get('image_url', ''),
+        'other_age': getattr(other_profile, 'age', 22) if other_profile else 22,
+        'current_profile': current_profile,
+        'user_coin_balance': current_profile.coin_balance if current_profile else 0,
+        'user_earned_diamonds': current_profile.earned_diamonds if current_profile else 0,
+        'site_config': site_config,
+        'rate_per_minute': getattr(call, 'rate_per_minute', site_config.call_rate_per_minute),
+        'is_caller': request.user == call.caller,
+    })

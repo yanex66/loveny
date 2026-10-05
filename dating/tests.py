@@ -22,6 +22,7 @@ from .models import (
     ChatMessage,
     CoinPackage,
     CoinTransaction,
+    CoinWallet,
     Conversation,
     GiftItem,
     Match,
@@ -31,7 +32,6 @@ from .models import (
     SiteConfiguration,
     SubscriptionPlan,
     Swipe,
-    WithdrawalRequest,
 )
 from .views import _provider_payment, get_profile_batch
 
@@ -793,7 +793,8 @@ class DatingPlatformTests(TestCase):
         self.alice_profile.save(update_fields=['relationship_mode'])
         response = self.client.get(reverse('subscription_plans_api'))
         self.assertEqual(set(response.json()), {'sex_call'})
-        self.assertTrue(all(plan['id'] != disabled_plan.pk for plan in response.json()['sex_call']))
+        # In closed loop economy, sex call has no subscription plans
+        self.assertEqual(response.json()['sex_call'], [])
 
     def test_subscription_checkout_and_payment_are_limited_to_selected_mode(self):
         self.client.force_login(self.alice)
@@ -817,12 +818,10 @@ class DatingPlatformTests(TestCase):
         self.alice_profile.relationship_mode = 'SEX_CALL'
         self.alice_profile.save(update_fields=['relationship_mode'])
         response = self.client.get(reverse('premium_landing'))
-        self.assertContains(response, 'Choose your Sex Call Pass')
-        self.assertContains(response, 'Sex Call Pass ·')
-        self.assertNotContains(response, 'Choose your Dating Pass')
+        self.assertRedirects(response, reverse('sex_call_hub'))
         response = self.client.get(reverse('subscription_plans_api'))
         self.assertEqual(set(response.json()), {'sex_call'})
-        self.assertTrue(all(plan['category'] == 'SEX_CALL' for plan in response.json()['sex_call']))
+        self.assertEqual(response.json()['sex_call'], [])
 
     def test_calls_require_sex_call_access_active_match_and_participant_signaling(self):
         Match.objects.create(
@@ -833,13 +832,16 @@ class DatingPlatformTests(TestCase):
         )
         self.client.force_login(self.alice)
         initiate_url = reverse('call_initiate_api')
+        # Requires coins to call: Alice has 0 coins, requires call_rate_per_minute (default 20)
+        self.alice_profile.coin_balance = 0
+        self.alice_profile.save(update_fields=['coin_balance'])
         response = self.post_json(initiate_url, {'receiver_id': self.bob.pk})
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()['message'], 'sex_call_pass_required')
+        self.assertEqual(response.status_code, 402)
+        self.assertEqual(response.json()['message'], 'insufficient_coins')
 
-        self.alice_profile.sex_call_premium_tier = 'Silver'
-        self.alice_profile.sex_call_premium_expiry = timezone.now() + timedelta(days=1)
-        self.alice_profile.save(update_fields=['sex_call_premium_tier', 'sex_call_premium_expiry'])
+        # Fund Alice with coins
+        self.alice_profile.coin_balance = 50
+        self.alice_profile.save(update_fields=['coin_balance'])
         matches_page = self.client.get(reverse('match_list'))
         self.assertContains(matches_page, 'Start video call')
         self.assertContains(matches_page, 'incoming-call-sheet')
@@ -903,8 +905,8 @@ class DatingPlatformTests(TestCase):
         expired_match.expires_at = timezone.now() + timedelta(days=1)
         expired_match.save(update_fields=['expires_at'])
         response = self.post_json(initiate_url, {'receiver_id': self.bob.pk})
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()['message'], 'sex_call_pass_required')
+        self.assertEqual(response.status_code, 402)
+        self.assertEqual(response.json()['message'], 'insufficient_coins')
 
         # Now fund Alice with 20 coins
         self.alice_profile.coin_balance = 20
@@ -1307,61 +1309,51 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(data['call']['receiver_name'], 'bob')
         self.assertEqual(data['host']['username'], 'bob')
 
-    def test_withdrawal_request_flow(self):
+    def test_diamond_to_coin_conversion_flow(self):
         cfg = SiteConfiguration.get_solo()
-        cfg.min_diamond_withdrawal = 100
-        cfg.diamond_exchange_rate_naira = Decimal('10.00')
+        cfg.diamond_to_coin_percentage = 70
         cfg.save()
 
         self.bob_profile.earned_diamonds = 250
+        self.bob_profile.coin_balance = 10
         self.bob_profile.save()
 
         self.client.force_login(self.bob)
 
-        # Try below minimum
-        res_fail = self.post_json(reverse('withdrawal_request_api'), {
-            'diamonds': 50,
-            'bank_name': 'Kuda',
-            'account_number': '1234567890',
-            'account_name': 'Bob Tester',
-        })
+        # Try 0 diamonds
+        res_fail = self.post_json(reverse('convert_diamonds_api'), {'diamonds': 0})
         self.assertEqual(res_fail.status_code, 400)
-        self.assertEqual(res_fail.json()['message'], 'below_minimum')
 
         # Try exceeding balance
-        res_fail2 = self.post_json(reverse('withdrawal_request_api'), {
-            'diamonds': 500,
-            'bank_name': 'Kuda',
-            'account_number': '1234567890',
-            'account_name': 'Bob Tester',
-        })
+        res_fail2 = self.post_json(reverse('convert_diamonds_api'), {'diamonds': 500})
         self.assertEqual(res_fail2.status_code, 400)
-        self.assertEqual(res_fail2.json()['message'], 'insufficient_diamonds')
+        self.assertEqual(res_fail2.json()['error'], 'insufficient_diamonds')
 
-        # Valid withdrawal
-        res_ok = self.post_json(reverse('withdrawal_request_api'), {
-            'diamonds': 150,
-            'bank_name': 'OPay',
-            'account_number': '9876543210',
-            'account_name': 'Bob Payout',
-        })
+        # Valid conversion: 100 diamonds * 70% = 70 coins
+        res_ok = self.post_json(reverse('convert_diamonds_api'), {'diamonds': 100})
         self.assertEqual(res_ok.status_code, 200)
         data = res_ok.json()
-        self.assertEqual(data['status'], 'success')
-        self.assertEqual(data['diamonds_withdrawn'], 150)
-        # 150 * 10 = 1500 Naira
-        self.assertEqual(data['naira_amount'], '1500.00')
-        self.assertEqual(data['remaining_diamonds'], 100)
+        self.assertTrue(data['success'])
+        self.assertEqual(data['diamonds_deducted'], 100)
+        self.assertEqual(data['coins_credited'], 70)
+        self.assertEqual(data['remaining_diamonds'], 150)
+        self.assertEqual(data['new_coin_balance'], 80)
 
         self.bob_profile.refresh_from_db()
-        self.assertEqual(self.bob_profile.earned_diamonds, 100)
+        self.assertEqual(self.bob_profile.earned_diamonds, 150)
+        self.assertEqual(self.bob_profile.coin_balance, 80)
         self.assertTrue(
-            WithdrawalRequest.objects.filter(
+            CoinTransaction.objects.filter(
                 user=self.bob,
-                diamonds_amount=150,
-                status='PENDING',
+                transaction_type='DIAMOND_CONVERSION',
+                amount=70,
             ).exists()
         )
+
+        # Cash withdrawal endpoint returns 410 Gone indicating closed loop economy
+        res_with = self.post_json(reverse('withdrawal_request_api'), {'diamonds': 50})
+        self.assertEqual(res_with.status_code, 410)
+        self.assertEqual(res_with.json()['notice'], 'closed_loop_economy')
 
     def test_wallet_history_api(self):
         CoinTransaction.objects.create(
@@ -1370,15 +1362,6 @@ class DatingPlatformTests(TestCase):
             transaction_type='WELCOME_BONUS',
             description='Test bonus',
         )
-        WithdrawalRequest.objects.create(
-            user=self.bob,
-            diamonds_amount=200,
-            naira_amount=Decimal('1000.00'),
-            bank_name='GTBank',
-            account_number='0123456789',
-            account_name='Bob Testing',
-            status='PENDING',
-        )
 
         self.client.force_login(self.bob)
         res = self.client.get(reverse('wallet_history_api'))
@@ -1386,7 +1369,227 @@ class DatingPlatformTests(TestCase):
         data = res.json()
         self.assertEqual(data['status'], 'success')
         self.assertTrue(len(data['transactions']) >= 1)
-        self.assertTrue(len(data['withdrawals']) >= 1)
-        self.assertEqual(data['withdrawals'][0]['diamonds'], 200)
+        self.assertEqual(data['withdrawals'], [])
+
+    def test_coin_wallet_model_and_transaction_fields(self):
+        wallet = CoinWallet.objects.create(user=self.alice, coin_balance=150)
+        self.assertEqual(wallet.coin_balance, 150)
+        self.assertEqual(str(wallet), "alice's Wallet: 150 coins")
+
+        tx = CoinTransaction.objects.create(
+            user=self.alice,
+            sender=self.alice,
+            recipient=self.bob,
+            amount=-25,
+            gift_type='cocktail',
+            transaction_type='GIFT_SENT',
+            description='Sent cocktail to bob',
+        )
+        self.assertEqual(tx.sender, self.alice)
+        self.assertEqual(tx.recipient, self.bob)
+        self.assertEqual(tx.gift_type, 'cocktail')
+        self.assertEqual(tx.timestamp, tx.created_at)
+
+    def test_chat_send_gift_api(self):
+        match = Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            expires_at=timezone.now() + timedelta(days=2),
+        )
+        self.alice_profile.coin_balance = 200
+        self.alice_profile.save()
+        self.bob_profile.earned_diamonds = 0
+        self.bob_profile.save()
+
+        self.client.force_login(self.alice)
+        payload = {
+            'match_id': match.pk,
+            'gift_type': 'rose',
+        }
+        res = self.post_json(reverse('chat_send_gift_api'), payload)
+        self.assertEqual(res.status_code, 201)
+        data = res.json()
+        self.assertEqual(data['status'], 'success')
+
+        gift_item = GiftItem.objects.filter(slug='rose').first()
+        rose_cost = gift_item.coin_cost if gift_item else 10
+        expected_balance = 200 - rose_cost
+        expected_diamonds = int(Decimal(rose_cost) * Decimal('0.7'))
+
+        self.assertEqual(data['sender_balance'], expected_balance)
+        self.assertEqual(data['gift']['coins'], rose_cost)
+        self.assertEqual(data['message']['message_type'], 'gift')
+        self.assertEqual(data['message']['metadata']['gift_type'], 'rose')
+
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, expected_balance)
+
+        self.bob_profile.refresh_from_db()
+        self.assertEqual(self.bob_profile.earned_diamonds, expected_diamonds)
+
+        self.assertTrue(
+            CoinTransaction.objects.filter(
+                sender=self.alice,
+                recipient=self.bob,
+                gift_type='rose',
+                transaction_type='GIFT_SENT',
+            ).exists()
+        )
+        self.assertTrue(
+            CoinTransaction.objects.filter(
+                sender=self.alice,
+                recipient=self.bob,
+                gift_type='rose',
+                transaction_type='GIFT_RECEIVED',
+            ).exists()
+        )
+
+    def test_chat_send_gift_insufficient_coins(self):
+        match = Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            expires_at=timezone.now() + timedelta(days=2),
+        )
+        self.alice_profile.coin_balance = 1 # lower than any gift cost (rose is 5)
+        self.alice_profile.save()
+
+        self.client.force_login(self.alice)
+        payload = {
+            'match_id': match.pk,
+            'gift_type': 'rose',
+        }
+        res = self.post_json(reverse('chat_send_gift_api'), payload)
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()['message'], 'insufficient_coins')
+
+    def test_chat_stickers_and_rich_messaging(self):
+        res_stickers = self.client.get(reverse('chat_stickers_api'))
+        self.assertEqual(res_stickers.status_code, 200)
+        data = res_stickers.json()
+        self.assertEqual(data['status'], 'success')
+        self.assertTrue(len(data['packs']) >= 4)
+        self.assertEqual(data['packs'][0]['id'], 'flirty')
+
+        match = Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            expires_at=timezone.now() + timedelta(days=2),
+        )
+        conv = Conversation.objects.create()
+        conv.participants.add(self.alice, self.bob)
+
+        self.client.force_login(self.alice)
+        res_send = self.post_json(
+            reverse('conversation_send_api', args=[conv.pk]),
+            {
+                'text': '💋',
+                'message_type': 'sticker',
+                'metadata': {'icon': '💋', 'name': 'Kiss', 'caption': 'Smooch!'},
+            }
+        )
+        self.assertEqual(res_send.status_code, 201)
+        msg_data = res_send.json()['message']
+        self.assertEqual(msg_data['message_type'], 'sticker')
+        self.assertEqual(msg_data['metadata']['caption'], 'Smooch!')
+
+        res_list = self.client.get(reverse('conversation_messages_api', args=[conv.pk]))
+        self.assertEqual(res_list.status_code, 200)
+        messages = res_list.json()['messages']
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]['message_type'], 'sticker')
+        self.assertEqual(messages[0]['metadata']['icon'], '💋')
+
+    def test_sex_call_hub_page_and_hosts_api(self):
+        self.client.force_login(self.alice)
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.coin_balance = 200
+        self.alice_profile.earned_diamonds = 80
+        self.alice_profile.save()
+
+        # Sex Call Hub page renders with 200 and expected components
+        response = self.client.get(reverse('sex_call_hub'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Hot')
+        self.assertContains(response, 'Nearby')
+        self.assertContains(response, 'cosmic-match-overlay')
+        self.assertContains(response, 'diamond-exchange-modal')
+        self.assertContains(response, '200') # coin balance
+        self.assertContains(response, '80') # diamond balance
+
+        # Hosts API
+        api_res = self.client.get(reverse('sex_call_hosts_api'), {'tab': 'hot'})
+        self.assertEqual(api_res.status_code, 200)
+        data = api_res.json()
+        self.assertTrue(data['success'])
+        self.assertIn('hosts', data)
+        self.assertEqual(data['tab'], 'hot')
+
+        # Nearby tab
+        api_res_nearby = self.client.get(reverse('sex_call_hosts_api'), {'tab': 'nearby'})
+        self.assertEqual(api_res_nearby.status_code, 200)
+        self.assertEqual(api_res_nearby.json()['tab'], 'nearby')
+
+    def test_call_room_page_access_and_controls(self):
+        call = CallSession.objects.create(
+            caller=self.alice,
+            receiver=self.bob,
+            status='accepted',
+        )
+
+        # Alice (caller) can access call room
+        self.client.force_login(self.alice)
+        res_alice = self.client.get(reverse('call_room_page', args=[call.room_id]))
+        self.assertEqual(res_alice.status_code, 200)
+        self.assertContains(res_alice, 'floating-chat-container')
+        self.assertContains(res_alice, 'local-video')
+        self.assertContains(res_alice, 'remote-video')
+
+        # Bob (receiver) can access call room
+        self.client.force_login(self.bob)
+        res_bob = self.client.get(reverse('call_room_page', args=[call.room_id]))
+        self.assertEqual(res_bob.status_code, 200)
+
+        # Charlie (third party) is forbidden
+        charlie_user, charlie_profile = self.make_profile('charlie', mode='SEX_CALL')
+        self.client.force_login(charlie_user)
+        res_charlie = self.client.get(reverse('call_room_page', args=[call.room_id]))
+        self.assertEqual(res_charlie.status_code, 403)
+
+    def test_preview_test_profiles_visibility_in_discovery_and_sex_call(self):
+        test_user, test_profile = self.make_profile('test_model_1', mode='SEX_CALL')
+        test_profile.is_test_profile = True
+        test_profile.show_in_discovery = False
+        test_profile.is_host_ready = True
+        test_user.is_active = False
+        test_user.save()
+        test_profile.save()
+
+        # Standard non-staff user does not see test profile
+        self.client.force_login(self.alice)
+        res_normal = self.client.get(reverse('get_profiles_json'))
+        self.assertEqual(res_normal.status_code, 200)
+        self.assertFalse(any(p['id'] == test_profile.pk for p in res_normal.json()['profiles']))
+
+        # Staff user enables preview_test_profiles
+        staff_user, staff_profile = self.make_profile('staff_member', mode='SEX_CALL')
+        staff_user.is_staff = True
+        staff_user.save()
+        self.client.force_login(staff_user)
+
+        session = self.client.session
+        session['preview_test_profiles'] = True
+        session.save()
+
+        # In discovery JSON, test profile now appears
+        res_staff = self.client.get(reverse('get_profiles_json'))
+        self.assertEqual(res_staff.status_code, 200)
+        profiles = res_staff.json()['profiles']
+        self.assertTrue(any(p['id'] == test_profile.pk for p in profiles))
+
+        # In sex call hosts API, test profile appears for staff preview
+        res_hosts = self.client.get(reverse('sex_call_hosts_api'), {'tab': 'hot'})
+        self.assertEqual(res_hosts.status_code, 200)
+        hosts = res_hosts.json()['hosts']
+        self.assertTrue(any(h['id'] == test_profile.pk for h in hosts))
 
 

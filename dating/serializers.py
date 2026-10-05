@@ -8,6 +8,8 @@ def serialize_chat_message(message, other_user_id):
         'sender_id': message.sender_id,
         'sender': message.sender.username,
         'text': message.text,
+        'message_type': getattr(message, 'message_type', 'text') or 'text',
+        'metadata': getattr(message, 'metadata', {}) or {},
         'created_at': message.created_at.isoformat(),
         'read_by': read_by_ids,
         'is_read': other_user_id in read_by_ids,

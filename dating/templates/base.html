@@ -282,32 +282,47 @@
         </section>
     </div>
 
-    <!-- Enhanced Video Call Room with Coin Telemetry & Gifts -->
-    <div id="video-call-room" class="fixed inset-0 z-[130] hidden bg-slate-950 text-white select-none" role="dialog" aria-modal="true" aria-label="Video call">
-        <video id="remote-call-video" class="absolute inset-0 h-full w-full object-cover" autoplay playsinline></video>
-        <div class="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80 pointer-events-none"></div>
-        <video id="local-call-video" class="absolute right-4 top-[max(3.8rem,env(safe-area-inset-top))] z-20 aspect-[3/4] w-28 touch-none rounded-2xl border-2 border-white/80 bg-slate-800 object-cover shadow-2xl sm:w-36 transition-all" autoplay muted playsinline></video>
+    <!-- Enhanced Video Call Room with Coin Telemetry, PiP, Floating Live Chat & Gifts -->
+    <div id="video-call-room" class="fixed inset-0 z-[130] hidden bg-slate-950 text-white select-none overflow-hidden" role="dialog" aria-modal="true" aria-label="Video call">
+        <video id="remote-call-video" class="absolute inset-0 h-full w-full object-cover bg-slate-950" autoplay playsinline></video>
+        <div class="absolute inset-x-0 top-0 h-44 bg-gradient-to-b from-black/80 via-black/30 to-transparent pointer-events-none"></div>
+        <div class="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/85 via-black/40 to-transparent pointer-events-none"></div>
         
-        <!-- Top Call HUD Bar -->
-        <div class="absolute inset-x-0 top-0 z-10 flex items-center justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] pointer-events-auto">
-            <!-- Left: Call Timer & Grace Indicator -->
-            <div class="flex items-center gap-2">
-                <div class="flex items-center gap-1.5 rounded-full border border-white/20 bg-black/55 px-3 py-1 backdrop-blur-md">
-                    <span class="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
-                    <span id="call-timer-display" class="font-mono text-sm font-bold tracking-wider text-white">00:00</span>
+        <!-- Top Call HUD Bar: Host Profile, Timer, Follow Button, Live Wallet -->
+        <div class="absolute inset-x-0 top-0 z-20 flex items-center justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] pointer-events-auto">
+            <!-- Left: Host Avatar, Name, Age, Timer & Follow Button -->
+            <div class="flex items-center gap-3">
+                <div class="relative">
+                    <img id="call-remote-host-avatar" src="{% static 'dating/images/profile-placeholder.svg' %}" alt="" class="h-11 w-11 rounded-full border-2 border-pink-400 object-cover shadow-lg bg-slate-800">
+                    <span class="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-400 ring-2 ring-black animate-pulse"></span>
                 </div>
-                <div id="call-billing-badge" class="rounded-full bg-emerald-500/90 px-2.5 py-1 text-[11px] font-bold text-white shadow backdrop-blur-md">
-                    🛡️ First {{ site_config.grace_period_seconds|default:20 }}s Free
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span id="call-remote-host-title" class="text-sm sm:text-base font-black text-white leading-tight drop-shadow">Live Host</span>
+                        <button type="button" id="call-hud-follow-btn" class="flex items-center gap-1 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-3 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-md hover:scale-105 active:scale-95 transition">
+                            <span id="call-hud-follow-icon">+</span>
+                            <span id="call-hud-follow-label">Follow</span>
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2 mt-0.5">
+                        <div class="flex items-center gap-1 font-mono text-xs font-bold text-emerald-400">
+                            <span class="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
+                            <span id="call-timer-display">00:00</span>
+                        </div>
+                        <div id="call-billing-badge" class="rounded-full bg-black/50 border border-white/10 px-2 py-0.5 text-[10px] font-medium text-white/70">
+                            🛡️ {{ site_config.grace_period_seconds|default:20 }}s Free
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <!-- Right: Live Wallet & Quick Top-Up -->
             <div class="flex items-center gap-2">
-                <div id="call-hud-coins-wrapper" class="flex items-center gap-1.5 rounded-full border border-amber-300/40 bg-black/55 px-3 py-1 backdrop-blur-md text-amber-300 text-xs font-black">
+                <div id="call-hud-coins-wrapper" class="flex items-center gap-1.5 rounded-full border border-amber-300/40 bg-black/60 px-3 py-1 backdrop-blur-md text-amber-300 text-xs font-black shadow-lg">
                     <span>🪙</span>
                     <span id="call-hud-coins">--</span>
                 </div>
-                <div id="call-hud-diamonds-wrapper" class="hidden items-center gap-1.5 rounded-full border border-cyan-300/40 bg-black/55 px-3 py-1 backdrop-blur-md text-cyan-300 text-xs font-black">
+                <div id="call-hud-diamonds-wrapper" class="hidden items-center gap-1.5 rounded-full border border-cyan-300/40 bg-black/60 px-3 py-1 backdrop-blur-md text-cyan-300 text-xs font-black shadow-lg">
                     <span>💎</span>
                     <span id="call-hud-diamonds">0</span>
                 </div>
@@ -318,7 +333,7 @@
         </div>
 
         <!-- Center: Low Coins Warning Banner -->
-        <div id="call-low-coins-banner" class="absolute left-1/2 top-16 z-20 hidden -translate-x-1/2 items-center gap-2 rounded-full border border-rose-400 bg-rose-600/95 px-4 py-1.5 text-xs font-bold text-white shadow-2xl backdrop-blur-md animate-pulse">
+        <div id="call-low-coins-banner" class="absolute left-1/2 top-20 z-20 hidden -translate-x-1/2 items-center gap-2 rounded-full border border-rose-400 bg-rose-600/95 px-4 py-1.5 text-xs font-bold text-white shadow-2xl backdrop-blur-md animate-pulse">
             <span>⚠️</span>
             <span>Low coins (<30s left)!</span>
             <button type="button" id="call-banner-topup-btn" class="ml-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-rose-700">Top Up</button>
@@ -328,11 +343,25 @@
         <p id="call-feedback" class="absolute left-1/2 top-24 z-10 -translate-x-1/2 rounded-full bg-black/60 px-4 py-1.5 text-center text-xs font-semibold backdrop-blur-md max-w-[80vw]" role="status" aria-live="polite"></p>
 
         <!-- Floating Gift Celebration Overlay -->
-        <div id="call-gift-overlay" class="absolute inset-0 z-30 pointer-events-none flex flex-col items-center justify-center overflow-hidden"></div>
+        <div id="call-gift-overlay" class="absolute inset-0 z-40 pointer-events-none flex flex-col items-center justify-center overflow-hidden"></div>
+
+        <!-- FLOATING LIVE CHAT OVERLAY (Bottom-Left) -->
+        <div id="call-floating-chat-container" class="absolute left-4 bottom-24 z-20 w-64 sm:w-80 flex flex-col justify-end pointer-events-auto">
+            <div id="call-floating-chat-stream" class="space-y-1.5 overflow-y-auto max-h-44 pr-2 pb-2 scrollbar-none flex flex-col justify-end"></div>
+            <form id="call-floating-chat-form" class="mt-1 flex items-center gap-1.5 rounded-full bg-black/50 border border-white/20 backdrop-blur-md px-3 py-1.5 shadow-xl">
+                <input type="text" id="call-floating-chat-input" placeholder="Say something spicy..." maxlength="140" autocomplete="off" class="w-full bg-transparent text-xs text-white placeholder-white/50 outline-none">
+                <button type="submit" class="rounded-full bg-pink-500/80 px-2.5 py-0.5 text-[10px] font-black uppercase text-white hover:bg-pink-500 transition">Send</button>
+            </form>
+        </div>
+
+        <!-- LOCAL SELF-VIEW (PiP in Bottom-Right Corner) -->
+        <div class="absolute right-4 bottom-28 z-20 aspect-[3/4] w-24 sm:w-32 rounded-2xl border-2 border-white/80 bg-slate-800 object-cover shadow-2xl overflow-hidden pointer-events-auto">
+            <video id="local-call-video" class="h-full w-full object-cover" autoplay muted playsinline></video>
+        </div>
 
         <!-- In-Call Gift Drawer -->
-        <div id="call-gift-drawer" class="absolute inset-x-0 bottom-24 z-20 hidden px-4">
-            <div class="mx-auto max-w-sm rounded-3xl border border-white/20 bg-slate-950/85 p-4 shadow-2xl backdrop-blur-xl">
+        <div id="call-gift-drawer" class="absolute inset-x-0 bottom-24 z-30 hidden px-4 pointer-events-auto">
+            <div class="mx-auto max-w-sm rounded-3xl border border-white/20 bg-slate-950/90 p-4 shadow-2xl backdrop-blur-2xl">
                 <div class="flex items-center justify-between pb-2 border-b border-white/10">
                     <span class="text-xs font-black uppercase tracking-wider text-pink-300">Send In-Call Gift 🎁</span>
                     <span class="text-[11px] text-white/60">Host earns {{ site_config.host_commission_percentage|default:70 }}% 💎</span>
@@ -368,13 +397,13 @@
         </div>
 
         <!-- Bottom Controls Bar -->
-        <div class="absolute inset-x-0 bottom-0 z-10 flex justify-center pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-            <div class="flex items-center gap-3 rounded-full border border-white/20 bg-slate-950/75 px-4 py-3 shadow-2xl backdrop-blur-xl">
-                <button type="button" id="mute-call" aria-label="Mute audio" class="h-12 w-12 rounded-full bg-white/15 text-sm font-semibold text-white transition hover:bg-white/25">Mute</button>
-                <button type="button" id="toggle-camera" aria-label="Turn camera off" class="h-12 w-12 rounded-full bg-white/15 text-sm font-semibold text-white transition hover:bg-white/25">Cam</button>
-                <button type="button" id="flip-camera" aria-label="Flip camera" class="h-12 w-12 rounded-full bg-white/15 text-sm font-semibold text-white transition hover:bg-white/25">Flip</button>
-                <button type="button" id="toggle-gifts" aria-label="Send gift" class="h-12 w-12 rounded-full bg-gradient-to-tr from-pink-600 via-rose-500 to-amber-400 text-xl font-bold text-white shadow-lg shadow-pink-500/30 transition hover:scale-110 active:scale-95">🎁</button>
-                <button type="button" id="end-call" aria-label="End call" class="h-12 w-12 rounded-full bg-red-600 text-sm font-bold text-white transition hover:bg-red-700">End</button>
+        <div class="absolute inset-x-0 bottom-0 z-20 flex justify-center pb-[max(1.5rem,env(safe-area-inset-bottom))] pointer-events-auto">
+            <div class="flex items-center gap-3 rounded-full border border-white/20 bg-slate-950/80 px-4 py-2.5 shadow-2xl backdrop-blur-xl">
+                <button type="button" id="mute-call" aria-label="Mute audio" class="h-11 w-11 rounded-full bg-white/15 text-xs font-semibold text-white transition hover:bg-white/25">Mute</button>
+                <button type="button" id="toggle-camera" aria-label="Turn camera off" class="h-11 w-11 rounded-full bg-white/15 text-xs font-semibold text-white transition hover:bg-white/25">Cam</button>
+                <button type="button" id="flip-camera" aria-label="Flip camera" class="h-11 w-11 rounded-full bg-white/15 text-xs font-semibold text-white transition hover:bg-white/25">Flip</button>
+                <button type="button" id="toggle-gifts" aria-label="Send gift" class="h-12 w-12 rounded-full bg-gradient-to-tr from-pink-600 via-rose-500 to-amber-400 text-xl font-bold text-white shadow-xl shadow-pink-500/40 transition hover:scale-110 active:scale-95">🎁</button>
+                <button type="button" id="end-call" aria-label="End call" class="h-11 w-11 rounded-full bg-red-600 text-xs font-black uppercase text-white shadow-lg shadow-red-600/40 transition hover:bg-red-700">End</button>
             </div>
         </div>
     </div>

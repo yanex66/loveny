@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Video Call with {{ other_user.username }} | LOVENY{% endblock %}
+
+{% block content %}
+<main class="fixed inset-0 z-50 bg-slate-950 text-white select-none overflow-hidden" role="main" aria-label="1-on-1 Video Call">
+    <!-- Remote Full-Screen Video Background -->
+    <video id="remote-video" class="absolute inset-0 h-full w-full object-cover bg-slate-950" autoplay playsinline></video>
+    
+    <!-- Top and Bottom Vignette Overlays -->
+    <div class="absolute inset-x-0 top-0 h-44 bg-gradient-to-b from-black/85 via-black/35 to-transparent pointer-events-none"></div>
+    <div class="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/90 via-black/45 to-transparent pointer-events-none"></div>
+
+    <!-- Top Call HUD Bar: Host Profile, Timer, Follow Button & Live Coins -->
+    <header class="absolute inset-x-0 top-0 z-20 flex items-center justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] pointer-events-auto">
+        <!-- Left: Host Avatar, Name, Age, Timer & Follow Button -->
+        <div class="flex items-center gap-3">
+            <div class="relative">
+                <img id="host-avatar" src="{{ other_avatar|default:'/static/dating/images/profile-placeholder.svg' }}" alt="{{ other_user.username }}" class="h-11 w-11 rounded-full border-2 border-pink-400 object-cover shadow-lg bg-slate-800">
+                <span class="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-400 ring-2 ring-black animate-pulse"></span>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <span id="host-name-age" class="text-sm sm:text-base font-black text-white leading-tight drop-shadow">
+                        {{ other_user.first_name|default:other_user.username }}{% if other_profile.age %}, <span class="text-pink-300 font-bold">{{ other_profile.age }}</span>{% endif %}
+                    </span>
+                    <button type="button" id="follow-host-btn" class="flex items-center gap-1 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-3 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-md hover:scale-105 active:scale-95 transition">
+                        <span>+</span>
+                        <span id="follow-label">Follow</span>
+                    </button>
+                </div>
+                <div class="flex items-center gap-2 mt-0.5">
+                    <div class="flex items-center gap-1 font-mono text-xs font-bold text-emerald-400">
+                        <span class="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
+                        <span id="call-timer">00:00</span>
+                    </div>
+                    <div class="rounded-full bg-black/50 border border-white/10 px-2 py-0.5 text-[10px] font-medium text-white/70">
+                        🛡️ {{ site_config.grace_period_seconds|default:20 }}s Free Grace
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Live Wallet Badge & Quick Add Trigger -->
+        <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1.5 rounded-full border border-amber-300/40 bg-black/60 px-3 py-1 backdrop-blur-md text-amber-300 text-xs font-black shadow-lg">
+                <span>🪙</span>
+                <span id="room-coins-val">{{ current_profile.coin_balance }}</span>
+            </div>
+            <button type="button" id="room-open-store-btn" class="rounded-full bg-gradient-to-r from-amber-500 to-yellow-300 px-3 py-1 text-xs font-black text-slate-950 shadow-lg shadow-amber-500/30 hover:scale-105 active:scale-95 transition" aria-label="Add Coins">
+                + Add
+            </button>
+        </div>
+    </header>
+
+    <!-- FLOATING LIVE CHAT OVERLAY (Bottom-Left) -->
+    <div id="floating-chat-container" class="absolute left-4 bottom-24 z-20 w-64 sm:w-80 flex flex-col justify-end pointer-events-auto">
+        <div id="floating-chat-stream" class="space-y-1.5 overflow-y-auto max-h-44 pr-2 pb-2 scrollbar-none flex flex-col justify-end">
+            <div class="rounded-2xl bg-black/40 backdrop-blur-md border border-white/10 p-2 text-xs text-white/90">
+                <span class="text-pink-300 font-bold">System:</span>
+                <span>Call connected. Live 1-on-1 private WebRTC encrypted stream.</span>
+            </div>
+        </div>
+        <form id="floating-chat-form" class="mt-1 flex items-center gap-1.5 rounded-full bg-black/50 border border-white/20 backdrop-blur-md px-3 py-1.5 shadow-xl">
+            <input type="text" id="floating-chat-input" placeholder="Say something spicy..." maxlength="140" autocomplete="off" class="w-full bg-transparent text-xs text-white placeholder-white/50 outline-none">
+            <button type="submit" class="rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-3 py-1 text-[10px] font-black uppercase text-white hover:brightness-110 active:scale-95 transition">Send</button>
+        </form>
+    </div>
+
+    <!-- LOCAL SELF-VIEW (PiP in Bottom-Right Corner) -->
+    <div class="absolute right-4 bottom-28 z-20 aspect-[3/4] w-24 sm:w-32 rounded-2xl border-2 border-white/80 bg-slate-800 object-cover shadow-2xl overflow-hidden pointer-events-auto">
+        <video id="local-video" class="h-full w-full object-cover" autoplay muted playsinline></video>
+    </div>
+
+    <!-- Floating Gift Animation Overlay -->
+    <div id="gift-animation-overlay" class="absolute inset-0 z-40 pointer-events-none flex flex-col items-center justify-center overflow-hidden"></div>
+
+    <!-- IN-CALL CONTROLS BAR (Bottom Center) -->
+    <div class="absolute inset-x-0 bottom-6 z-30 flex items-center justify-center px-4 pointer-events-auto">
+        <div class="flex items-center gap-3 rounded-full border border-white/20 bg-slate-950/80 px-4 py-2.5 shadow-2xl backdrop-blur-xl">
+            <!-- Mute Mic -->
+            <button type="button" id="btn-mute" aria-label="Mute audio" class="h-11 w-11 rounded-full bg-white/15 text-xs font-semibold text-white transition hover:bg-white/25 active:scale-95">
+                🎤
+            </button>
+            <!-- Toggle Cam -->
+            <button type="button" id="btn-cam" aria-label="Turn camera off" class="h-11 w-11 rounded-full bg-white/15 text-xs font-semibold text-white transition hover:bg-white/25 active:scale-95">
+                📷
+            </button>
+            <!-- In-Call Virtual Gift Trigger -->
+            <button type="button" id="btn-gift" aria-label="Send gift" class="h-12 w-12 rounded-full bg-gradient-to-tr from-pink-600 via-rose-500 to-amber-400 text-xl font-bold text-white shadow-xl shadow-pink-500/40 transition hover:scale-110 active:scale-95">
+                🎁
+            </button>
+            <!-- End Call -->
+            <button type="button" id="btn-end" aria-label="End call" class="h-11 w-11 rounded-full bg-red-600 text-xs font-black uppercase text-white shadow-lg shadow-red-600/40 transition hover:bg-red-700 active:scale-95">
+                ✕
+            </button>
+        </div>
+    </div>
+
+    <!-- In-Call Gift Drawer / Modal -->
+    <div id="in-call-gift-drawer" class="absolute inset-x-0 bottom-24 z-30 hidden px-4 pointer-events-auto">
+        <div class="mx-auto max-w-sm rounded-3xl border border-white/20 bg-slate-950/90 p-4 shadow-2xl backdrop-blur-2xl">
+            <div class="flex items-center justify-between pb-2 border-b border-white/10">
+                <span class="text-xs font-black uppercase tracking-wider text-pink-300">Send Live Gift 🎁</span>
+                <span class="text-[11px] text-white/60">Host earns {{ site_config.host_commission_percentage|default:70 }}% 💎</span>
+            </div>
+            <div id="gift-items-grid" class="grid grid-cols-4 sm:grid-cols-5 gap-2 pt-3">
+                <button type="button" class="gift-send-btn flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/10 p-2 transition hover:bg-pink-500/30 active:scale-95" data-gift="rose" data-cost="5">
+                    <span class="text-2xl">🌹</span>
+                    <span class="text-[10px] font-bold">Rose</span>
+                    <span class="text-[10px] font-black text-amber-300">5 🪙</span>
+                </button>
+                <button type="button" class="gift-send-btn flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/10 p-2 transition hover:bg-pink-500/30 active:scale-95" data-gift="kiss" data-cost="25">
+                    <span class="text-2xl">💋</span>
+                    <span class="text-[10px] font-bold">Kiss</span>
+                    <span class="text-[10px] font-black text-amber-300">25 🪙</span>
+                </button>
+                <button type="button" class="gift-send-btn flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/10 p-2 transition hover:bg-pink-500/30 active:scale-95" data-gift="champagne" data-cost="50">
+                    <span class="text-2xl">🥂</span>
+                    <span class="text-[10px] font-bold">Bubbly</span>
+                    <span class="text-[10px] font-black text-amber-300">50 🪙</span>
+                </button>
+                <button type="button" class="gift-send-btn flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/10 p-2 transition hover:bg-pink-500/30 active:scale-95" data-gift="diamond" data-cost="100">
+                    <span class="text-2xl">💎</span>
+                    <span class="text-[10px] font-bold">Diamond</span>
+                    <span class="text-[10px] font-black text-amber-300">100 🪙</span>
+                </button>
+                <button type="button" class="gift-send-btn flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/10 p-2 transition hover:bg-pink-500/30 active:scale-95" data-gift="sports_car" data-cost="500">
+                    <span class="text-2xl">🏎️</span>
+                    <span class="text-[10px] font-bold">Car</span>
+                    <span class="text-[10px] font-black text-amber-300">500 🪙</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</main>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(() => {
+    const roomId = '{{ room_id }}';
+    const receiverId = '{{ other_user.pk }}';
+    const currentUsername = '{{ request.user.username }}';
+
+    // Room DOM Elements
+    const chatContainer = document.getElementById('floating-chat-container');
+    const chatStream = document.getElementById('floating-chat-stream');
+    const chatForm = document.getElementById('floating-chat-form');
+    const chatInput = document.getElementById('floating-chat-input');
+    const giftDrawer = document.getElementById('in-call-gift-drawer');
+    const giftBtn = document.getElementById('btn-gift');
+    const giftOverlay = document.getElementById('gift-animation-overlay');
+    const endBtn = document.getElementById('btn-end');
+
+    function csrfToken() {
+        const token = document.cookie.split('; ').find(item => item.startsWith('csrftoken='));
+        return token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
+    }
+
+    // Toggle Gift Drawer
+    giftBtn?.addEventListener('click', () => {
+        giftDrawer.classList.toggle('hidden');
+    });
+
+    // In-Call Chat submission
+    chatForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const text = chatInput.value.trim();
+        if (!text) return;
+        chatInput.value = '';
+
+        // Append locally
+        appendChatMessage(currentUsername, text);
+
+        try {
+            await fetch(`/api/calls/${roomId}/signals/send/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+                body: JSON.stringify({
+                    signal_type: 'chat',
+                    payload: { text, username: currentUsername }
+                }),
+            });
+        } catch (err) {
+            console.error('Failed to send in-call chat', err);
+        }
+    });
+
+    function appendChatMessage(user, msg) {
+        if (!chatStream) return;
+        const bubble = document.createElement('div');
+        bubble.className = 'rounded-2xl bg-black/50 backdrop-blur-md border border-white/10 px-3 py-1.5 text-xs text-white shadow-lg animate-fade-in';
+        bubble.innerHTML = `<strong class="text-pink-300 mr-1">${user}:</strong><span>${msg}</span>`;
+        chatStream.appendChild(bubble);
+        chatStream.scrollTop = chatStream.scrollHeight;
+    }
+
+    // Gift buttons inside call
+    document.querySelectorAll('.gift-send-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const gift = btn.dataset.gift;
+            try {
+                const res = await fetch(`/api/calls/${roomId}/gift/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken(),
+                    },
+                    body: JSON.stringify({ gift_type: gift }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.message || 'Gift failed');
+                    return;
+                }
+                giftDrawer.classList.add('hidden');
+                triggerGiftAnimation(gift);
+                appendChatMessage('🎁 System', `Sent a ${gift} to host!`);
+            } catch (err) {
+                console.error(err);
+            }
+        });
+    });
+
+    function triggerGiftAnimation(giftType) {
+        if (!giftOverlay) return;
+        const anim = document.createElement('div');
+        anim.className = 'text-7xl animate-bounce drop-shadow-[0_0_30px_rgba(244,63,94,0.8)]';
+        const icons = { rose: '🌹', kiss: '💋', champagne: '🥂', diamond: '💎', sports_car: '🏎️' };
+        anim.textContent = icons[giftType] || '🎁';
+        giftOverlay.appendChild(anim);
+        setTimeout(() => anim.remove(), 2500);
+    }
+
+    // End call
+    endBtn?.addEventListener('click', async () => {
+        try {
+            await fetch(`/api/calls/${roomId}/end/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken() },
+            });
+        } catch (_) {}
+        window.location.href = '{% url "sex_call_hub" %}';
+    });
+})();
+</script>
+{% endblock %}

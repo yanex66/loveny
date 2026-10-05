@@ -1,0 +1,565 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Sex Call · Live 1-on-1 Video Hosts | LOVENY{% endblock %}
+
+{% block content %}
+<main class="min-h-screen bg-[#0a0514] text-white pb-32 select-none">
+    <!-- Starry background subtle ambient lighting -->
+    <div class="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(168,85,247,0.18),rgba(255,255,255,0))]"></div>
+    <div class="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_60%_60%_at_80%_60%,rgba(244,63,94,0.12),rgba(0,0,0,0))]"></div>
+
+    <div class="relative max-w-4xl mx-auto px-4 pt-4 sm:pt-6">
+        <!-- Top Navigation & Live Wallet Bar -->
+        <header class="flex items-center justify-between gap-2 pb-4 border-b border-white/10">
+            <div class="flex items-center gap-3">
+                <a href="{% url 'swipe_card' %}" class="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 border border-white/15 text-pink-300 hover:bg-white/20 transition" aria-label="Back">
+                    ←
+                </a>
+                <div>
+                    <h1 class="text-xl sm:text-2xl font-black italic uppercase tracking-wider bg-gradient-to-r from-pink-400 via-rose-300 to-amber-300 bg-clip-text text-transparent flex items-center gap-2">
+                        <span>SEX CALL</span>
+                        <span class="inline-block h-2 w-2 rounded-full bg-rose-500 animate-pulse"></span>
+                    </h1>
+                    <p class="text-[10px] text-white/60 font-semibold tracking-wider uppercase">Live 1-on-1 Video</p>
+                </div>
+            </div>
+
+            <!-- Live Wallet Pills (Coins & Diamonds) -->
+            <div class="flex items-center gap-2">
+                <!-- Coin Balance Pill (Triggers Buy/Top-up) -->
+                <button type="button" id="hub-coins-btn" class="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-400/40 px-3 py-1.5 text-xs font-black text-amber-300 hover:bg-amber-500/30 active:scale-95 transition shadow-lg shadow-amber-500/10" title="Buy Coins">
+                    <span class="text-sm">🪙</span>
+                    <span id="hub-coins-val">{{ user_coin_balance }}</span>
+                    <span class="ml-0.5 rounded-full bg-amber-400 text-slate-950 px-1 text-[10px] leading-tight font-extrabold">+</span>
+                </button>
+
+                <!-- Diamond Balance Pill (Triggers Closed-Loop Exchange) -->
+                <button type="button" id="hub-diamonds-btn" class="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-400/40 px-3 py-1.5 text-xs font-black text-cyan-300 hover:bg-cyan-500/30 active:scale-95 transition shadow-lg shadow-cyan-500/10" title="Convert Diamonds to Coins">
+                    <span class="text-sm">💎</span>
+                    <span id="hub-diamonds-val">{{ user_earned_diamonds }}</span>
+                    <span class="text-[10px] text-cyan-400 font-extrabold ml-0.5">⇄</span>
+                </button>
+            </div>
+        </header>
+
+        {% if staff_test_profile_preview %}
+        <div class="mt-3 p-2.5 rounded-2xl bg-amber-500/20 border border-amber-400/40 text-xs text-amber-200 flex items-center justify-between">
+            <span class="flex items-center gap-1.5 font-bold">
+                <span class="animate-pulse">🧪</span> Test Profile Preview Mode ACTIVE
+            </span>
+            <span class="text-[10px] uppercase font-bold text-amber-300 bg-amber-500/30 px-2 py-0.5 rounded-full">Staff Preview</span>
+        </div>
+        {% endif %}
+
+        <!-- Filter Tabs: [ Hot ] and [ Nearby ] + Cosmic Random Match Hero -->
+        <div class="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <!-- Filter Tabs -->
+            <div class="inline-flex rounded-2xl bg-white/10 p-1 border border-white/10 max-w-fit">
+                <button type="button" id="tab-hot" class="hub-tab active-tab rounded-xl px-5 py-2 text-xs font-black uppercase tracking-wider transition">
+                    🔥 Hot
+                </button>
+                <button type="button" id="tab-nearby" class="hub-tab rounded-xl px-5 py-2 text-xs font-black uppercase tracking-wider transition text-white/60 hover:text-white">
+                    📍 Nearby
+                </button>
+            </div>
+
+            <!-- Cosmic Random Match Trigger Button -->
+            <button type="button" id="start-cosmic-match-btn" class="group flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-pink-500 px-5 py-2.5 text-xs font-black uppercase tracking-wider text-white shadow-xl shadow-fuchsia-600/30 hover:scale-[1.02] active:scale-95 transition">
+                <span class="text-base group-hover:rotate-12 transition-transform">🪐</span>
+                <span>Random Match</span>
+                <span class="text-[10px] opacity-75 font-normal">({{ call_rate_per_minute }}🪙/min)</span>
+            </button>
+        </div>
+
+        <!-- 2-Column Host Cards Grid -->
+        <section class="mt-6">
+            <div id="hosts-grid" class="grid grid-cols-2 gap-3 sm:gap-5" aria-label="Active Sex Call Hosts">
+                <!-- Host cards injected via JS or fallback placeholders -->
+                <div class="col-span-full py-20 text-center text-sm text-white/50 animate-pulse">
+                    Scanning active live hosts...
+                </div>
+            </div>
+
+            <div id="no-hosts-message" class="hidden col-span-full rounded-3xl border border-white/10 bg-white/5 p-8 text-center mt-6">
+                <div class="text-4xl mb-3">💋</div>
+                <h3 class="text-lg font-bold text-white mb-1">No hosts are online right now</h3>
+                <p class="text-xs text-white/60 max-w-sm mx-auto mb-4">You can try Orbit Random Match to search across open callers or check back in a few minutes!</p>
+                <button type="button" onclick="document.getElementById('start-cosmic-match-btn').click()" class="rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-6 py-2.5 text-xs font-black uppercase text-white shadow-lg">
+                    Try Random Match
+                </button>
+            </div>
+        </section>
+    </div>
+</main>
+
+<!-- COSMIC RANDOM MATCH WAITING SCREEN (Image 2) -->
+<div id="cosmic-match-overlay" class="fixed inset-0 z-[140] hidden flex-col items-center justify-between p-6 bg-gradient-to-b from-[#090317] via-[#140632] to-[#250942] text-white overflow-hidden select-none" role="dialog" aria-modal="true" aria-labelledby="cosmic-header">
+    <!-- Starfield particles backdrop -->
+    <div class="starfield-bg absolute inset-0 pointer-events-none"></div>
+
+    <!-- Top cosmic header -->
+    <div class="relative z-10 text-center pt-8 sm:pt-12">
+        <span class="text-[10px] font-black uppercase tracking-[0.35em] text-pink-400">1-on-1 Orbit Radar</span>
+        <h2 id="cosmic-header" class="text-3xl sm:text-4xl font-black uppercase tracking-widest bg-gradient-to-r from-pink-400 via-rose-300 to-amber-200 bg-clip-text text-transparent mt-1 drop-shadow-lg">
+            MATCHING
+        </h2>
+        <p id="cosmic-status-label" class="text-xs font-semibold text-pink-200/80 tracking-wide mt-2 animate-pulse flex items-center justify-center gap-2">
+            <span class="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
+            <span>Searching for open hosts...</span>
+        </p>
+    </div>
+
+    <!-- Central Orbiting Planet Graphic with Pulsing Radar Rings & Floating Avatar Pins -->
+    <div class="relative z-10 my-auto flex items-center justify-center w-72 h-72 sm:w-96 sm:h-96">
+        <!-- Radar Pulse Waves (Expanding concentric rings) -->
+        <div class="radar-ring ring-1 absolute rounded-full border border-pink-500/30"></div>
+        <div class="radar-ring ring-2 absolute rounded-full border border-fuchsia-500/25"></div>
+        <div class="radar-ring ring-3 absolute rounded-full border border-purple-500/20"></div>
+
+        <!-- Orbit Tracks -->
+        <div class="orbit-path orbit-1 absolute w-60 h-60 sm:w-80 sm:h-80 rounded-full border border-dashed border-white/10 pointer-events-none"></div>
+        <div class="orbit-path orbit-2 absolute w-48 h-48 sm:w-64 sm:h-64 rounded-full border border-dashed border-pink-500/15 pointer-events-none"></div>
+
+        <!-- Orbiting Avatar Pin 1 -->
+        <div class="orbit-pin pin-1 absolute w-11 h-11 rounded-full p-0.5 bg-gradient-to-tr from-pink-500 to-amber-400 shadow-lg shadow-pink-500/50">
+            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Chloe" alt="" class="w-full h-full rounded-full object-cover bg-slate-900">
+        </div>
+        <!-- Orbiting Avatar Pin 2 -->
+        <div class="orbit-pin pin-2 absolute w-11 h-11 rounded-full p-0.5 bg-gradient-to-tr from-cyan-400 to-blue-500 shadow-lg shadow-cyan-500/50">
+            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Zara" alt="" class="w-full h-full rounded-full object-cover bg-slate-900">
+        </div>
+        <!-- Orbiting Avatar Pin 3 -->
+        <div class="orbit-pin pin-3 absolute w-10 h-10 rounded-full p-0.5 bg-gradient-to-tr from-rose-500 to-fuchsia-500 shadow-lg shadow-rose-500/50">
+            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Maya" alt="" class="w-full h-full rounded-full object-cover bg-slate-900">
+        </div>
+
+        <!-- Central Glowing Orbiting Planet Sphere -->
+        <div class="planet-body relative z-20 w-28 h-28 sm:w-36 sm:h-36 rounded-full bg-gradient-to-tr from-indigo-950 via-purple-700 to-pink-500 shadow-[0_0_60px_rgba(236,72,153,0.6)] flex items-center justify-center overflow-hidden border-2 border-white/20">
+            <!-- Planet ring accent -->
+            <div class="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.4),transparent_60%)]"></div>
+            <div class="absolute h-[180%] w-6 -rotate-45 bg-pink-400/20 blur-sm pointer-events-none"></div>
+            <!-- Central icon -->
+            <div class="relative z-10 text-3xl sm:text-4xl animate-bounce">🪐</div>
+        </div>
+    </div>
+
+    <!-- Bottom Cancel Pill Button -->
+    <div class="relative z-10 text-center pb-8">
+        <button type="button" id="cancel-cosmic-match-btn" class="rounded-full border border-white/25 bg-white/10 px-10 py-3 text-xs font-black uppercase tracking-widest text-white/90 hover:bg-white/20 active:scale-95 backdrop-blur-md shadow-2xl transition">
+            Cancel
+        </button>
+        <p class="text-[10px] text-white/50 mt-3 font-medium">Rate: {{ call_rate_per_minute }}🪙/min · {{ site_config.grace_period_seconds|default:20 }}s free grace guarantee</p>
+    </div>
+</div>
+
+<!-- CLOSED-LOOP MODAL: EXCHANGE DIAMONDS FOR COINS -->
+<div id="diamond-exchange-modal" class="fixed inset-0 z-[150] hidden items-center justify-center bg-black/75 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="exchange-title">
+    <div class="w-full max-w-sm rounded-[2rem] border border-cyan-400/30 bg-[#0e0a1a] p-6 text-white shadow-2xl">
+        <div class="flex items-center justify-between pb-3 border-b border-white/10">
+            <div>
+                <h3 id="exchange-title" class="text-base font-black uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+                    <span>💎</span>
+                    <span>Exchange Diamonds</span>
+                </h3>
+                <p class="text-[11px] text-white/60">Convert your earned Diamonds into Coins</p>
+            </div>
+            <button type="button" id="close-exchange-modal-btn" class="h-8 w-8 rounded-full bg-white/10 text-white/70 hover:text-white flex items-center justify-center">✕</button>
+        </div>
+
+        <div class="mt-4 p-3.5 rounded-2xl bg-cyan-950/40 border border-cyan-500/20 text-xs">
+            <div class="flex justify-between font-bold mb-1">
+                <span class="text-white/70">Your Diamond Balance:</span>
+                <span class="text-cyan-300 font-black"><span id="exchange-current-diamonds">{{ user_earned_diamonds }}</span> 💎</span>
+            </div>
+            <div class="flex justify-between font-bold">
+                <span class="text-white/70">Exchange Rate:</span>
+                <span class="text-amber-300 font-black">100 💎 = {{ diamond_to_coin_percentage }} 🪙 ({{ diamond_to_coin_percentage }}%)</span>
+            </div>
+            <p class="text-[10px] text-white/50 mt-2 italic">Strictly closed-loop economy. Diamonds cannot be cashed out into fiat currency.</p>
+        </div>
+
+        <form id="diamond-exchange-form" class="mt-4 space-y-4">
+            <div>
+                <label for="exchange-diamonds-input" class="block text-xs font-bold uppercase tracking-wider text-white/70 mb-1">
+                    Diamonds to convert:
+                </label>
+                <div class="relative">
+                    <input type="number" id="exchange-diamonds-input" min="1" max="{{ user_earned_diamonds }}" placeholder="e.g. 100" required class="w-full rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-bold text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400">
+                    <button type="button" id="exchange-max-btn" class="absolute right-2 top-2 rounded-lg bg-cyan-500/30 px-2 py-1 text-[10px] font-black uppercase text-cyan-300 hover:bg-cyan-500/50">MAX</button>
+                </div>
+            </div>
+
+            <div class="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between text-xs">
+                <span class="text-white/70">You will receive:</span>
+                <span class="text-base font-black text-amber-300"><span id="preview-coins-received">0</span> 🪙</span>
+            </div>
+
+            <p id="exchange-status-msg" class="min-h-4 text-center text-xs font-bold" role="status"></p>
+
+            <button type="submit" id="submit-exchange-btn" class="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-3 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-cyan-500/30 hover:scale-[1.02] active:scale-95 transition">
+                Exchange Now
+            </button>
+        </form>
+    </div>
+</div>
+
+<style>
+/* CSS Keyframes for Cosmic Random Match & Tabs */
+.hub-tab.active-tab {
+    background: linear-gradient(135deg, #f43f5e, #ec4899);
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(244, 63, 94, 0.4);
+}
+
+@keyframes radarPing {
+    0% { transform: scale(0.6); opacity: 0.8; }
+    100% { transform: scale(1.6); opacity: 0.8; }
+}
+
+.radar-ring.ring-1 { width: 14rem; height: 14rem; animation: radarPing 3s infinite cubic-bezier(0, 0.2, 0.8, 1); }
+.radar-ring.ring-2 { width: 18rem; height: 18rem; animation: radarPing 3s infinite 1s cubic-bezier(0, 0.2, 0.8, 1); }
+.radar-ring.ring-3 { width: 22rem; height: 22rem; animation: radarPing 3s infinite 2s cubic-bezier(0, 0.2, 0.8, 1); }
+
+@keyframes orbit1 {
+    0% { transform: rotate(0deg) translateX(7rem) rotate(0deg); }
+    100% { transform: rotate(360deg) translateX(7rem) rotate(-360deg); }
+}
+@keyframes orbit2 {
+    0% { transform: rotate(120deg) translateX(9.5rem) rotate(-120deg); }
+    100% { transform: rotate(480deg) translateX(9.5rem) rotate(-480deg); }
+}
+@keyframes orbit3 {
+    0% { transform: rotate(240deg) translateX(8rem) rotate(-240deg); }
+    100% { transform: rotate(600deg) translateX(8rem) rotate(-600deg); }
+}
+
+.orbit-pin.pin-1 { animation: orbit1 8s infinite linear; }
+.orbit-pin.pin-2 { animation: orbit2 12s infinite linear; }
+.orbit-pin.pin-3 { animation: orbit3 10s infinite linear; }
+
+.starfield-bg {
+    background-image: 
+        radial-gradient(2px 2px at 20px 30px, #ffffff, rgba(0,0,0,0)),
+        radial-gradient(2px 2px at 40px 70px, #ffffff, rgba(0,0,0,0)),
+        radial-gradient(1px 1px at 90px 40px, #ffffff, rgba(0,0,0,0)),
+        radial-gradient(2px 2px at 160px 120px, #f472b6, rgba(0,0,0,0)),
+        radial-gradient(2px 2px at 230px 210px, #c084fc, rgba(0,0,0,0)),
+        radial-gradient(1px 1px at 290px 150px, #ffffff, rgba(0,0,0,0));
+    background-repeat: repeat;
+    background-size: 300px 300px;
+    opacity: 0.35;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(() => {
+    const hostsGrid = document.getElementById('hosts-grid');
+    const noHostsMsg = document.getElementById('no-hosts-message');
+    const tabHot = document.getElementById('tab-hot');
+    const tabNearby = document.getElementById('tab-nearby');
+    let currentTab = 'hot';
+
+    const cosmicOverlay = document.getElementById('cosmic-match-overlay');
+    const startCosmicBtn = document.getElementById('start-cosmic-match-btn');
+    const cancelCosmicBtn = document.getElementById('cancel-cosmic-match-btn');
+    const cosmicStatusLabel = document.getElementById('cosmic-status-label');
+    let cosmicMatchAbortController = null;
+    let cosmicStatusTimer = null;
+
+    // Exchange Modal
+    const exchangeModal = document.getElementById('diamond-exchange-modal');
+    const openExchangeBtn = document.getElementById('hub-diamonds-btn');
+    const closeExchangeBtn = document.getElementById('close-exchange-modal-btn');
+    const exchangeForm = document.getElementById('diamond-exchange-form');
+    const exchangeInput = document.getElementById('exchange-diamonds-input');
+    const exchangeMaxBtn = document.getElementById('exchange-max-btn');
+    const previewCoins = document.getElementById('preview-coins-received');
+    const exchangeStatus = document.getElementById('exchange-status-msg');
+    const exchangeCurrentDiamonds = document.getElementById('exchange-current-diamonds');
+    const hubDiamondsVal = document.getElementById('hub-diamonds-val');
+    const hubCoinsVal = document.getElementById('hub-coins-val');
+    const exchangeRatePercent = parseInt('{{ diamond_to_coin_percentage|default:"70" }}', 10) || 70;
+
+    function csrfToken() {
+        const token = document.cookie.split('; ').find(item => item.startsWith('csrftoken='));
+        return token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
+    }
+
+    // Top up coins button
+    document.getElementById('hub-coins-btn')?.addEventListener('click', () => {
+        const coinStoreModal = document.getElementById('coin-store-modal');
+        if (coinStoreModal) {
+            coinStoreModal.classList.remove('hidden');
+            coinStoreModal.classList.add('flex');
+        }
+    });
+
+    // Exchange modal triggers
+    openExchangeBtn?.addEventListener('click', () => {
+        exchangeModal.classList.remove('hidden');
+        exchangeModal.classList.add('flex');
+    });
+    closeExchangeBtn?.addEventListener('click', () => {
+        exchangeModal.classList.add('hidden');
+        exchangeModal.classList.remove('flex');
+    });
+
+    exchangeInput?.addEventListener('input', () => {
+        const diamonds = parseInt(exchangeInput.value, 10) || 0;
+        const coins = Math.floor(diamonds * (exchangeRatePercent / 100));
+        previewCoins.textContent = coins;
+    });
+
+    exchangeMaxBtn?.addEventListener('click', () => {
+        const maxDiamonds = parseInt(exchangeCurrentDiamonds.textContent, 10) || 0;
+        exchangeInput.value = maxDiamonds;
+        const coins = Math.floor(maxDiamonds * (exchangeRatePercent / 100));
+        previewCoins.textContent = coins;
+    });
+
+    exchangeForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const diamonds = parseInt(exchangeInput.value, 10);
+        if (!diamonds || diamonds <= 0) return;
+
+        exchangeStatus.textContent = 'Exchanging...';
+        exchangeStatus.className = 'min-h-4 text-center text-xs font-bold text-white/70';
+
+        try {
+            const res = await fetch("/api/wallet/convert-diamonds/", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+                body: JSON.stringify({ diamonds }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || data.message || 'Exchange failed');
+
+            exchangeStatus.textContent = data.message || 'Exchanged successfully!';
+            exchangeStatus.className = 'min-h-4 text-center text-xs font-bold text-emerald-400';
+            hubDiamondsVal.textContent = data.earned_diamonds;
+            exchangeCurrentDiamonds.textContent = data.earned_diamonds;
+            hubCoinsVal.textContent = data.coin_balance;
+            exchangeInput.value = '';
+            previewCoins.textContent = '0';
+
+            setTimeout(() => {
+                exchangeModal.classList.add('hidden');
+                exchangeModal.classList.remove('flex');
+                exchangeStatus.textContent = '';
+            }, 1500);
+        } catch (err) {
+            exchangeStatus.textContent = err.message;
+            exchangeStatus.className = 'min-h-4 text-center text-xs font-bold text-rose-400';
+        }
+    });
+
+    // Fetch and render hosts grid
+    async function loadHosts(tab = 'hot') {
+        hostsGrid.innerHTML = `
+            <div class="col-span-full py-16 text-center text-sm text-white/50 animate-pulse">
+                Scanning ${tab === 'hot' ? 'hottest' : 'nearby'} live hosts...
+            </div>
+        `;
+        noHostsMsg.classList.add('hidden');
+
+        try {
+            const res = await fetch(`/api/sex-call/hosts/?tab=${tab}`);
+            const data = await res.json();
+            if (!res.ok) throw new Error('Failed to load hosts');
+
+            const hosts = data.hosts || [];
+            if (!hosts.length) {
+                hostsGrid.innerHTML = '';
+                noHostsMsg.classList.remove('hidden');
+                return;
+            }
+
+            hostsGrid.innerHTML = hosts.map(h => `
+                <div class="relative rounded-3xl overflow-hidden aspect-[3/4] bg-slate-900 border border-white/10 shadow-2xl group transition-all duration-300">
+                    <img src="${h.avatar_url}" alt="${h.username}" class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none"></div>
+
+                    <!-- Top Status Badges -->
+                    <div class="absolute top-2.5 left-2.5 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 backdrop-blur-md border border-white/10 text-[10px] font-extrabold text-white">
+                        <span class="h-2 w-2 rounded-full ${h.is_online ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}"></span>
+                        <span>${h.is_online ? 'Online' : 'Away'}</span>
+                    </div>
+
+                    ${h.is_test_profile ? `
+                        <div class="absolute top-2.5 right-2.5 rounded-full bg-amber-400 text-slate-950 px-2 py-0.5 text-[9px] font-black uppercase">
+                            Test
+                        </div>
+                    ` : ''}
+
+                    <!-- Bottom Info & Call Button -->
+                    <div class="absolute bottom-3 left-3 right-14 pointer-events-none">
+                        <h3 class="text-base sm:text-lg font-black text-white truncate drop-shadow-md leading-tight">
+                            ${h.username}, <span class="text-pink-400 font-bold">${h.age}</span>
+                        </h3>
+                        <p class="text-[10px] font-semibold text-white/70 truncate flex items-center gap-1">
+                            <span>🪙 ${h.rate_per_minute}/min</span>
+                            <span>·</span>
+                            <span>${h.location}</span>
+                        </p>
+                    </div>
+
+                    <!-- Floating Round Orange/Pink Video Call Action Button -->
+                    <button type="button" onclick="startDirectCall(${h.id}, '${h.username}')" class="absolute bottom-3 right-3 h-11 w-11 rounded-full bg-gradient-to-tr from-orange-500 via-rose-500 to-pink-500 flex items-center justify-center text-white shadow-xl shadow-pink-500/40 hover:scale-110 active:scale-90 transition-all duration-200" title="Call ${h.username}">
+                        <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                            <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+                        </svg>
+                    </button>
+                </div>
+            `).join('');
+        } catch (err) {
+            hostsGrid.innerHTML = `
+                <div class="col-span-full py-12 text-center text-rose-400 text-xs font-bold">
+                    Unable to load hosts. Please try refreshing.
+                </div>
+            `;
+        }
+    }
+
+    // Direct call action
+    window.startDirectCall = async (receiverId, receiverName) => {
+        try {
+            const res = await fetch("/api/calls/initiate/", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+                body: JSON.stringify({ receiver_id: receiverId }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                if (data.message === 'sex_call_pass_required' || data.message === 'insufficient_coins') {
+                    // Open coin store modal
+                    const coinStoreModal = document.getElementById('coin-store-modal');
+                    if (coinStoreModal) {
+                        coinStoreModal.classList.remove('hidden');
+                        coinStoreModal.classList.add('flex');
+                    } else {
+                        alert(`You need at least ${data.required_coins || 20} coins to start a video call.`);
+                    }
+                    return;
+                }
+                throw new Error(data.detail || data.message || 'Call failed to initiate');
+            }
+
+            if (data.call?.room_id || data.room_id) {
+                const rId = data.call?.room_id || data.room_id;
+                window.location.href = `/call/${rId}/`;
+            }
+        } catch (err) {
+            alert(err.message);
+        }
+    };
+
+    // Tab switcher
+    tabHot?.addEventListener('click', () => {
+        currentTab = 'hot';
+        tabHot.classList.add('active-tab', 'text-white');
+        tabHot.classList.remove('text-white/60');
+        tabNearby.classList.remove('active-tab', 'text-white');
+        tabNearby.classList.add('text-white/60');
+        loadHosts('hot');
+    });
+
+    tabNearby?.addEventListener('click', () => {
+        currentTab = 'nearby';
+        tabNearby.classList.add('active-tab', 'text-white');
+        tabNearby.classList.remove('text-white/60');
+        tabHot.classList.remove('active-tab', 'text-white');
+        tabHot.classList.add('text-white/60');
+        loadHosts('nearby');
+    });
+
+    // Cosmic Random Match Flow
+    startCosmicBtn?.addEventListener('click', () => {
+        cosmicOverlay.classList.remove('hidden');
+        cosmicOverlay.classList.add('flex');
+        runCosmicMatch();
+    });
+
+    cancelCosmicBtn?.addEventListener('click', () => {
+        abortCosmicMatch();
+    });
+
+    function abortCosmicMatch() {
+        if (cosmicMatchAbortController) {
+            cosmicMatchAbortController.abort();
+            cosmicMatchAbortController = null;
+        }
+        clearInterval(cosmicStatusTimer);
+        cosmicOverlay.classList.add('hidden');
+        cosmicOverlay.classList.remove('flex');
+    }
+
+    async function runCosmicMatch() {
+        cosmicMatchAbortController = new AbortController();
+        const statusPhrases = [
+            "Scanning orbit for open partners...",
+            "Tuning spicy frequencies...",
+            "Pairing high-definition video channel...",
+            "Connecting with live host..."
+        ];
+        let phraseIdx = 0;
+        clearInterval(cosmicStatusTimer);
+        cosmicStatusTimer = setInterval(() => {
+            phraseIdx = (phraseIdx + 1) % statusPhrases.length;
+            cosmicStatusLabel.innerHTML = `<span class="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span><span>${statusPhrases[phraseIdx]}</span>`;
+        }, 1800);
+
+        try {
+            const res = await fetch("/api/calls/quick-match/", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+                body: JSON.stringify({}),
+                signal: cosmicMatchAbortController.signal,
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                if (data.message === 'sex_call_pass_required' || data.message === 'insufficient_coins') {
+                    abortCosmicMatch();
+                    const coinStoreModal = document.getElementById('coin-store-modal');
+                    if (coinStoreModal) {
+                        coinStoreModal.classList.remove('hidden');
+                        coinStoreModal.classList.add('flex');
+                    } else {
+                        alert(`You need at least ${data.required_coins || 20} coins to start a video call.`);
+                    }
+                    return;
+                }
+                throw new Error(data.detail || data.message || 'No hosts available right now');
+            }
+
+            if (data.room_id) {
+                cosmicStatusLabel.textContent = `Matched! Connecting to ${data.host?.username || 'host'}...`;
+                setTimeout(() => {
+                    window.location.href = `/call/${data.room_id}/`;
+                }, 800);
+            }
+        } catch (err) {
+            if (err.name === 'AbortError') return;
+            cosmicStatusLabel.textContent = err.message;
+            setTimeout(() => {
+                abortCosmicMatch();
+            }, 2500);
+        }
+    }
+
+    // Initial load
+    loadHosts('hot');
+})();
+</script>
+{% endblock %}

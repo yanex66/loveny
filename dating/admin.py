@@ -9,6 +9,7 @@ from .models import (
     ChatMessage,
     CoinPackage,
     CoinTransaction,
+    CoinWallet,
     Conversation,
     GiftItem,
     Match,
@@ -19,7 +20,6 @@ from .models import (
     SubscriptionPlan,
     Swipe,
     Tag,
-    WithdrawalRequest,
 )
 
 
@@ -113,9 +113,14 @@ class MatchAdmin(admin.ModelAdmin):
 
 @admin.register(ChatMessage)
 class ChatMessageAdmin(admin.ModelAdmin):
-    list_display = ('conversation', 'sender', 'created_at')
+    list_display = ('conversation', 'sender', 'message_type', 'short_text', 'created_at')
+    list_filter = ('message_type', 'created_at')
     search_fields = ('sender__username', 'text')
-    readonly_fields = ('conversation', 'sender', 'text', 'created_at')
+    readonly_fields = ('conversation', 'sender', 'message_type', 'text', 'metadata', 'created_at')
+
+    def short_text(self, obj):
+        return (obj.text[:60] + '...') if len(obj.text) > 60 else obj.text
+    short_text.short_description = 'Message'
 
     def has_add_permission(self, request):
         return False
@@ -128,6 +133,14 @@ class ChatMessageAdmin(admin.ModelAdmin):
 class ConversationAdmin(admin.ModelAdmin):
     list_display = ('id', 'created_at', 'updated_at')
     filter_horizontal = ('participants',)
+    readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(CoinWallet)
+class CoinWalletAdmin(admin.ModelAdmin):
+    list_display = ('user', 'coin_balance', 'updated_at', 'created_at')
+    search_fields = ('user__username',)
+    list_editable = ('coin_balance',)
     readonly_fields = ('created_at', 'updated_at')
 
 
@@ -163,10 +176,10 @@ class CoinPackageAdmin(admin.ModelAdmin):
 
 @admin.register(CoinTransaction)
 class CoinTransactionAdmin(admin.ModelAdmin):
-    list_display = ('user', 'transaction_type', 'amount', 'call', 'payment', 'created_at')
-    list_filter = ('transaction_type',)
-    search_fields = ('user__username', 'description')
-    readonly_fields = ('user', 'transaction_type', 'amount', 'description', 'call', 'payment', 'created_at')
+    list_display = ('user', 'sender', 'recipient', 'transaction_type', 'amount', 'gift_type', 'call', 'created_at')
+    list_filter = ('transaction_type', 'gift_type')
+    search_fields = ('user__username', 'sender__username', 'recipient__username', 'description')
+    readonly_fields = ('user', 'sender', 'recipient', 'gift_type', 'transaction_type', 'amount', 'description', 'call', 'payment', 'created_at')
 
     def has_add_permission(self, request):
         return False
@@ -244,12 +257,11 @@ class SiteConfigurationAdmin(admin.ModelAdmin):
             ),
             'description': 'Adjust live call pricing, free grace periods, and host diamond earnings in real-time.',
         }),
-        ('Host Diamond Cashout & Payouts', {
+        ('Host Diamond & Closed-Loop Economy', {
             'fields': (
-                'min_diamond_withdrawal',
-                'diamond_exchange_rate_naira',
+                'diamond_to_coin_percentage',
             ),
-            'description': 'Configure host withdrawal minimums and exchange rate to Nigerian Naira (₦).',
+            'description': 'Closed-loop economy: Diamonds can be converted back to Coins (e.g. 70 means 100💎 = 70🪙). Zero real-money cashouts.',
         }),
         ('Live Announcements & Promotions', {
             'fields': (
@@ -275,27 +287,3 @@ class GiftItemAdmin(admin.ModelAdmin):
     list_filter = ('is_active',)
     search_fields = ('name', 'slug')
     ordering = ('order', 'coin_cost')
-
-
-@admin.register(WithdrawalRequest)
-class WithdrawalRequestAdmin(admin.ModelAdmin):
-    list_display = ('user', 'diamonds_amount', 'naira_amount', 'bank_name', 'account_number', 'account_name', 'status', 'created_at', 'processed_at')
-    list_filter = ('status', 'bank_name', 'created_at')
-    search_fields = ('user__username', 'account_number', 'account_name', 'bank_name', 'admin_note')
-    list_editable = ('status',)
-    readonly_fields = ('user', 'diamonds_amount', 'naira_amount', 'bank_name', 'account_number', 'account_name', 'created_at')
-    actions = ['mark_as_paid', 'mark_as_approved', 'mark_as_rejected']
-
-    def mark_as_paid(self, request, queryset):
-        from django.utils import timezone
-        queryset.update(status='PAID', processed_at=timezone.now())
-    mark_as_paid.short_description = 'Mark selected requests as PAID OUT'
-
-    def mark_as_approved(self, request, queryset):
-        queryset.update(status='APPROVED')
-    mark_as_approved.short_description = 'Mark selected requests as APPROVED'
-
-    def mark_as_rejected(self, request, queryset):
-        from django.utils import timezone
-        queryset.update(status='REJECTED', processed_at=timezone.now())
-    mark_as_rejected.short_description = 'Mark selected requests as REJECTED'

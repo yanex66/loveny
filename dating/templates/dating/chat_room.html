@@ -1,38 +1,256 @@
 {% extends 'base.html' %}
 
-{% block title %}Private chat with {{ other_user.username }} | LOVENY{% endblock %}
+{% block title %}Private Chat with {{ other_user.first_name|default:other_user.username }} | LOVENY{% endblock %}
+
+{% block extra_head %}
+<style>
+    @keyframes giftPulse {
+        0%, 100% { transform: scale(1); filter: drop-shadow(0 0 12px rgba(244, 63, 94, 0.4)); }
+        50% { transform: scale(1.15) rotate(3deg); filter: drop-shadow(0 0 24px rgba(251, 191, 36, 0.8)); }
+    }
+    @keyframes sparkleFloat {
+        0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+        100% { transform: translateY(-30px) rotate(20deg); opacity: 0; }
+    }
+    .gift-bounce {
+        animation: giftPulse 2.4s infinite ease-in-out;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+        background: rgba(15, 12, 24, 0.4);
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: rgba(244, 63, 94, 0.3);
+        border-radius: 9999px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: rgba(244, 63, 94, 0.6);
+    }
+    .confetti-canvas {
+        pointer-events: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 9999;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<main class="min-h-screen bg-gradient-to-br from-rose-50 via-white to-orange-50 px-3 py-5 pb-36 text-slate-900 sm:px-4">
-    <section class="soft-card mx-auto flex h-[min(78vh,52rem)] min-h-[28rem] max-w-2xl flex-col overflow-hidden rounded-3xl shadow-2xl">
-        <header class="flex items-center justify-between border-b border-rose-100 p-4 sm:p-5">
-            <div class="min-w-0">
-                <h1 class="truncate text-xl font-black">{{ other_user.username }}</h1>
-                <p class="text-xs uppercase tracking-widest text-pink-600">{{ match.get_mode_display }} · Private chat</p>
+<main class="min-h-screen bg-[#0b0914] px-2 py-3 text-slate-100 sm:px-4 sm:py-6 sm:pb-28">
+    <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
+
+    <section class="mx-auto flex h-[min(88vh,56rem)] min-h-[34rem] max-w-4xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#120f20]/95 shadow-2xl backdrop-blur-2xl">
+        <!-- TOP NAVBAR (HiiClub Style Header) -->
+        <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#171329]/90 px-4 py-3.5 sm:px-6">
+            <div class="flex items-center gap-3 min-w-0">
+                <a href="{% url 'match_list' %}" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white" title="Back to matches">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </a>
+
+                <!-- Partner Avatar with Online Ring -->
+                <a href="{% url 'public_profile' other_user.id %}" class="relative shrink-0 group">
+                    <img src="{{ other_avatar }}" alt="{{ other_user.username }}"
+                         class="h-11 w-11 rounded-2xl object-cover ring-2 ring-pink-500/50 shadow-lg group-hover:scale-105 transition">
+                    {% if is_other_online %}
+                    <span class="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center">
+                        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                        <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-[#171329]"></span>
+                    </span>
+                    {% endif %}
+                </a>
+
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                        <h1 class="truncate text-base font-black text-white sm:text-lg">
+                            {{ other_user.first_name|default:other_user.username }}
+                        </h1>
+                        {% if other_profile.age %}
+                        <span class="shrink-0 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-bold text-pink-300">
+                            {{ other_profile.age }}
+                        </span>
+                        {% endif %}
+                        {% if other_profile.is_verified %}
+                        <span class="text-xs text-sky-400" title="Verified Member">✓</span>
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center gap-2 text-xs text-slate-400">
+                        <span class="truncate">{{ other_profile.location|default:'Nearby' }}</span>
+                        <span>·</span>
+                        <span class="text-pink-400 font-medium">
+                            {% if is_other_online %}Online Now{% else %}Sex Call Partner{% endif %}
+                        </span>
+                    </div>
+                </div>
             </div>
-            <a href="{% url 'match_list' %}" class="shrink-0 rounded-full border border-pink-200 px-4 py-2 text-xs font-bold text-pink-700 transition hover:bg-white hover:text-slate-900">Back to matches</a>
+
+            <!-- Top Right: Live Call Button + Coins Badge -->
+            <div class="flex items-center gap-2.5 sm:gap-3">
+                <!-- Coin Balance Pill -->
+                <div class="flex items-center gap-1.5 rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 to-amber-900/20 px-3 py-1.5 shadow-inner">
+                    <span class="text-sm">🪙</span>
+                    <span id="header-coin-balance" class="text-xs font-black text-amber-300 sm:text-sm">{{ user_coin_balance }}</span>
+                    <button id="btn-open-topup" type="button" class="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-xs font-black text-slate-950 shadow hover:bg-amber-300 transition" title="Get more coins">
+                        +
+                    </button>
+                </div>
+
+                <!-- Instant 1-Tap Video Call Button -->
+                <button type="button" data-call-target-id="{{ other_user.id }}" data-call-name="{{ other_user.first_name|default:other_user.username }}"
+                        class="flex items-center gap-1.5 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-600 px-3.5 py-2 text-xs font-black text-white shadow-lg shadow-pink-600/30 transition hover:brightness-110 active:scale-95 sm:text-sm">
+                    <span>📹</span>
+                    <span class="hidden sm:inline">Call ({{ call_rate_per_minute }}🪙/min)</span>
+                    <span class="sm:hidden">Call</span>
+                </button>
+            </div>
         </header>
 
-        <div class="border-b border-rose-100 bg-rose-50 px-4 py-3 text-xs text-slate-600 sm:px-5">
-            Private, text-only chat. Messages are limited to {{ max_message_length }} characters.
+        <!-- PRIVACY BANNER -->
+        <div class="flex items-center justify-between border-b border-white/5 bg-[#140e24] px-4 py-2 text-[11px] text-slate-400 sm:px-6">
+            <span class="flex items-center gap-1.5">
+                <span class="text-pink-400">🔒</span> End-to-end private chat & interactive gifts.
+            </span>
+            <span class="text-slate-500">Max {{ max_message_length }} chars</span>
         </div>
 
-        <div id="chat-messages" class="flex-1 space-y-3 overflow-y-auto p-4 sm:p-5" aria-live="polite" aria-relevant="additions text"></div>
-        <p id="chat-status" class="min-h-6 px-4 text-sm text-pink-700 sm:px-5" role="status"></p>
+        <!-- MESSAGE FEED (HiiClub Rich Scroll Area) -->
+        <div id="chat-messages" class="custom-scrollbar flex-1 space-y-4 overflow-y-auto p-4 sm:p-6" aria-live="polite" aria-relevant="additions text">
+            <!-- Messages, Gifts & Stickers will append here dynamically -->
+        </div>
 
+        <p id="chat-status" class="min-h-5 px-6 text-xs text-rose-400" role="status"></p>
+
+        <!-- QUICK EMOJI BAR (1-Tap Reactions) -->
+        <div class="flex items-center gap-2 border-t border-white/5 bg-[#140f26]/80 px-4 py-2 sm:px-6 overflow-x-auto no-scrollbar">
+            <span class="shrink-0 text-[11px] font-bold uppercase tracking-wider text-slate-400">Quick:</span>
+            <div class="flex items-center gap-1.5">
+                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="💋">💋</button>
+                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="🔥">🔥</button>
+                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="😍">😍</button>
+                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="💖">💖</button>
+                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="🍾">🍾</button>
+                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="🫦">🫦</button>
+                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="😈">😈</button>
+                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="🌹">🌹</button>
+            </div>
+        </div>
+
+        <!-- STICKER DRAWER (Collapsible) -->
+        <div id="sticker-drawer" class="hidden border-t border-white/10 bg-[#161129] p-4 transition-all duration-300">
+            <div class="mb-3 flex items-center justify-between">
+                <div class="flex items-center gap-1.5 overflow-x-auto" id="sticker-pack-tabs">
+                    {% for pack in sticker_packs %}
+                    <button type="button" data-pack-id="{{ pack.id }}"
+                            class="sticker-tab-btn rounded-xl px-3 py-1 text-xs font-black transition {% if forloop.first %}bg-pink-600 text-white shadow{% else %}bg-white/5 text-slate-400 hover:text-white{% endif %}">
+                        {{ pack.icon }} {{ pack.name }}
+                    </button>
+                    {% endfor %}
+                </div>
+                <button id="close-sticker-drawer" type="button" class="text-xs text-slate-400 hover:text-white">✕</button>
+            </div>
+            
+            <div id="sticker-grid" class="grid max-h-48 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-8">
+                <!-- Injected via JS based on selected pack -->
+            </div>
+        </div>
+
+        <!-- VIRTUAL GIFTS DRAWER (Collapsible) -->
+        <div id="gift-drawer" class="hidden border-t border-white/10 bg-[#18122c] p-4 sm:p-5 transition-all duration-300">
+            <div class="mb-3 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg">🎁</span>
+                    <h3 class="text-sm font-black text-white">Send Virtual Gift</h3>
+                    <span class="text-xs text-slate-400">(Awards diamonds to {{ other_user.first_name|default:other_user.username }})</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-xs text-amber-300">Your coins: <b id="drawer-coin-val">{{ user_coin_balance }}</b>🪙</span>
+                    <button id="close-gift-drawer" type="button" class="text-xs text-slate-400 hover:text-white">✕</button>
+                </div>
+            </div>
+
+            <div class="grid max-h-56 grid-cols-2 gap-2.5 overflow-y-auto sm:grid-cols-4 sm:gap-3">
+                {% for gift in gifts %}
+                <button type="button" data-gift-slug="{{ gift.slug }}" data-gift-coins="{{ gift.coins }}" data-gift-name="{{ gift.name }}"
+                        class="chat-gift-item-btn group flex flex-col items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-3 text-center transition hover:border-pink-500/60 hover:bg-pink-600/10 hover:shadow-lg hover:shadow-pink-500/10 active:scale-95">
+                    <span class="text-3xl transition group-hover:scale-125">{{ gift.icon }}</span>
+                    <span class="mt-1.5 text-xs font-bold text-white">{{ gift.name }}</span>
+                    <span class="mt-1 rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[11px] font-black text-amber-300">
+                        {{ gift.coins }} 🪙
+                    </span>
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- BOTTOM INPUT BAR -->
         {% if messages_allowed %}
-        <form id="chat-form" class="flex gap-2 border-t border-rose-100 p-3 sm:gap-3 sm:p-4">
+        <form id="chat-form" class="flex items-center gap-2 border-t border-white/10 bg-[#151028] p-3 sm:gap-3 sm:p-4">
             {% csrf_token %}
+            
+            <!-- Stickers Trigger -->
+            <button id="btn-toggle-stickers" type="button"
+                    class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-lg transition hover:bg-white/10 hover:scale-105 active:scale-95"
+                    title="Choose sticker">
+                ✨
+            </button>
+
+            <!-- Gift Trigger -->
+            <button id="btn-toggle-gifts" type="button"
+                    class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-pink-500/30 bg-pink-500/10 text-lg shadow-sm transition hover:bg-pink-500/20 hover:scale-105 active:scale-95"
+                    title="Send a gift">
+                🎁
+            </button>
+
+            <!-- Input Box -->
             <label for="chat-input" class="sr-only">Message</label>
             <input id="chat-input" name="text" maxlength="{{ max_message_length }}" autocomplete="off" required
-                   class="min-w-0 flex-1 rounded-xl border border-rose-200 bg-white px-4 py-3 text-slate-900 outline-none focus:border-pink-400"
-                   placeholder="Write a private message">
-            <button id="send-button" class="brand-gradient rounded-xl px-5 font-black text-white transition hover:bg-white hover:text-slate-900" type="submit">Send</button>
+                   class="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-slate-400 outline-none transition focus:border-pink-500 focus:bg-white/10 focus:ring-2 focus:ring-pink-500/20 sm:text-base"
+                   placeholder="Say something spicy...">
+
+            <!-- Send Button -->
+            <button id="send-button" type="submit"
+                    class="flex h-11 items-center justify-center gap-1.5 rounded-2xl bg-gradient-to-r from-pink-600 to-purple-600 px-5 text-sm font-black text-white shadow-lg shadow-pink-600/30 transition hover:brightness-110 active:scale-95">
+                <span>Send</span>
+                <span>🚀</span>
+            </button>
         </form>
         {% else %}
-        <p class="border-t border-rose-100 p-5 text-sm text-slate-600">This member has disabled messages. You can still read previous messages.</p>
+        <div class="border-t border-white/10 bg-[#151028] p-5 text-center text-sm text-slate-400">
+            This member has disabled messages. You can still read previous messages.
+        </div>
         {% endif %}
     </section>
+
+    <!-- COIN TOP-UP MODAL (Slide-up modal) -->
+    <div id="topup-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md opacity-0 pointer-events-none transition duration-300">
+        <div class="w-full max-w-lg rounded-3xl border border-white/15 bg-[#18132d] p-6 shadow-2xl transition duration-300 scale-95" id="topup-modal-content">
+            <div class="flex items-center justify-between border-b border-white/10 pb-4">
+                <div class="flex items-center gap-2.5">
+                    <span class="text-2xl">🪙</span>
+                    <div>
+                        <h2 class="text-lg font-black text-white">Refill Your Coins</h2>
+                        <p class="text-xs text-slate-400">Never run out during spicy private calls & gifts</p>
+                    </div>
+                </div>
+                <button id="close-topup-modal" type="button" class="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-slate-400 hover:text-white">✕</button>
+            </div>
+
+            <div id="topup-packages-container" class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 max-h-80 overflow-y-auto custom-scrollbar">
+                <p class="text-center text-sm text-slate-400 py-6 col-span-2">Loading coin packages...</p>
+            </div>
+
+            <div class="mt-5 border-t border-white/10 pt-4 flex items-center justify-between text-xs text-slate-400">
+                <span>⚡ Instant activation</span>
+                <span>🔒 Secure Paystack & Flutterwave</span>
+            </div>
+        </div>
+    </div>
 </main>
 {% endblock %}
 
@@ -40,43 +258,186 @@
 <script>
     const MESSAGES_URL = "{{ messages_url|escapejs }}";
     const SEND_URL = "{{ send_url|escapejs }}";
+    const SEND_GIFT_URL = "{{ send_gift_url|escapejs }}";
+    const STICKERS_API_URL = "{{ stickers_api_url|escapejs }}";
+    const PACKAGES_API_URL = "{{ coin_packages_api_url|escapejs }}";
+    const WALLET_BALANCE_API_URL = "{{ wallet_balance_api_url|escapejs }}";
     const CURRENT_USER_ID = {{ user.id }};
+    const CONVERSATION_ID = {{ conversation.id }};
+    const OTHER_USER_ID = {{ other_user.id }};
+    const OTHER_USERNAME = "{{ other_user.username|escapejs }}";
+
     const messageList = document.getElementById('chat-messages');
     const chatStatus = document.getElementById('chat-status');
+    const headerCoinBalance = document.getElementById('header-coin-balance');
+    const drawerCoinVal = document.getElementById('drawer-coin-val');
+    const stickerDrawer = document.getElementById('sticker-drawer');
+    const giftDrawer = document.getElementById('gift-drawer');
+    const topupModal = document.getElementById('topup-modal');
+    const topupModalContent = document.getElementById('topup-modal-content');
+
     let lastMessageId = 0;
     let polling = false;
     let pendingSends = 0;
     let pollingTimer = null;
+    let stickerPacksData = [];
+
+    // Confetti celebration particles
+    function triggerCelebration() {
+        const canvas = document.getElementById('confetti-canvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const particles = [];
+        const colors = ['#f43f5e', '#ec4899', '#fbbf24', '#8b5cf6', '#38bdf8', '#ffffff'];
+        for (let i = 0; i < 60; i++) {
+            particles.push({
+                x: window.innerWidth / 2 + (Math.random() - 0.5) * 200,
+                y: window.innerHeight / 2 + (Math.random() - 0.5) * 100,
+                r: Math.random() * 6 + 4,
+                c: colors[Math.floor(Math.random() * colors.length)],
+                vx: (Math.random() - 0.5) * 12,
+                vy: (Math.random() - 0.8) * 14,
+                alpha: 1,
+            });
+        }
+
+        let animationId;
+        function update() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let alive = false;
+            particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.4; // gravity
+                p.alpha -= 0.015;
+                if (p.alpha > 0) {
+                    alive = true;
+                    ctx.save();
+                    ctx.globalAlpha = p.alpha;
+                    ctx.fillStyle = p.c;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+            });
+            if (alive) {
+                animationId = requestAnimationFrame(update);
+            } else {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                cancelAnimationFrame(animationId);
+            }
+        }
+        update();
+    }
+
+    function updateCoinDisplay(newCoins) {
+        if (headerCoinBalance) headerCoinBalance.textContent = newCoins;
+        if (drawerCoinVal) drawerCoinVal.textContent = newCoins;
+    }
 
     function appendMessage(message, optimistic = false) {
+        // Prevent duplicate appending
+        if (!optimistic && message.id && document.querySelector(`[data-message-id="${message.id}"]`)) {
+            return null;
+        }
+
+        const isMe = message.sender_id === CURRENT_USER_ID;
+        const msgType = message.message_type || 'text';
         const row = document.createElement('div');
         row.dataset.messageId = optimistic ? `pending-${message.clientId}` : String(message.id);
-        row.className = message.sender_id === CURRENT_USER_ID ? 'flex justify-end' : 'flex justify-start';
+        row.className = isMe ? 'flex justify-end' : 'flex justify-start';
+
         const bubble = document.createElement('div');
-        bubble.className = message.sender_id === CURRENT_USER_ID
-            ? 'max-w-[85%] rounded-2xl rounded-br-sm bg-pink-600 px-4 py-3 text-white'
-            : 'max-w-[85%] rounded-2xl rounded-bl-sm bg-slate-100 px-4 py-3 text-slate-900';
-        const body = document.createElement('p');
-        body.className = 'whitespace-pre-wrap break-words text-sm';
-        body.textContent = message.text;
+
+        if (msgType === 'gift') {
+            // SPECIAL RICH GIFT CARD (Hiiclub Style)
+            bubble.className = isMe
+                ? 'max-w-[85%] rounded-3xl border border-amber-500/40 bg-gradient-to-br from-amber-950/40 via-purple-950/50 to-pink-950/50 p-4 text-white shadow-xl shadow-pink-900/20'
+                : 'max-w-[85%] rounded-3xl border border-pink-500/40 bg-gradient-to-br from-pink-950/40 via-purple-950/50 to-amber-950/40 p-4 text-white shadow-xl shadow-purple-900/20';
+
+            const meta = message.metadata || {};
+            const icon = meta.icon || '🎁';
+            const name = meta.name || 'Gift';
+            const coins = meta.coins || 0;
+            const diamonds = meta.diamonds || Math.floor(coins * 0.7);
+
+            bubble.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <div class="gift-bounce flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-500/30 to-pink-500/30 text-3xl shadow-inner">
+                        ${icon}
+                    </div>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-1.5">
+                            <span class="rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-300">Special Gift</span>
+                            <span class="text-xs font-black text-amber-400">🪙 ${coins} Coins</span>
+                        </div>
+                        <h4 class="mt-0.5 font-black text-white text-sm sm:text-base">${icon} ${name}</h4>
+                        <p class="text-[11px] text-pink-200/80">
+                            ${isMe ? `Sent to ${OTHER_USERNAME}` : `Received from ${message.sender} (+${diamonds}💎)`}
+                        </p>
+                    </div>
+                </div>
+            `;
+            if (!optimistic) triggerCelebration();
+
+        } else if (msgType === 'sticker') {
+            // RICH STICKER ELEMENT
+            bubble.className = isMe
+                ? 'max-w-[80%] rounded-3xl bg-pink-600/20 border border-pink-500/30 p-3 text-white'
+                : 'max-w-[80%] rounded-3xl bg-white/10 border border-white/10 p-3 text-white';
+
+            const meta = message.metadata || {};
+            const icon = meta.icon || message.text;
+            const caption = meta.caption || '';
+
+            bubble.innerHTML = `
+                <div class="flex flex-col items-center justify-center p-2 text-center">
+                    <span class="text-5xl sm:text-6xl select-none transition hover:scale-110">${icon}</span>
+                    ${caption ? `<span class="mt-1 text-xs font-bold text-pink-300">${caption}</span>` : ''}
+                </div>
+            `;
+
+        } else {
+            // STANDARD TEXT BUBBLE
+            bubble.className = isMe
+                ? 'max-w-[82%] rounded-2xl rounded-br-sm bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 px-4 py-2.5 text-white shadow-md'
+                : 'max-w-[82%] rounded-2xl rounded-bl-sm border border-white/10 bg-white/10 px-4 py-2.5 text-slate-100 backdrop-blur-md shadow-md';
+
+            const body = document.createElement('p');
+            body.className = 'whitespace-pre-wrap break-words text-sm leading-relaxed';
+            body.textContent = message.text;
+            bubble.appendChild(body);
+        }
+
+        // Metadata footer (time + read status)
         const metadata = document.createElement('div');
-        metadata.className = 'mt-2 flex items-center justify-end gap-1 text-[10px] opacity-70';
+        metadata.className = 'mt-1.5 flex items-center justify-end gap-1 text-[10px] opacity-75';
         const time = document.createElement('time');
         time.dateTime = message.created_at;
         time.textContent = optimistic
             ? 'Sending…'
             : new Date(message.created_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
         metadata.appendChild(time);
-        if (message.sender_id === CURRENT_USER_ID && !optimistic) {
+
+        if (isMe && !optimistic) {
             const ticks = document.createElement('span');
+            ticks.className = message.is_read ? 'text-sky-300 font-bold' : 'text-slate-300';
             ticks.setAttribute('aria-label', message.is_read ? 'Read' : 'Sent');
             ticks.textContent = message.is_read ? '✓✓' : '✓';
             metadata.appendChild(ticks);
         }
-        bubble.append(body, metadata);
+
+        bubble.appendChild(metadata);
         row.appendChild(bubble);
         messageList.appendChild(row);
-        if (!optimistic) lastMessageId = Math.max(lastMessageId, message.id);
+
+        if (!optimistic && message.id) {
+            lastMessageId = Math.max(lastMessageId, message.id);
+        }
         messageList.scrollTop = messageList.scrollHeight;
         return row;
     }
@@ -90,10 +451,12 @@
             });
             if (!response.ok) throw new Error('Chat history could not be loaded.');
             const data = await response.json();
-            data.messages.forEach(appendMessage);
+            if (data.messages && Array.isArray(data.messages)) {
+                data.messages.forEach(msg => appendMessage(msg));
+            }
             chatStatus.textContent = '';
         } catch (error) {
-            chatStatus.textContent = error.message;
+            // Silently retain latest state without disrupting user
         } finally {
             polling = false;
         }
@@ -102,7 +465,7 @@
     function startPolling() {
         if (pollingTimer !== null || document.visibilityState !== 'visible') return;
         refreshMessages();
-        pollingTimer = window.setInterval(refreshMessages, 3500);
+        pollingTimer = window.setInterval(refreshMessages, 3000);
     }
 
     function stopPolling() {
@@ -117,6 +480,7 @@
         else stopPolling();
     });
 
+    // Send text message
     const chatForm = document.getElementById('chat-form');
     if (chatForm) {
         chatForm.addEventListener('submit', async event => {
@@ -131,6 +495,7 @@
                 clientId,
                 sender_id: CURRENT_USER_ID,
                 text,
+                message_type: 'text',
                 created_at: new Date().toISOString(),
             }, true);
             input.value = '';
@@ -144,15 +509,15 @@
                         'Content-Type': 'application/json',
                         'X-CSRFToken': chatForm.querySelector('[name=csrfmiddlewaretoken]').value,
                     },
-                    body: JSON.stringify({text}),
+                    body: JSON.stringify({text, message_type: 'text'}),
                 });
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.message || 'Message could not be sent.');
-                optimisticRow.remove();
+                if (optimisticRow) optimisticRow.remove();
                 appendMessage(data.message);
                 chatStatus.textContent = '';
             } catch (error) {
-                optimisticRow.remove();
+                if (optimisticRow) optimisticRow.remove();
                 input.value = text;
                 chatStatus.textContent = error.message;
             } finally {
@@ -164,6 +529,258 @@
         });
     }
 
+    // Quick emoji pills click
+    document.querySelectorAll('.quick-emoji-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const emoji = btn.dataset.emoji;
+            const input = document.getElementById('chat-input');
+            if (input) {
+                input.value += emoji;
+                input.focus();
+            }
+        });
+    });
+
+    // STICKER DRAWER HANDLING
+    const btnToggleStickers = document.getElementById('btn-toggle-stickers');
+    const closeStickerDrawer = document.getElementById('close-sticker-drawer');
+    const stickerGrid = document.getElementById('sticker-grid');
+
+    async function loadStickers() {
+        if (stickerPacksData.length > 0) return;
+        try {
+            const res = await fetch(STICKERS_API_URL);
+            const data = await res.json();
+            if (data.status === 'success') {
+                stickerPacksData = data.packs;
+                renderStickerPack(stickerPacksData[0].id);
+            }
+        } catch (e) {
+            console.error('Failed to load stickers', e);
+        }
+    }
+
+    function renderStickerPack(packId) {
+        const pack = stickerPacksData.find(p => p.id === packId);
+        if (!pack || !stickerGrid) return;
+        stickerGrid.innerHTML = pack.stickers.map(s => `
+            <button type="button" data-sticker-icon="${s.icon}" data-sticker-name="${s.name}" data-sticker-caption="${s.caption}"
+                    class="send-sticker-btn flex flex-col items-center justify-center rounded-2xl border border-white/5 bg-white/5 p-2 text-center transition hover:border-pink-500/50 hover:bg-white/15 active:scale-90">
+                <span class="text-3xl sm:text-4xl select-none">${s.icon}</span>
+                <span class="mt-1 text-[10px] font-bold text-slate-300 truncate w-full">${s.name}</span>
+            </button>
+        `).join('');
+
+        // Delegate sticker click
+        stickerGrid.querySelectorAll('.send-sticker-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                sendSticker(btn.dataset.stickerIcon, btn.dataset.stickerName, btn.dataset.stickerCaption);
+            });
+        });
+    }
+
+    async function sendSticker(icon, name, caption) {
+        if (stickerDrawer) stickerDrawer.classList.add('hidden');
+        const clientId = `${Date.now()}-${Math.random()}`;
+        const optimisticRow = appendMessage({
+            clientId,
+            sender_id: CURRENT_USER_ID,
+            text: icon,
+            message_type: 'sticker',
+            metadata: {icon, name, caption},
+            created_at: new Date().toISOString(),
+        }, true);
+        pendingSends += 1;
+
+        try {
+            const csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+            const res = await fetch(SEND_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrf,
+                },
+                body: JSON.stringify({
+                    text: icon,
+                    message_type: 'sticker',
+                    metadata: {icon, name, caption},
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Sticker could not be sent.');
+            if (optimisticRow) optimisticRow.remove();
+            appendMessage(data.message);
+        } catch (err) {
+            if (optimisticRow) optimisticRow.remove();
+            chatStatus.textContent = err.message;
+        } finally {
+            pendingSends -= 1;
+            if (pendingSends === 0) refreshMessages();
+        }
+    }
+
+    if (btnToggleStickers) {
+        btnToggleStickers.addEventListener('click', () => {
+            if (giftDrawer) giftDrawer.classList.add('hidden');
+            stickerDrawer.classList.toggle('hidden');
+            if (!stickerDrawer.classList.contains('hidden')) {
+                loadStickers();
+            }
+        });
+    }
+    if (closeStickerDrawer) {
+        closeStickerDrawer.addEventListener('click', () => stickerDrawer.classList.add('hidden'));
+    }
+
+    document.querySelectorAll('.sticker-tab-btn').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.sticker-tab-btn').forEach(t => {
+                t.className = 'sticker-tab-btn rounded-xl px-3 py-1 text-xs font-black transition bg-white/5 text-slate-400 hover:text-white';
+            });
+            tab.className = 'sticker-tab-btn rounded-xl px-3 py-1 text-xs font-black transition bg-pink-600 text-white shadow';
+            renderStickerPack(tab.dataset.packId);
+        });
+    });
+
+    // GIFT DRAWER & SENDING HANDLING
+    const btnToggleGifts = document.getElementById('btn-toggle-gifts');
+    const closeGiftDrawer = document.getElementById('close-gift-drawer');
+
+    if (btnToggleGifts) {
+        btnToggleGifts.addEventListener('click', () => {
+            if (stickerDrawer) stickerDrawer.classList.add('hidden');
+            giftDrawer.classList.toggle('hidden');
+        });
+    }
+    if (closeGiftDrawer) {
+        closeGiftDrawer.addEventListener('click', () => giftDrawer.classList.add('hidden'));
+    }
+
+    document.querySelectorAll('.chat-gift-item-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const giftSlug = btn.dataset.giftSlug;
+            const giftCoins = parseInt(btn.dataset.giftCoins, 10);
+            const giftName = btn.dataset.giftName;
+
+            const currentBalance = parseInt(headerCoinBalance.textContent, 10) || 0;
+            if (currentBalance < giftCoins) {
+                giftDrawer.classList.add('hidden');
+                openTopupModal();
+                return;
+            }
+
+            if (!confirm(`Send ${giftName} for ${giftCoins} coins to ${OTHER_USERNAME}?`)) return;
+
+            btn.disabled = true;
+            try {
+                const csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+                const response = await fetch(SEND_GIFT_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrf,
+                    },
+                    body: JSON.stringify({
+                        conversation_id: CONVERSATION_ID,
+                        gift_type: giftSlug,
+                    }),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    if (data.message === 'insufficient_coins') {
+                        giftDrawer.classList.add('hidden');
+                        openTopupModal();
+                    } else {
+                        alert(data.detail || data.message || 'Failed to send gift.');
+                    }
+                    return;
+                }
+
+                // Success
+                updateCoinDisplay(data.sender_balance);
+                if (data.message) {
+                    appendMessage(data.message);
+                }
+                giftDrawer.classList.add('hidden');
+                triggerCelebration();
+            } catch (err) {
+                alert('Network error sending gift. Please check connection.');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    });
+
+    // COIN TOP-UP MODAL HANDLING
+    const btnOpenTopup = document.getElementById('btn-open-topup');
+    const closeTopupModal = document.getElementById('close-topup-modal');
+    const topupPackagesContainer = document.getElementById('topup-packages-container');
+
+    function openTopupModal() {
+        if (!topupModal) return;
+        topupModal.classList.remove('opacity-0', 'pointer-events-none');
+        topupModalContent.classList.remove('scale-95');
+        loadCoinPackages();
+    }
+
+    function hideTopupModal() {
+        if (!topupModal) return;
+        topupModal.classList.add('opacity-0', 'pointer-events-none');
+        topupModalContent.classList.add('scale-95');
+    }
+
+    if (btnOpenTopup) btnOpenTopup.addEventListener('click', openTopupModal);
+    if (closeTopupModal) closeTopupModal.addEventListener('click', hideTopupModal);
+
+    async function loadCoinPackages() {
+        try {
+            const res = await fetch(PACKAGES_API_URL);
+            const data = await res.json();
+            if (data.status === 'success' && data.packages) {
+                topupPackagesContainer.innerHTML = data.packages.map(p => `
+                    <div class="relative flex flex-col justify-between rounded-2xl border ${p.is_popular ? 'border-pink-500 bg-pink-950/20 shadow-lg shadow-pink-500/10' : 'border-white/10 bg-white/5'} p-4 transition hover:border-pink-500/50">
+                        ${p.badge ? `<span class="absolute -top-2.5 right-3 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-2 py-0.5 text-[9px] font-black uppercase text-white shadow">${p.badge}</span>` : ''}
+                        <div>
+                            <div class="flex items-center gap-1.5 text-amber-300">
+                                <span class="text-xl">🪙</span>
+                                <span class="text-lg font-black">${p.total_coins} Coins</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-1">${p.name}</p>
+                        </div>
+                        <div class="mt-4 flex items-center justify-between">
+                            <span class="text-sm font-black text-white">₦${Number(p.price).toLocaleString()}</span>
+                            <button type="button" onclick="startCoinPurchase(${p.id}, '${p.price}', ${p.total_coins})"
+                                    class="rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-3.5 py-1.5 text-xs font-black text-slate-950 shadow hover:brightness-110 active:scale-95">
+                                Buy ⚡
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        } catch (e) {
+            topupPackagesContainer.innerHTML = '<p class="text-center text-xs text-rose-400 py-4 col-span-2">Failed to load packages. Please visit profile coin store.</p>';
+        }
+    }
+
+    window.startCoinPurchase = function(packageId, price, coins) {
+        // Redirect to coin checkout or trigger paystack
+        window.location.href = `{% url 'premium_checkout' %}?plan=${packageId}&mode=COINS`;
+    };
+
+    // Auto-sync wallet balance periodically
+    async function syncWalletBalance() {
+        try {
+            const res = await fetch(WALLET_BALANCE_API_URL);
+            const data = await res.json();
+            if (data.status === 'success') {
+                updateCoinDisplay(data.coin_balance);
+            }
+        } catch (e) {}
+    }
+
+    // Initial run
     startPolling();
+    window.setInterval(syncWalletBalance, 15000);
 </script>
 {% endblock %}
+

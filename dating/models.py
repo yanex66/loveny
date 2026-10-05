@@ -247,6 +247,12 @@ class Conversation(models.Model):
 
 
 class ChatMessage(models.Model):
+    MESSAGE_TYPES = (
+        ('text', 'Text'),
+        ('gift', 'Gift'),
+        ('sticker', 'Sticker'),
+    )
+
     conversation = models.ForeignKey(
         Conversation,
         related_name='messages',
@@ -254,6 +260,8 @@ class ChatMessage(models.Model):
     )
     sender = models.ForeignKey(User, related_name='chat_messages', on_delete=models.CASCADE)
     text = models.TextField()
+    message_type = models.CharField(max_length=20, choices=MESSAGE_TYPES, default='text', db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
     read_by = models.ManyToManyField(
         User,
         related_name='read_chat_messages',
@@ -268,7 +276,7 @@ class ChatMessage(models.Model):
         ]
 
     def __str__(self):
-        return f"Message from {self.sender.username} in conversation {self.conversation_id}"
+        return f"[{self.message_type}] Message from {self.sender.username} in conversation {self.conversation_id}"
 
 
 class SubscriptionPlan(models.Model):
@@ -465,9 +473,13 @@ class CoinTransaction(models.Model):
         ('CALL_REFUND', 'Call Refund / Grace Period'),
         ('GIFT_SENT', 'Gift Sent'),
         ('GIFT_RECEIVED', 'Gift Received'),
+        ('DIAMOND_CONVERSION', 'Diamond to Coin Exchange'),
     )
 
     user = models.ForeignKey(User, related_name='coin_transactions', on_delete=models.CASCADE)
+    sender = models.ForeignKey(User, null=True, blank=True, related_name='sent_coin_transactions', on_delete=models.SET_NULL)
+    recipient = models.ForeignKey(User, null=True, blank=True, related_name='received_coin_transactions', on_delete=models.SET_NULL)
+    gift_type = models.CharField(max_length=50, blank=True, help_text="e.g. rose, heart, cocktail, car, diamond, yacht, ring")
     amount = models.IntegerField(help_text="Coins (positive for credit, negative for debit) or Diamonds")
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
     description = models.CharField(max_length=255, blank=True)
@@ -481,8 +493,25 @@ class CoinTransaction(models.Model):
             models.Index(fields=('user', 'created_at')),
         ]
 
+    @property
+    def timestamp(self):
+        return self.created_at
+
     def __str__(self):
         return f"{self.user.username}: {self.amount} ({self.transaction_type})"
+
+
+class CoinWallet(models.Model):
+    user = models.OneToOneField(User, related_name='coin_wallet', on_delete=models.CASCADE)
+    coin_balance = models.PositiveIntegerField(default=100, help_text="Total spendable coin balance")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+
+    def __str__(self):
+        return f"{self.user.username}'s Wallet: {self.coin_balance} coins"
 
 
 class CallSignal(models.Model):
@@ -491,6 +520,8 @@ class CallSignal(models.Model):
         ('answer', 'Answer'),
         ('candidate', 'ICE candidate'),
         ('gift', 'In-call gift'),
+        ('chat', 'Live In-Call Chat'),
+        ('follow', 'Host Follow Event'),
     )
 
     call = models.ForeignKey(CallSession, related_name='signals', on_delete=models.CASCADE)
@@ -531,15 +562,10 @@ class SiteConfiguration(models.Model):
         default=30,
         help_text="Free starter coins granted to new users",
     )
-    min_diamond_withdrawal = models.PositiveIntegerField(
-        default=500,
-        help_text="Minimum diamond balance required for a host to request a cashout",
-    )
-    diamond_exchange_rate_naira = models.DecimalField(
-        max_digits=8,
-        decimal_places=2,
-        default=Decimal('5.00'),
-        help_text="Naira value per 1 diamond (e.g. ₦5.00/diamond => 500 diamonds = ₦2,500)",
+    diamond_to_coin_percentage = models.PositiveIntegerField(
+        default=70,
+        validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="Coins received per 100 Diamonds exchanged (e.g. 70 means 100💎 = 70🪙). Closed loop - no real-money cashout.",
     )
     announcement_banner = models.CharField(
         max_length=255,
@@ -585,29 +611,3 @@ class GiftItem(models.Model):
 
     def __str__(self):
         return f"{self.icon} {self.name} ({self.coin_cost} Coins)"
-
-
-class WithdrawalRequest(models.Model):
-    STATUS_CHOICES = (
-        ('PENDING', 'Pending Review'),
-        ('APPROVED', 'Approved'),
-        ('PAID', 'Paid Out'),
-        ('REJECTED', 'Rejected'),
-    )
-
-    user = models.ForeignKey(User, related_name='withdrawal_requests', on_delete=models.CASCADE)
-    diamonds_amount = models.PositiveIntegerField()
-    naira_amount = models.DecimalField(max_digits=12, decimal_places=2)
-    bank_name = models.CharField(max_length=100)
-    account_number = models.CharField(max_length=30)
-    account_name = models.CharField(max_length=150)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING', db_index=True)
-    admin_note = models.TextField(blank=True, help_text="Payment transaction reference or notes")
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    processed_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        ordering = ('-created_at',)
-
-    def __str__(self):
-        return f"Withdrawal: {self.user.username} - {self.diamonds_amount}💎 (₦{self.naira_amount}) [{self.status}]"

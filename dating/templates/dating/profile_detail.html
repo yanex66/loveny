@@ -205,14 +205,14 @@
         {% endif %}
 
         {% if is_own_profile %}
-            <!-- Host Hub & Diamond Cashout Dashboard -->
+            <!-- Host Hub & Diamond Conversion Dashboard -->
             <section class="mt-8 rounded-3xl border border-pink-200/80 bg-gradient-to-br from-white via-pink-50/40 to-amber-50/50 p-5 shadow-xl">
                 <div class="flex items-center justify-between mb-4">
                     <div class="flex items-center gap-2">
                         <span class="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-tr from-pink-500 via-rose-500 to-amber-400 text-lg shadow-md shadow-pink-500/25">💎</span>
                         <div>
                             <h2 class="text-sm font-black uppercase tracking-wider text-slate-900">Host Earnings & Hub</h2>
-                            <p class="text-[11px] font-semibold text-slate-500">Live Sex Call Cashout</p>
+                            <p class="text-[11px] font-semibold text-slate-500">Live Sex Call Diamonds</p>
                         </div>
                     </div>
                     <span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-800">
@@ -228,13 +228,13 @@
                             <span>💎</span>
                             <span id="host-diamonds-val">{{ profile.earned_diamonds }}</span>
                         </div>
-                        <span class="text-[9px] font-medium text-slate-400">≈ ₦<span id="host-naira-approx">0</span></span>
+                        <span class="text-[9px] font-medium text-slate-400">{{ site_config.diamond_to_coin_percentage|default:70 }}% to Coins</span>
                     </div>
                     <div class="rounded-2xl border border-amber-200 bg-white/90 p-3 shadow-sm">
                         <span class="text-[10px] font-bold uppercase tracking-wider text-amber-800">Coin Balance</span>
                         <div class="flex items-center justify-center gap-1 mt-0.5 text-xl font-black text-amber-900">
                             <span>🪙</span>
-                            <span>{{ profile.coin_balance }}</span>
+                            <span id="host-coins-val">{{ profile.coin_balance }}</span>
                         </div>
                         <span class="text-[9px] font-medium text-slate-400">{{ site_config.call_rate_per_minute|default:20 }}🪙/min</span>
                     </div>
@@ -270,13 +270,13 @@
                     </span>
                 </div>
 
-                <!-- Action Buttons: Cashout & History -->
+                <!-- Action Buttons: Exchange & History -->
                 <div class="flex gap-2">
                     <button type="button"
-                            id="open-cashout-modal-btn"
-                            class="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 px-4 py-3 text-xs font-black text-white shadow-lg shadow-teal-500/25 hover:brightness-105 active:scale-95 transition">
-                        <span>💸</span>
-                        <span>Withdraw Diamonds</span>
+                            id="open-exchange-modal-btn"
+                            class="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 px-4 py-3 text-xs font-black text-white shadow-lg shadow-cyan-500/25 hover:brightness-105 active:scale-95 transition">
+                        <span>🔁</span>
+                        <span>Exchange Diamonds for Coins</span>
                     </button>
                     <button type="button"
                             id="toggle-wallet-history-btn"
@@ -288,9 +288,8 @@
 
                 <!-- History Section (Hidden by default) -->
                 <div id="wallet-history-section" class="mt-4 hidden border-t border-slate-200/80 pt-4">
-                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Recent Payouts & History</h3>
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Coin & Diamond Ledger</h3>
                     <div id="history-loading-msg" class="text-center py-4 text-xs text-slate-400">Loading history...</div>
-                    <div id="withdrawals-list" class="space-y-2 mb-3"></div>
                     <div id="transactions-list" class="space-y-1.5 max-h-48 overflow-y-auto"></div>
                 </div>
             </section>
@@ -441,84 +440,105 @@
             likeBtn.addEventListener('click', () => handleSwipe('LIKE'));
         }
 
-        // Host Cashout Logic
-        const ratePerDiamond = parseFloat('{{ site_config.diamond_exchange_rate_naira|default:"5.00" }}') || 5.0;
+        // Host Diamond to Coin Exchange Logic (Strictly Closed-Loop Economy)
+        const diamondToCoinPercentage = parseInt('{{ site_config.diamond_to_coin_percentage|default:"70" }}', 10) || 70;
         const hostDiamondsEl = document.getElementById('host-diamonds-val');
-        const hostNairaApprox = document.getElementById('host-naira-approx');
-        if (hostDiamondsEl && hostNairaApprox) {
-            const curDiamonds = parseInt(hostDiamondsEl.textContent, 10) || 0;
-            hostNairaApprox.textContent = (curDiamonds * ratePerDiamond).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        const hostCoinsEl = document.getElementById('host-coins-val');
+
+        const openExchangeBtn = document.getElementById('open-exchange-modal-btn');
+        const closeExchangeBtn = document.getElementById('close-exchange-modal-btn');
+        const exchangeModal = document.getElementById('diamond-exchange-modal');
+        const exchangeForm = document.getElementById('profile-exchange-form');
+        const exchangeDiamondsInput = document.getElementById('exchange-diamonds-input');
+        const exchangePreviewCoins = document.getElementById('exchange-preview-coins');
+        const exchangeError = document.getElementById('exchange-error-msg');
+        const exchangeSuccess = document.getElementById('exchange-success-msg');
+        const exchangeSubmitBtn = document.getElementById('exchange-submit-btn');
+        const exchangeMaxBtn = document.getElementById('exchange-max-btn');
+        const exchangeAvailDiamonds = document.getElementById('exchange-avail-diamonds');
+
+        const updateExchangePreview = () => {
+            if (!exchangeDiamondsInput || !exchangePreviewCoins) return;
+            const diamonds = parseInt(exchangeDiamondsInput.value, 10) || 0;
+            const coins = Math.floor(diamonds * (diamondToCoinPercentage / 100));
+            exchangePreviewCoins.textContent = `${coins} 🪙`;
+        };
+
+        if (exchangeDiamondsInput) {
+            exchangeDiamondsInput.addEventListener('input', updateExchangePreview);
         }
 
-        const openCashoutBtn = document.getElementById('open-cashout-modal-btn');
-        const closeCashoutBtn = document.getElementById('close-cashout-modal-btn');
-        const cashoutModal = document.getElementById('cashout-modal');
-        const cashoutForm = document.getElementById('cashout-form');
-        const cashoutDiamondsInput = document.getElementById('cashout-diamonds');
-        const cashoutEstPayout = document.getElementById('cashout-est-payout');
-        const cashoutError = document.getElementById('cashout-error-msg');
-        const cashoutSuccess = document.getElementById('cashout-success-msg');
-        const cashoutSubmitBtn = document.getElementById('cashout-submit-btn');
+        if (exchangeMaxBtn && exchangeDiamondsInput && hostDiamondsEl) {
+            exchangeMaxBtn.onclick = () => {
+                const maxVal = parseInt(hostDiamondsEl.textContent, 10) || 0;
+                exchangeDiamondsInput.value = maxVal;
+                updateExchangePreview();
+            };
+        }
 
-        if (openCashoutBtn && cashoutModal) {
-            openCashoutBtn.onclick = () => {
-                cashoutModal.classList.remove('hidden');
-                cashoutModal.classList.add('flex');
+        if (openExchangeBtn && exchangeModal) {
+            openExchangeBtn.onclick = () => {
+                exchangeModal.classList.remove('hidden');
+                exchangeModal.classList.add('flex');
+                if (exchangeDiamondsInput) exchangeDiamondsInput.focus();
             };
         }
-        if (closeCashoutBtn && cashoutModal) {
-            closeCashoutBtn.onclick = () => {
-                cashoutModal.classList.add('hidden');
-                cashoutModal.classList.remove('flex');
+
+        if (closeExchangeBtn && exchangeModal) {
+            closeExchangeBtn.onclick = () => {
+                exchangeModal.classList.add('hidden');
+                exchangeModal.classList.remove('flex');
             };
         }
-        if (cashoutDiamondsInput && cashoutEstPayout) {
-            cashoutDiamondsInput.oninput = () => {
-                const val = parseInt(cashoutDiamondsInput.value, 10) || 0;
-                cashoutEstPayout.textContent = '₦' + (val * ratePerDiamond).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            };
-        }
-        if (cashoutForm) {
-            cashoutForm.onsubmit = async (e) => {
+
+        if (exchangeForm) {
+            exchangeForm.onsubmit = async (e) => {
                 e.preventDefault();
-                cashoutError.classList.add('hidden');
-                cashoutSuccess.classList.add('hidden');
-                cashoutSubmitBtn.disabled = true;
-                cashoutSubmitBtn.textContent = 'Submitting...';
+                if (exchangeError) exchangeError.classList.add('hidden');
+                if (exchangeSuccess) exchangeSuccess.classList.add('hidden');
+                if (exchangeSubmitBtn) {
+                    exchangeSubmitBtn.disabled = true;
+                    exchangeSubmitBtn.textContent = 'Converting...';
+                }
 
                 try {
-                    const res = await fetch('/api/wallet/withdraw/', {
+                    const diamondsVal = parseInt(exchangeDiamondsInput.value, 10) || 0;
+                    const res = await fetch('/api/wallet/convert-diamonds/', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRFToken': '{{ csrf_token }}',
                         },
-                        body: JSON.stringify({
-                            diamonds: cashoutDiamondsInput.value,
-                            bank_name: document.getElementById('cashout-bank-name').value,
-                            account_number: document.getElementById('cashout-account-number').value,
-                            account_name: document.getElementById('cashout-account-name').value,
-                        }),
+                        body: JSON.stringify({ diamonds: diamondsVal }),
                     });
                     const data = await res.json();
-                    if (!res.ok) throw new Error(data.detail || data.message || 'Withdrawal failed');
-                    cashoutSuccess.textContent = data.message;
-                    cashoutSuccess.classList.remove('hidden');
+                    if (!res.ok) throw new Error(data.error || data.detail || 'Conversion failed');
+
+                    if (exchangeSuccess) {
+                        exchangeSuccess.textContent = data.message || `Successfully exchanged ${data.diamonds_deducted} 💎 for ${data.coins_credited} 🪙!`;
+                        exchangeSuccess.classList.remove('hidden');
+                    }
+
                     if (hostDiamondsEl) hostDiamondsEl.textContent = data.remaining_diamonds;
-                    const availEl = document.getElementById('cashout-avail-diamonds');
-                    if (availEl) availEl.textContent = data.remaining_diamonds;
-                    if (hostNairaApprox) hostNairaApprox.textContent = (data.remaining_diamonds * ratePerDiamond).toLocaleString();
+                    if (exchangeAvailDiamonds) exchangeAvailDiamonds.textContent = data.remaining_diamonds;
+                    if (hostCoinsEl) hostCoinsEl.textContent = data.new_coin_balance;
+
                     setTimeout(() => {
-                        cashoutModal.classList.add('hidden');
-                        cashoutModal.classList.remove('flex');
-                        cashoutForm.reset();
-                    }, 2500);
+                        exchangeModal.classList.add('hidden');
+                        exchangeModal.classList.remove('flex');
+                        exchangeForm.reset();
+                        updateExchangePreview();
+                    }, 2000);
                 } catch (err) {
-                    cashoutError.textContent = err.message;
-                    cashoutError.classList.remove('hidden');
+                    if (exchangeError) {
+                        exchangeError.textContent = err.message;
+                        exchangeError.classList.remove('hidden');
+                    }
                 } finally {
-                    cashoutSubmitBtn.disabled = false;
-                    cashoutSubmitBtn.textContent = 'Submit Cashout Request';
+                    if (exchangeSubmitBtn) {
+                        exchangeSubmitBtn.disabled = false;
+                        exchangeSubmitBtn.textContent = 'Convert to Coins';
+                    }
                 }
             };
         }
@@ -535,26 +555,16 @@
                         const data = await res.json();
                         historySection.dataset.loaded = 'true';
                         document.getElementById('history-loading-msg')?.remove();
-                        const wList = document.getElementById('withdrawals-list');
                         const tList = document.getElementById('transactions-list');
-                        if (wList && data.withdrawals?.length) {
-                            wList.innerHTML = '<div class="text-[11px] font-bold text-slate-500 uppercase">Payout Requests</div>' + data.withdrawals.map(w => `
-                                <div class="flex items-center justify-between p-2 rounded-xl border border-slate-200 bg-white text-xs">
-                                    <div>
-                                        <div class="font-bold text-slate-900">💎 ${w.diamonds} (₦${Number(w.naira).toLocaleString()})</div>
-                                        <div class="text-[10px] text-slate-500">${w.bank_name || ''} · ${w.created_at}</div>
-                                    </div>
-                                    <span class="rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${w.status === 'PAID' ? 'bg-emerald-100 text-emerald-800' : (w.status === 'REJECTED' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800')}">${w.status_display}</span>
-                                </div>
-                            `).join('');
-                        }
                         if (tList && data.transactions?.length) {
-                            tList.innerHTML = '<div class="text-[11px] font-bold text-slate-500 uppercase pt-2">Coin & Diamond Ledger</div>' + data.transactions.map(t => `
-                                <div class="flex items-center justify-between py-1 border-b border-slate-100 text-xs">
+                            tList.innerHTML = data.transactions.map(t => `
+                                <div class="flex items-center justify-between py-1.5 border-b border-slate-100 text-xs">
                                     <span class="text-slate-700 truncate pr-2">${t.description}</span>
                                     <span class="font-bold shrink-0 ${t.amount > 0 ? 'text-emerald-600' : 'text-slate-900'}">${t.amount > 0 ? '+' : ''}${t.amount}</span>
                                 </div>
                             `).join('');
+                        } else if (tList) {
+                            tList.innerHTML = '<div class="text-xs text-slate-400 py-2 text-center">No transaction records yet.</div>';
                         }
                     } catch (e) {
                         console.warn(e);
@@ -565,56 +575,49 @@
     });
 </script>
 
-    <!-- Diamond Cashout Modal -->
-    <div id="cashout-modal" class="fixed inset-0 z-[150] hidden items-center justify-center bg-slate-950/75 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="cashout-modal-title">
+    <!-- Diamond to Coin Exchange Modal (Strictly Closed-Loop Economy) -->
+    <div id="diamond-exchange-modal" class="fixed inset-0 z-[150] hidden items-center justify-center bg-slate-950/75 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="exchange-modal-title">
         <div class="relative w-full max-w-md rounded-3xl border border-cyan-200/60 bg-white p-6 shadow-2xl text-slate-900">
-            <button type="button" id="close-cashout-modal-btn" class="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition text-lg font-bold" aria-label="Close">✕</button>
+            <button type="button" id="close-exchange-modal-btn" class="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition text-lg font-bold" aria-label="Close">✕</button>
 
             <div class="flex items-center gap-3 mb-4">
-                <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-cyan-500 to-emerald-400 text-2xl shadow-lg shadow-cyan-500/30">💸</div>
+                <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-cyan-500 to-indigo-500 text-2xl shadow-lg shadow-cyan-500/30">🔁</div>
                 <div>
-                    <h2 id="cashout-modal-title" class="text-lg font-black text-slate-900">Cashout Diamonds to Bank</h2>
-                    <p class="text-xs text-slate-500 font-medium">1 Diamond = ₦{{ site_config.diamond_exchange_rate_naira|default:"5.00" }} · Min {{ site_config.min_diamond_withdrawal|default:500 }} 💎</p>
+                    <h2 id="exchange-modal-title" class="text-lg font-black text-slate-900">Exchange Diamonds for Coins</h2>
+                    <p class="text-xs text-slate-500 font-medium">100 💎 = {{ site_config.diamond_to_coin_percentage|default:70 }} 🪙 ({{ site_config.diamond_to_coin_percentage|default:70 }}% conversion)</p>
                 </div>
             </div>
 
             <div class="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-3.5 mb-4 flex items-center justify-between text-xs">
                 <div>
                     <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-800">Available Diamonds</span>
-                    <div class="text-lg font-black text-cyan-950 mt-0.5">💎 <span id="cashout-avail-diamonds">{{ profile.earned_diamonds }}</span></div>
+                    <div class="text-lg font-black text-cyan-950 mt-0.5">💎 <span id="exchange-avail-diamonds">{{ profile.earned_diamonds }}</span></div>
                 </div>
                 <div class="text-right">
-                    <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Est. Payout</span>
-                    <div class="text-lg font-black text-emerald-900 mt-0.5" id="cashout-est-payout">₦0.00</div>
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-amber-800">Coins to Receive</span>
+                    <div class="text-lg font-black text-amber-900 mt-0.5" id="exchange-preview-coins">0 🪙</div>
                 </div>
             </div>
 
-            <form id="cashout-form" class="space-y-3">
+            <div class="p-3 mb-4 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
+                <p class="font-semibold text-slate-800 mb-0.5">Closed-Loop Token Policy</p>
+                <p>Accumulated diamonds can only be converted directly into coins to fuel Sex Call video chats and gifts. Real-money fiat cashouts are not permitted.</p>
+            </div>
+
+            <form id="profile-exchange-form" class="space-y-3">
                 <div>
-                    <label for="cashout-diamonds" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Diamonds to Cash Out</label>
-                    <input type="number" id="cashout-diamonds" min="{{ site_config.min_diamond_withdrawal|default:500 }}" max="{{ profile.earned_diamonds }}" placeholder="e.g. {{ site_config.min_diamond_withdrawal|default:500 }}" required class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-bold text-slate-900 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+                    <label for="exchange-diamonds-input" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Diamonds to Convert</label>
+                    <div class="relative">
+                        <input type="number" id="exchange-diamonds-input" min="1" max="{{ profile.earned_diamonds }}" placeholder="e.g. 100" required class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-bold text-slate-900 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none pr-16">
+                        <button type="button" id="exchange-max-btn" class="absolute right-2 top-2 rounded-lg bg-cyan-100 px-2 py-1 text-[10px] font-black uppercase text-cyan-800 hover:bg-cyan-200">MAX</button>
+                    </div>
                 </div>
 
-                <div>
-                    <label for="cashout-bank-name" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Bank Name</label>
-                    <input type="text" id="cashout-bank-name" placeholder="e.g. OPay, PalmPay, GTBank, Kuda" required class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
-                </div>
+                <div id="exchange-error-msg" class="hidden rounded-xl bg-rose-50 border border-rose-200 p-2.5 text-xs font-bold text-rose-700"></div>
+                <div id="exchange-success-msg" class="hidden rounded-xl bg-emerald-50 border border-emerald-200 p-2.5 text-xs font-bold text-emerald-700"></div>
 
-                <div>
-                    <label for="cashout-account-number" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Account Number (10 digits)</label>
-                    <input type="text" id="cashout-account-number" pattern="[0-9]{10}" maxlength="10" placeholder="10-digit NUBAN number" required class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
-                </div>
-
-                <div>
-                    <label for="cashout-account-name" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Account Name</label>
-                    <input type="text" id="cashout-account-name" placeholder="Account holder name" required class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
-                </div>
-
-                <div id="cashout-error-msg" class="hidden rounded-xl bg-rose-50 border border-rose-200 p-2.5 text-xs font-bold text-rose-700"></div>
-                <div id="cashout-success-msg" class="hidden rounded-xl bg-emerald-50 border border-emerald-200 p-2.5 text-xs font-bold text-emerald-700"></div>
-
-                <button type="submit" id="cashout-submit-btn" class="w-full rounded-2xl bg-gradient-to-r from-emerald-600 to-cyan-600 py-3.5 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-cyan-500/30 hover:brightness-105 active:scale-95 transition">
-                    Submit Cashout Request
+                <button type="submit" id="exchange-submit-btn" class="w-full rounded-2xl bg-gradient-to-r from-cyan-600 to-indigo-600 py-3.5 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-cyan-500/30 hover:brightness-105 active:scale-95 transition">
+                    Convert to Coins
                 </button>
             </form>
         </div>
