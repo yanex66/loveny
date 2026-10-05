@@ -427,6 +427,7 @@ def edit_profile(request):
     })
 
 # --- ACTION: Swiping ---
+@ensure_csrf_cookie
 @login_required
 def swipe_view(request):
     toggle = request.GET.get('test_profiles') or request.GET.get('preview_test_profiles')
@@ -2407,6 +2408,7 @@ def conversation_room(request, conversation_id):
     return render(request, 'dating/chat_room.html', context)
 
 # --- ACCOUNT FLOW & STATIC ---
+@ensure_csrf_cookie
 def index(request): return render(request, 'dating/landing.html')
 
 @ensure_csrf_cookie
@@ -2531,6 +2533,7 @@ def contact(request):
 
 
 # --- SEX CALL DISCOVERY & HOST GRID ---
+@ensure_csrf_cookie
 @login_required
 def sex_call_hub(request):
     """

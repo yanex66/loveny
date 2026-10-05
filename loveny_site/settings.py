@@ -51,14 +51,40 @@ ALLOWED_HOSTS = [
     for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
     if host.strip()
 ]
-ALLOWED_HOSTS += ['lovenny.pythonanywhere.com', '127.0.0.1', 'localhost']
-if RENDER_EXTERNAL_HOSTNAME:
+ALLOWED_HOSTS += [
+    'lovenny.pythonanywhere.com',
+    'loveny.pythonanywhere.com',
+    '.pythonanywhere.com',
+    '.onrender.com',
+    '127.0.0.1',
+    'localhost',
+    '0.0.0.0',
+    '.localhost',
+]
+if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
+ALLOWED_HOSTS = list(dict.fromkeys(ALLOWED_HOSTS))
+
 CSRF_TRUSTED_ORIGINS = [
+    'https://*.pythonanywhere.com',
+    'http://*.pythonanywhere.com',
+    'https://*.onrender.com',
+    'http://*.onrender.com',
     'https://lovenny.pythonanywhere.com',
+    'http://lovenny.pythonanywhere.com',
+    'https://loveny.pythonanywhere.com',
+    'http://loveny.pythonanywhere.com',
     'http://127.0.0.1:8000',
     'http://localhost:8000',
+    'http://127.0.0.1',
+    'http://localhost',
+    'https://127.0.0.1:8000',
+    'https://localhost:8000',
+    'https://127.0.0.1',
+    'https://localhost',
+    'http://0.0.0.0:8000',
+    'http://0.0.0.0',
 ]
 CSRF_TRUSTED_ORIGINS += [
     origin.strip()
@@ -67,6 +93,20 @@ CSRF_TRUSTED_ORIGINS += [
 ]
 if RENDER_EXTERNAL_HOSTNAME:
     CSRF_TRUSTED_ORIGINS.append(f'https://{RENDER_EXTERNAL_HOSTNAME}')
+    CSRF_TRUSTED_ORIGINS.append(f'http://{RENDER_EXTERNAL_HOSTNAME}')
+
+for host in ALLOWED_HOSTS:
+    if not host or host == '*':
+        continue
+    clean_host = host.lstrip('.')
+    if host.startswith('.'):
+        clean_host = f'*.{clean_host}'
+    for proto in ('https://', 'http://'):
+        origin = f'{proto}{clean_host}'
+        if origin not in CSRF_TRUSTED_ORIGINS:
+            CSRF_TRUSTED_ORIGINS.append(origin)
+
+CSRF_TRUSTED_ORIGINS = list(dict.fromkeys(CSRF_TRUSTED_ORIGINS))
 
 
 # Application definition
@@ -212,6 +252,9 @@ if IS_RENDER:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 3600
+else:
+    SESSION_COOKIE_SECURE = os.environ.get('DJANGO_SESSION_COOKIE_SECURE', 'false').strip().lower() in {'1', 'true', 'yes'}
+    CSRF_COOKIE_SECURE = os.environ.get('DJANGO_CSRF_COOKIE_SECURE', 'false').strip().lower() in {'1', 'true', 'yes'}
 
 
 # Default primary key field type
