@@ -362,15 +362,35 @@ class DatingPlatformTests(TestCase):
         self.assertContains(self.client.get(reverse('create_profile')), 'Sex Call')
 
         self.client.logout()
+        # Attempting login without connection mode fails
         response = self.client.post(reverse('login'), {
-            'username': 'alice',
+            'email': 'alice@example.com',
             'password': 'test-password-123',
         })
         self.assertEqual(response.status_code, 200)
         self.assertNotIn('_auth_user_id', self.client.session)
 
+        # Attempting to log in with username instead of email fails
         response = self.client.post(reverse('login'), {
             'username': 'alice',
+            'password': 'test-password-123',
+            'relationship_mode': 'HOOKUP',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+        # Attempting to log in with username in email field fails
+        response = self.client.post(reverse('login'), {
+            'email': 'alice',
+            'password': 'test-password-123',
+            'relationship_mode': 'HOOKUP',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+        # Logging in with email succeeds
+        response = self.client.post(reverse('login'), {
+            'email': 'alice@example.com',
             'password': 'test-password-123',
             'relationship_mode': 'HOOKUP',
         })

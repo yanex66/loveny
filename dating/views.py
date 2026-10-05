@@ -2417,7 +2417,7 @@ def signup(request):
     if request.method == 'POST' and form.is_valid():
         mode = form.cleaned_data['relationship_mode']
         user = form.save()
-        login(request, user)
+        login(request, user, backend='dating.backends.EmailAuthBackend')
         request.session['active_connection_mode'] = mode
         return redirect('create_profile')
     return render(request, 'registration/signup.html', {'form': form})

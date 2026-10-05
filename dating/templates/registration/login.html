@@ -24,13 +24,13 @@
             
             <div class="absolute top-0 left-0 w-full h-2 brand-gradient"></div>
 
-            {% if form.non_field_errors or form.relationship_mode.errors or form.username.errors or form.password.errors %}
+            {% if form.non_field_errors or form.relationship_mode.errors or form.email.errors or form.password.errors %}
                 <div class="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r animate-pulse">
                     <div class="flex items-center gap-3">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         <div>
                             <p class="font-bold text-red-800 text-sm">Access denied</p>
-                            <p class="text-xs text-red-700">Please check your username, password, and connection mode.</p>
+                            <p class="text-xs text-red-700">Please check your email address, password, and connection mode.</p>
                             {{ form.non_field_errors }}
                         </div>
                     </div>
@@ -41,9 +41,9 @@
                 {% csrf_token %}
                 
                 <div class="space-y-1">
-                    <label for="{{ form.username.id_for_label }}" class="block text-xs font-bold text-pink-700 uppercase tracking-widest ml-1">Username</label>
-                    {{ form.username }}
-                    {{ form.username.errors }}
+                    <label for="{{ form.email.id_for_label }}" class="block text-xs font-bold text-pink-700 uppercase tracking-widest ml-1">Email Address</label>
+                    {{ form.email }}
+                    {{ form.email.errors }}
                 </div>
 
                 <div class="space-y-1">

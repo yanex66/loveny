@@ -1,4 +1,5 @@
 from django import forms
+from django.contrib.auth import authenticate
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm, PasswordResetForm
 from django.contrib.auth.models import User
 from django.core.mail import EmailMultiAlternatives
@@ -43,15 +44,43 @@ class SignUpForm(UserCreationForm):
                 })
 
 
-class LoginForm(AuthenticationForm):
+class LoginForm(forms.Form):
+    email = forms.EmailField(
+        label='Email Address',
+        widget=forms.EmailInput(attrs={
+            'autocomplete': 'email',
+            'placeholder': 'name@example.com',
+            'autofocus': True,
+        }),
+    )
+    password = forms.CharField(
+        label='Password',
+        strip=False,
+        widget=forms.PasswordInput(attrs={
+            'autocomplete': 'current-password',
+        }),
+    )
     relationship_mode = forms.ChoiceField(
         choices=RELATIONSHIP_MODE_CHOICES,
         required=True,
         label='Connection mode',
     )
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    error_messages = {
+        'invalid_login': 'Please enter a correct email address and password.',
+        'inactive': 'This account is inactive.',
+    }
+
+    def __init__(self, request=None, *args, **kwargs):
+        if request is not None and not hasattr(request, 'META') and not hasattr(request, 'method') and not args and 'data' not in kwargs:
+            data = request
+            request = None
+            super().__init__(data, *args, **kwargs)
+        else:
+            super().__init__(*args, **kwargs)
+        self.request = request
+        self.user_cache = None
+
         for field in self.fields.values():
             field.widget.attrs.update({
                 'class': 'block w-full rounded-xl border-2 border-rose-100 bg-white px-4 py-3 font-bold tracking-wide text-slate-900 focus:border-pink-400 focus:outline-none',
@@ -61,6 +90,33 @@ class LoginForm(AuthenticationForm):
                     'autocomplete': 'current-password',
                     'class': 'block w-full rounded-xl border-2 border-rose-100 bg-white px-4 py-3 font-medium tracking-normal text-slate-900 focus:border-pink-400 focus:outline-none',
                 })
+
+    def clean(self):
+        email = self.cleaned_data.get('email')
+        password = self.cleaned_data.get('password')
+
+        if email is not None and password:
+            self.user_cache = authenticate(
+                self.request,
+                email=email,
+                password=password,
+            )
+            if self.user_cache is None:
+                raise forms.ValidationError(
+                    self.error_messages['invalid_login'],
+                    code='invalid_login',
+                )
+            else:
+                if not getattr(self.user_cache, 'is_active', True):
+                    raise forms.ValidationError(
+                        self.error_messages['inactive'],
+                        code='inactive',
+                    )
+
+        return self.cleaned_data
+
+    def get_user(self):
+        return self.user_cache
 
 
 class ProfileForm(forms.ModelForm):
