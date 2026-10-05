@@ -2578,13 +2578,16 @@ class SafePasswordResetView(auth_views.PasswordResetView):
 
 @login_required
 def create_profile(request):
-    try:
-        if request.user.profile: return redirect('swipe_card')
-    except Profile.DoesNotExist: pass
+    existing_profile = Profile.objects.filter(user=request.user).first()
+    if existing_profile and existing_profile.age and existing_profile.age >= 18 and existing_profile.photos.exists():
+        if existing_profile.relationship_mode == 'SEX_CALL':
+            return redirect('sex_call_hub')
+        return redirect('swipe_card')
 
     form = ProfileCreationForm(
         request.POST or None,
         request.FILES or None,
+        instance=existing_profile,
         initial={
             'relationship_mode': request.session.get('active_connection_mode', 'DATING'),
         },
@@ -2595,12 +2598,15 @@ def create_profile(request):
         if form.cleaned_data.get('name'):
             request.user.first_name = form.cleaned_data['name']
             request.user.save(update_fields=['first_name'])
-        p.relationship_mode = request.session.get('active_connection_mode', 'DATING')
+        chosen_mode = form.cleaned_data.get('relationship_mode') or request.session.get('active_connection_mode', 'DATING')
+        p.relationship_mode = chosen_mode
         p.save()
         form.save_m2m()
         request.session['active_connection_mode'] = p.relationship_mode
         if request.FILES.get('photo'):
             ProfilePhoto.objects.create(profile=p, image=request.FILES.get('photo'), is_main=True)
+        if p.relationship_mode == 'SEX_CALL':
+            return redirect('sex_call_hub')
         return redirect('swipe_card')
     return render(request, 'dating/create_profile.html', {'form': form})
 

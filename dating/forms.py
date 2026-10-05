@@ -126,6 +126,9 @@ class ProfileForm(forms.ModelForm):
     name = forms.CharField(max_length=150, required=True, label='Name')
     photo = forms.ImageField(required=False, label="Main Profile Picture")
     age = forms.IntegerField(min_value=18, max_value=120, required=True)
+    min_age_pref = forms.IntegerField(min_value=18, max_value=120, required=False, initial=18)
+    max_age_pref = forms.IntegerField(min_value=18, max_value=120, required=False, initial=50)
+    max_distance_km = forms.IntegerField(min_value=1, max_value=500, required=False, initial=100)
     
     # FIXED: Using our Custom Widget to bypass the 'multiple' ValueError
     more_photos = forms.FileField(
@@ -189,9 +192,21 @@ class ProfileForm(forms.ModelForm):
             'is_dnd': 'Do Not Disturb (DND)',
         }
 
+    def clean_min_age_pref(self):
+        val = self.cleaned_data.get('min_age_pref')
+        return val if val is not None else 18
+
+    def clean_max_age_pref(self):
+        val = self.cleaned_data.get('max_age_pref')
+        return val if val is not None else 50
+
+    def clean_max_distance_km(self):
+        val = self.cleaned_data.get('max_distance_km')
+        return val if val is not None else 100
+
     def clean_tags(self):
-        tags = self.cleaned_data['tags']
-        if tags.count() > 5:
+        tags = self.cleaned_data.get('tags')
+        if tags and hasattr(tags, 'count') and tags.count() > 5:
             raise forms.ValidationError('Choose up to five interests.')
         return tags
 
@@ -203,6 +218,21 @@ class ProfileCreationForm(ProfileForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['name'].required = False
+        optional_fields = [
+            'min_age_pref', 'max_age_pref', 'max_distance_km',
+            'location', 'latitude', 'longitude', 'job_title',
+            'bio', 'first_date_idea', 'tags', 'is_dnd', 'more_photos', 'photo'
+        ]
+        for field_name in optional_fields:
+            if field_name in self.fields:
+                self.fields[field_name].required = False
+
+        if 'min_age_pref' in self.fields:
+            self.fields['min_age_pref'].initial = 18
+        if 'max_age_pref' in self.fields:
+            self.fields['max_age_pref'].initial = 50
+        if 'max_distance_km' in self.fields:
+            self.fields['max_distance_km'].initial = 100
 
 
 class SettingsForm(forms.ModelForm):

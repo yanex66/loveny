@@ -620,6 +620,32 @@ class DatingPlatformTests(TestCase):
         self.assertContains(response, 'Connection Style')
         self.assertContains(response, 'Sex Call')
 
+    def test_create_profile_submission_defaults_preferences_and_mode(self):
+        new_user = User.objects.create_user(
+            username='user27',
+            email='user27@example.com',
+            password='test-password-123',
+        )
+        self.client.force_login(new_user)
+        # Post form payload without min_age_pref, max_age_pref, max_distance_km
+        post_data = {
+            'age': 27,
+            'gender': 'O',
+            'preferred_gender': 'F',
+            'relationship_mode': 'SEX_CALL',
+            'bio': 'dce',
+        }
+        response = self.client.post(reverse('create_profile'), post_data)
+        self.assertRedirects(response, reverse('sex_call_hub'))
+        profile = Profile.objects.get(user=new_user)
+        self.assertEqual(profile.age, 27)
+        self.assertEqual(profile.gender, 'O')
+        self.assertEqual(profile.preferred_gender, 'F')
+        self.assertEqual(profile.relationship_mode, 'SEX_CALL')
+        self.assertEqual(profile.min_age_pref, 18)
+        self.assertEqual(profile.max_age_pref, 50)
+        self.assertEqual(profile.max_distance_km, 100)
+
     def test_likes_are_hidden_until_premium(self):
         Swipe.objects.create(swiper=self.bob, swiped=self.alice, type='LIKE')
         self.client.force_login(self.alice)

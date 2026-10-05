@@ -94,6 +94,9 @@
 
             <form method="post" enctype="multipart/form-data" class="space-y-8">
                 {% csrf_token %}
+                <input type="hidden" name="min_age_pref" value="18">
+                <input type="hidden" name="max_age_pref" value="50">
+                <input type="hidden" name="max_distance_km" value="100">
 
                 <div class="text-center">
                     <label class="block text-xs font-black text-pink-500 uppercase tracking-widest mb-4">Main Identity Media</label>
