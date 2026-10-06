@@ -247,7 +247,7 @@
 </div>
 {% endblock %}
 
-{% block extra_js %}
+{% block extra_scripts %}
 <script>
 (() => {
     let currentTab = 'hot';
@@ -370,13 +370,14 @@
                 if (data.message === 'insufficient_coins' || data.message === 'sex_call_pass_required') {
                     window.location.href = "{% url 'coin_shop' %}";
                 } else {
-                    alert(data.message || 'Unable to initiate call');
+                    alert(data.detail || data.message || 'Unable to initiate call');
                 }
                 return;
             }
 
-            if (data.room_id) {
-                window.location.href = `/call/${data.room_id}/`;
+            const targetRoomId = data.room_id || (data.call && data.call.room_id);
+            if (targetRoomId) {
+                window.location.href = `/call/${targetRoomId}/`;
             } else if (window.lovenyStartVideoCall) {
                 window.lovenyStartVideoCall(receiverId);
             }

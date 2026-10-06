@@ -457,6 +457,7 @@
     {% endif %}
     
     {% block extra_scripts %}{% endblock %}
+    {% block extra_js %}{% endblock %}
     {% if user.is_authenticated %}
     <script src="https://js.paystack.co/v1/inline.js" defer></script>
     <script src="https://checkout.flutterwave.com/v3.js" defer></script>

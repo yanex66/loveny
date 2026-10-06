@@ -131,7 +131,9 @@ def _candidate_queryset(user, include_test_profiles=False):
         # Guarantee seeded test profiles immediately appear without being blocked
         # by location, distance, last_active, show_in_discovery, or swipe history filters.
         qs = Profile.objects.exclude(user=user).filter(
-            Q(is_test_profile=True) | Q(user__username__startswith='test_user_')
+            Q(is_test_profile=True)
+            | Q(user__username__startswith='test_')
+            | Q(user__username__startswith='testuser_')
         )
         if target_gender and qs.filter(gender=target_gender).exists():
             qs = qs.filter(gender=target_gender)
@@ -186,7 +188,9 @@ def _candidate_queryset(user, include_test_profiles=False):
             candidates = real_fallback
         elif is_sex_call_mode:
             test_qs = Profile.objects.exclude(user=user).filter(
-                Q(is_test_profile=True) | Q(user__username__startswith='test_user_')
+                Q(is_test_profile=True)
+                | Q(user__username__startswith='test_')
+                | Q(user__username__startswith='testuser_')
             )
             if target_gender and test_qs.filter(gender=target_gender).exists():
                 test_qs = test_qs.filter(gender=target_gender)
@@ -1202,22 +1206,58 @@ def call_initiate_api(request):
     if receiver_id == request.user.pk:
         return JsonResponse({'status': 'error', 'message': 'invalid_receiver'}, status=400)
 
+    receiver = User.objects.filter(pk=receiver_id).first()
+    if not receiver:
+        return JsonResponse({'status': 'error', 'message': 'invalid_receiver'}, status=400)
+
+    receiver_profile = Profile.objects.filter(user=receiver).first()
+    if receiver_profile and getattr(receiver_profile, 'is_dnd', False):
+        return JsonResponse({
+            'status': 'error',
+            'message': 'user_dnd',
+            'detail': f"{receiver.first_name or receiver.username} is currently on Do Not Disturb."
+        }, status=403)
+
     match = Match.objects.filter(
         Q(user1=request.user, user2_id=receiver_id)
         | Q(user2=request.user, user1_id=receiver_id),
-        expires_at__gt=timezone.now(),
     ).first()
-    if not match:
-        return JsonResponse({'status': 'error', 'message': 'active_sex_call_match_required'}, status=403)
-    receiver = match.user2 if match.user1_id == request.user.pk else match.user1
+
+    caller_is_sex_call = bool(
+        caller_profile
+        and (
+            str(caller_profile.relationship_mode).lower() == 'sex_call'
+            or caller_profile.is_test_profile
+            or getattr(caller_profile, 'is_host_ready', False)
+        )
+    )
+    receiver_is_sex_call = bool(
+        receiver_profile
+        and (
+            str(receiver_profile.relationship_mode).lower() == 'sex_call'
+            or receiver_profile.is_test_profile
+            or getattr(receiver_profile, 'is_host_ready', False)
+        )
+    )
+
+    if match:
+        if match.expires_at and match.expires_at <= timezone.now():
+            return JsonResponse({'status': 'error', 'message': 'active_sex_call_match_required'}, status=403)
+    else:
+        if not (caller_is_sex_call or receiver_is_sex_call):
+            return JsonResponse({'status': 'error', 'message': 'active_sex_call_match_required'}, status=403)
+
     call = CallSession.objects.create(
         caller=request.user,
         receiver=receiver,
         status='ringing',
         rate_per_minute=min_coins,
     )
-    return JsonResponse({'status': 'success', 'call': _call_payload(call)}, status=201)
-    return JsonResponse({'status': 'success', 'call': _call_payload(call)}, status=201)
+    return JsonResponse({
+        'status': 'success',
+        'room_id': str(call.room_id),
+        'call': _call_payload(call),
+    }, status=201)
 
 
 @login_required
@@ -1707,12 +1747,20 @@ def online_hosts_api(request):
                 matched_real = real_qs
             hosts = list(matched_real.order_by('-is_host_ready', '-last_active')[:24])
             if len(hosts) < 8:
-                test_qs = base_qs.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_'))
+                test_qs = base_qs.filter(
+                    Q(is_test_profile=True)
+                    | Q(user__username__startswith='test_')
+                    | Q(user__username__startswith='testuser_')
+                )
                 if target_gender and test_qs.filter(gender=target_gender).exists():
                     test_qs = test_qs.filter(gender=target_gender)
                 hosts.extend(list(test_qs[:(8 - len(hosts))]))
         else:
-            test_qs = base_qs.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_'))
+            test_qs = base_qs.filter(
+                Q(is_test_profile=True)
+                | Q(user__username__startswith='test_')
+                | Q(user__username__startswith='testuser_')
+            )
             if target_gender and test_qs.filter(gender=target_gender).exists():
                 test_qs = test_qs.filter(gender=target_gender)
             sc_qs = test_qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
@@ -2743,7 +2791,11 @@ def sex_call_hosts_api(request):
     target_gender = 'F' if user_gender == 'M' else ('M' if user_gender == 'F' else None)
 
     if include_test_profiles:
-        test_qs = base_qs.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_'))
+        test_qs = base_qs.filter(
+            Q(is_test_profile=True)
+            | Q(user__username__startswith='test_')
+            | Q(user__username__startswith='testuser_')
+        )
         if target_gender and test_qs.filter(gender=target_gender).exists():
             test_qs = test_qs.filter(gender=target_gender)
         sc_test = test_qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
@@ -2760,7 +2812,11 @@ def sex_call_hosts_api(request):
                 .order_by('-is_host_ready', '-last_active')[:50]
             )
             if len(hosts_list) < 12:
-                test_qs = base_qs.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_'))
+                test_qs = base_qs.filter(
+                    Q(is_test_profile=True)
+                    | Q(user__username__startswith='test_')
+                    | Q(user__username__startswith='testuser_')
+                )
                 if target_gender and test_qs.filter(gender=target_gender).exists():
                     test_qs = test_qs.filter(gender=target_gender)
                 sc_test = test_qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
@@ -2768,7 +2824,11 @@ def sex_call_hosts_api(request):
                 supplement = list(supplement_qs.select_related('user').prefetch_related('photos')[:(12 - len(hosts_list))])
                 hosts_list.extend(supplement)
         else:
-            test_qs = base_qs.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_'))
+            test_qs = base_qs.filter(
+                Q(is_test_profile=True)
+                | Q(user__username__startswith='test_')
+                | Q(user__username__startswith='testuser_')
+            )
             if target_gender and test_qs.filter(gender=target_gender).exists():
                 test_qs = test_qs.filter(gender=target_gender)
             sc_test = test_qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
