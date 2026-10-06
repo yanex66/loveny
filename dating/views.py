@@ -342,21 +342,169 @@ def public_profile(request, pk):
     qs = Profile.objects.filter(age__gte=18)
     profile = get_object_or_404(qs, user_id=pk)
     viewer_profile = Profile.objects.filter(user=request.user).first()
-    main_photo = profile.photos.filter(is_main=True).first() or profile.photos.first()
-    other_photos = profile.photos.exclude(id=main_photo.id) if main_photo else profile.photos.all()
+    
+    all_photos = list(profile.photos.all())
+    main_photo = profile.photos.filter(is_main=True).first() or (all_photos[0] if all_photos else None)
+    other_photos = [p for p in all_photos if not main_photo or p.id != main_photo.id]
+
     is_sex_call = (
         profile.relationship_mode == 'SEX_CALL'
         or (viewer_profile and viewer_profile.relationship_mode == 'SEX_CALL')
     )
     site_config = SiteConfiguration.get_solo()
+    rate_per_minute = getattr(site_config, 'call_rate_per_minute', 20) or 20
+
+    # Chamet / HiiClub Standards Host Indicators
+    host_levels = ['⭐ New Star', '🔥 Level 2 Host', '💎 Level 3 Star', '👑 VIP Host']
+    host_level = host_levels[(profile.user.id % len(host_levels))]
+
+    flirty_moods = [
+        "Looking for fun video chats tonight 💕",
+        "Let's vibe on call! Say hi 💬",
+        "Free to chat right now, let's talk ✨",
+        "Looking for real energy & good laughs 🥂",
+        "Ready to connect. Hit instant call! 📹",
+    ]
+    mood_line = profile.bio if (profile.bio and len(profile.bio) > 10) else flirty_moods[(profile.user.id % len(flirty_moods))]
+
+    languages = ['English', 'Pidgin']
+    if profile.user.id % 3 == 0:
+        languages.append('Yoruba')
+    elif profile.user.id % 3 == 1:
+        languages.append('Hausa')
+    else:
+        languages.append('Igbo')
+
+    # Gift showcase: count real gifts or show standard showcase
+    real_gifts = (
+        CallGift.objects.filter(receiver=profile.user)
+        .values('gift_type')
+        .annotate(total=Count('id'))
+    )
+    real_map = {g['gift_type']: g['total'] for g in real_gifts}
     
+    base_seed = (profile.user.id * 7) % 50
+    gifts_showcase = [
+        {'icon': '🌹', 'name': 'Rose', 'count': real_map.get('rose', 12 + base_seed % 15)},
+        {'icon': '💋', 'name': 'Kiss', 'count': real_map.get('kiss', 5 + (base_seed * 2) % 10)},
+        {'icon': '🥂', 'name': 'Champagne', 'count': real_map.get('champagne', 2 + base_seed % 6)},
+        {'icon': '👑', 'name': 'Crown', 'count': real_map.get('crown', 1 + base_seed % 3)},
+        {'icon': '💎', 'name': 'Diamond', 'count': real_map.get('car', 1 + (base_seed % 2))},
+    ]
+
+    is_matched = Match.objects.filter(
+        (Q(user1=request.user, user2=profile.user) | Q(user2=request.user, user1=profile.user)),
+        expires_at__gt=timezone.now()
+    ).exists()
+
     return render(request, 'dating/public_profile.html', {
         'profile': profile, 
         'main_photo': main_photo, 
+        'all_photos': all_photos,
         'other_photos': other_photos, 
         'is_own_profile': False,
         'is_sex_call': is_sex_call,
         'site_config': site_config,
+        'rate_per_minute': rate_per_minute,
+        'host_level': host_level,
+        'mood_line': mood_line,
+        'languages': languages,
+        'gifts_showcase': gifts_showcase,
+        'is_matched': is_matched,
+        'response_status': '⚡ Fast Pickup' if (profile.user.id % 2 == 0) else '🟢 Available Now',
+        'is_online': profile.last_active >= timezone.now() - timedelta(minutes=15),
+    })
+
+
+@login_required
+@require_POST
+def quick_connect_api(request, user_id):
+    """
+    ⚡ Match / Connect action from Profile View:
+    Instantly creates or activates a Match record with the target user without swiping.
+    """
+    if request.user.pk == user_id:
+        return JsonResponse({'status': 'error', 'message': 'cannot_match_self'}, status=400)
+
+    target_user = get_object_or_404(User, pk=user_id)
+    target_profile = Profile.objects.filter(user=target_user, age__gte=18).first()
+    if not target_profile:
+        return JsonResponse({'status': 'error', 'message': 'target_not_found'}, status=404)
+
+    Swipe.objects.get_or_create(
+        swiper=request.user,
+        swiped=target_user,
+        defaults={'type': 'LIKE', 'is_direct': True}
+    )
+    Swipe.objects.get_or_create(
+        swiper=target_user,
+        swiped=request.user,
+        defaults={'type': 'LIKE', 'is_direct': True}
+    )
+
+    match, _ = Match.objects.get_or_create(
+        user1=min(request.user, target_user, key=lambda u: u.pk),
+        user2=max(request.user, target_user, key=lambda u: u.pk),
+        defaults={
+            'mode': 'SEX_CALL' if getattr(target_profile, 'relationship_mode', '').upper() == 'SEX_CALL' else 'DATING',
+            'expires_at': timezone.now() + timedelta(days=365),
+        }
+    )
+    if match.expires_at and match.expires_at <= timezone.now():
+        match.expires_at = timezone.now() + timedelta(days=365)
+        match.save(update_fields=['expires_at'])
+
+    return JsonResponse({
+        'status': 'success',
+        'is_matched': True,
+        'match_id': match.id,
+        'message': f'Connected with {target_user.first_name or target_user.username}!'
+    })
+
+
+@login_required
+@require_POST
+def quick_say_hi_api(request, user_id):
+    """
+    💬 Say Hi action from Profile View:
+    Ensures a match & conversation exist and sends an opening intro greeting.
+    Redirects to the chat room.
+    """
+    if request.user.pk == user_id:
+        return JsonResponse({'status': 'error', 'message': 'cannot_chat_self'}, status=400)
+
+    target_user = get_object_or_404(User, pk=user_id)
+    target_profile = Profile.objects.filter(user=target_user, age__gte=18).first()
+    if not target_profile:
+        return JsonResponse({'status': 'error', 'message': 'target_not_found'}, status=404)
+
+    match, _ = Match.objects.get_or_create(
+        user1=min(request.user, target_user, key=lambda u: u.pk),
+        user2=max(request.user, target_user, key=lambda u: u.pk),
+        defaults={
+            'mode': 'SEX_CALL' if getattr(target_profile, 'relationship_mode', '').upper() == 'SEX_CALL' else 'DATING',
+            'expires_at': timezone.now() + timedelta(days=365),
+        }
+    )
+    if match.expires_at and match.expires_at <= timezone.now():
+        match.expires_at = timezone.now() + timedelta(days=365)
+        match.save(update_fields=['expires_at'])
+
+    conversation = _get_or_create_conversation(match)
+
+    if not conversation.messages.exists():
+        ChatMessage.objects.create(
+            conversation=conversation,
+            sender=request.user,
+            text=f"Hey {target_user.first_name or target_user.username}! 👋 Let's connect.",
+            message_type='TEXT'
+        )
+
+    return JsonResponse({
+        'status': 'success',
+        'conversation_id': conversation.id,
+        'redirect_url': reverse('conversation_room', args=[conversation.id]),
+        'chat_url': reverse('chat_room', args=[match.id])
     })
 
 @login_required
@@ -1267,13 +1415,13 @@ def incoming_calls_api(request):
     CallSession.objects.filter(
         receiver=request.user,
         status='ringing',
-        created_at__lt=current_time - timedelta(minutes=5),
-    ).update(status='ended', ended_at=current_time)
+        created_at__lt=current_time - timedelta(seconds=30),
+    ).update(status='missed', ended_at=current_time)
     call = (
         CallSession.objects.filter(
             receiver=request.user,
             status='ringing',
-            created_at__gte=current_time - timedelta(minutes=5),
+            created_at__gte=current_time - timedelta(seconds=30),
         )
         .select_related('caller')
         .order_by('-created_at')
@@ -1300,24 +1448,44 @@ def call_respond_api(request, room_id):
         )
         if call.status != 'ringing':
             return JsonResponse({'status': 'error', 'message': 'call_not_ringing'}, status=409)
-        if call.created_at < timezone.now() - timedelta(minutes=5):
-            call.status = 'ended'
+        if call.created_at < timezone.now() - timedelta(seconds=30):
+            call.status = 'missed'
             call.ended_at = timezone.now()
             call.save(update_fields=['status', 'ended_at'])
-            return JsonResponse({'status': 'error', 'message': 'call_expired'}, status=409)
+            return JsonResponse({'status': 'error', 'message': 'call_missed_or_timeout'}, status=409)
         if action == 'accept':
-            caller_profile = Profile.objects.filter(user=call.caller).first()
+            caller_profile = Profile.objects.select_for_update().filter(user=call.caller).first()
             if not _can_use_sex_call(caller_profile):
                 call.status = 'declined'
                 call.ended_at = timezone.now()
                 call.save(update_fields=['status', 'ended_at'])
                 return JsonResponse({'status': 'error', 'message': 'caller_insufficient_coins'}, status=409)
             call.status = 'connected'
-            call.started_at = timezone.now()
+            now = timezone.now()
+            call.started_at = now
+            call.connected_at = now
+
+            # Billing Starts Only After Pickup:
+            # Deduct the first minute's rate upon connection
+            site_config = SiteConfiguration.get_solo()
+            rate = getattr(call, 'rate_per_minute', site_config.call_rate_per_minute) or site_config.call_rate_per_minute
+            is_unlimited = bool(caller_profile and (caller_profile.user.is_superuser or caller_profile.is_sex_call_premium))
+            if not is_unlimited and caller_profile:
+                deposit = min(caller_profile.coin_balance, rate)
+                caller_profile.coin_balance = max(0, caller_profile.coin_balance - deposit)
+                caller_profile.save(update_fields=['coin_balance'])
+                call.coins_spent = deposit
+                CoinTransaction.objects.create(
+                    user=call.caller,
+                    amount=-deposit,
+                    transaction_type='CALL_DEDUCTION',
+                    call=call,
+                    description=f'Minute 1 video call deposit ({deposit} coins)',
+                )
         else:
             call.status = 'declined'
             call.ended_at = timezone.now()
-        call.save(update_fields=['status', 'started_at', 'ended_at'])
+        call.save(update_fields=['status', 'started_at', 'connected_at', 'ended_at', 'coins_spent'])
     return JsonResponse({'status': 'success', 'call': _call_payload(call)})
 
 
@@ -1330,9 +1498,18 @@ def call_end_api(request, room_id):
             room_id=room_id,
         )
         _call_participants(call, request.user)
-        if call.status not in ('ended', 'declined'):
+        now = timezone.now()
+
+        # If call is still ringing or initiated, cancel or decline without any coin deduction
+        if call.status in ('ringing', 'initiated'):
+            call.status = 'cancelled' if request.user == call.caller else 'declined'
+            call.ended_at = now
+            call.save(update_fields=['status', 'ended_at'])
+            return JsonResponse({'status': 'success', 'call': _call_payload(call)})
+
+        if call.status not in ('ended', 'declined', 'missed', 'cancelled'):
             call.status = 'ended'
-            call.ended_at = timezone.now()
+            call.ended_at = now
             if call.started_at:
                 duration = int((call.ended_at - call.started_at).total_seconds())
                 call.duration_seconds = max(0, duration)
@@ -1343,47 +1520,74 @@ def call_end_api(request, room_id):
                 config = SiteConfiguration.get_solo()
                 grace_period = getattr(config, 'grace_period_seconds', 20)
                 commission = Decimal(getattr(config, 'host_commission_percentage', 70)) / Decimal(100)
+                rate = getattr(call, 'rate_per_minute', config.call_rate_per_minute) or config.call_rate_per_minute
 
                 if call.duration_seconds < grace_period:
+                    refund = call.coins_spent
+                    if caller_profile and refund > 0:
+                        caller_profile.coin_balance += refund
+                        caller_profile.save(update_fields=['coin_balance'])
+                    CoinTransaction.objects.filter(
+                        user=call.caller,
+                        transaction_type='CALL_DEDUCTION',
+                        call=call,
+                    ).delete()
+                    CoinTransaction.objects.create(
+                        user=call.caller,
+                        amount=0,
+                        transaction_type='CALL_REFUND',
+                        call=call,
+                        description=f'Grace period protected: {call.duration_seconds}s < {grace_period}s. 0 coins charged.',
+                    )
                     call.coins_spent = 0
-                    if caller_profile:
-                        CoinTransaction.objects.create(
-                            user=call.caller,
-                            amount=0,
-                            transaction_type='CALL_REFUND',
-                            call=call,
-                            description=f'Grace period protected: {call.duration_seconds}s < {grace_period}s. 0 coins charged.',
-                        )
                 elif not is_unlimited and caller_profile:
                     billed_minutes = max(1, math.ceil(call.duration_seconds / 60))
-                    rate = getattr(call, 'rate_per_minute', config.call_rate_per_minute) or config.call_rate_per_minute
-                    coins_due = billed_minutes * rate
-                    coins_deducted = min(caller_profile.coin_balance, coins_due)
+                    total_due = billed_minutes * rate
+                    additional_due = max(0, total_due - call.coins_spent)
+                    additional_deducted = min(caller_profile.coin_balance, additional_due)
 
-                    if coins_deducted > 0:
-                        caller_profile.coin_balance = max(0, caller_profile.coin_balance - coins_deducted)
+                    if additional_deducted > 0:
+                        caller_profile.coin_balance = max(0, caller_profile.coin_balance - additional_deducted)
                         caller_profile.save(update_fields=['coin_balance'])
-                        call.coins_spent = coins_deducted
+                        call.coins_spent += additional_deducted
 
-                        diamonds_earned = int(Decimal(coins_deducted) * commission)
-                        if receiver_profile and diamonds_earned > 0:
-                            receiver_profile.earned_diamonds += diamonds_earned
-                            receiver_profile.save(update_fields=['earned_diamonds'])
-                            CoinTransaction.objects.create(
-                                user=call.receiver,
-                                amount=diamonds_earned,
-                                transaction_type='CALL_EARNING',
-                                call=call,
-                                description=f'Earned {diamonds_earned} diamonds from {call.duration_seconds}s video call with {call.caller.username}',
-                            )
-
+                    tx = CoinTransaction.objects.filter(
+                        user=call.caller,
+                        transaction_type='CALL_DEDUCTION',
+                        call=call,
+                    ).first()
+                    if tx:
+                        tx.amount = -call.coins_spent
+                        tx.description = f'Deducted {call.coins_spent} coins for {call.duration_seconds}s video call ({billed_minutes}m @ {rate}/min)'
+                        tx.save(update_fields=['amount', 'description'])
+                    else:
                         CoinTransaction.objects.create(
                             user=call.caller,
-                            amount=-coins_deducted,
+                            amount=-call.coins_spent,
                             transaction_type='CALL_DEDUCTION',
                             call=call,
-                            description=f'Deducted {coins_deducted} coins for {call.duration_seconds}s video call ({billed_minutes}m @ {rate}/min)',
+                            description=f'Deducted {call.coins_spent} coins for {call.duration_seconds}s video call ({billed_minutes}m @ {rate}/min)',
                         )
+
+                    diamonds_earned = int(Decimal(call.coins_spent) * commission)
+                    if receiver_profile and diamonds_earned > 0:
+                        receiver_profile.earned_diamonds += diamonds_earned
+                        receiver_profile.save(update_fields=['earned_diamonds'])
+                        CoinTransaction.objects.create(
+                            user=call.receiver,
+                            amount=diamonds_earned,
+                            transaction_type='CALL_EARNING',
+                            call=call,
+                            description=f'Earned {diamonds_earned} diamonds from {call.duration_seconds}s video call with {call.caller.username}',
+                        )
+                elif is_unlimited and receiver_profile:
+                    billed_minutes = max(1, math.ceil(call.duration_seconds / 60))
+                    simulated_coins = billed_minutes * rate
+                    diamonds_earned = int(Decimal(simulated_coins) * commission)
+                    if diamonds_earned > 0:
+                        receiver_profile.earned_diamonds += diamonds_earned
+                        receiver_profile.save(update_fields=['earned_diamonds'])
+
             call.save(update_fields=['status', 'ended_at', 'duration_seconds', 'coins_spent'])
     return JsonResponse({'status': 'success', 'call': _call_payload(call)})
 

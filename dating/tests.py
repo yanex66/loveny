@@ -6,6 +6,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django import forms
+from django.db.models import Q
 from django.contrib.auth.models import User
 from django.core import mail
 from django.core.management import call_command, CommandError
@@ -176,10 +177,14 @@ class DatingPlatformTests(TestCase):
                 self.assertTrue(first_profile.show_in_discovery)
                 self.assertTrue(first_profile.photos.filter(is_main=True).exists())
                 photos = ProfilePhoto.objects.filter(profile__in=profiles)
-                self.assertEqual(photos.count(), 200)
+                self.assertGreaterEqual(photos.count(), 400)
+                self.assertLessEqual(photos.count(), 800)
+                for p in profiles[:10]:
+                    self.assertGreaterEqual(p.photos.count(), 2)
+                    self.assertLessEqual(p.photos.count(), 4)
                 image_names = set(photos.values_list('image', flat=True))
-                self.assertEqual(len(image_names), 2)
-                self.assertTrue(all(default_storage.exists(name) for name in image_names))
+                self.assertGreater(len(image_names), 10)
+                self.assertTrue(all(default_storage.exists(name) for name in list(image_names)[:20]))
                 self.assertIn('Total isolated test profiles: 200', output.getvalue())
 
     def test_hookup_discovery_applies_distance_filter(self):
@@ -1206,13 +1211,13 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(gift_res.status_code, 200)
         gift_data = gift_res.json()
         self.assertEqual(gift_data['status'], 'success')
-        self.assertEqual(gift_data['caller_coins'], 50)
+        self.assertEqual(gift_data['caller_coins'], 30)
         # 70% of 50 = 35 diamonds
         self.assertEqual(gift_data['diamond_award'], 35)
 
         self.alice_profile.refresh_from_db()
         self.bob_profile.refresh_from_db()
-        self.assertEqual(self.alice_profile.coin_balance, 50)
+        self.assertEqual(self.alice_profile.coin_balance, 30)
         self.assertEqual(self.bob_profile.earned_diamonds, 35)
 
         self.assertTrue(
@@ -1312,7 +1317,7 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(gift_res.status_code, 200)
         g_data = gift_res.json()
         self.assertEqual(g_data['gift']['coins'], 75)
-        self.assertEqual(g_data['caller_coins'], 25)
+        self.assertEqual(g_data['caller_coins'], 5)
         # Commission is 70% of 75 = 52 diamonds
         self.assertEqual(g_data['diamond_award'], 52)
 
@@ -1697,6 +1702,113 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(res_grid.status_code, 200)
         grid_hosts = res_grid.json()['hosts']
         self.assertTrue(any(h['id'] == test_profile.pk for h in grid_hosts))
+
+    def test_direct_calling_without_match_in_sex_call_mode_and_dnd_check(self):
+        host_user, host_profile = self.make_profile('host_linda', mode='SEX_CALL', age=23)
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.coin_balance = 50
+        self.alice_profile.save()
+
+        # No match exists between Alice and host_linda
+        self.assertFalse(Match.objects.filter(user1=self.alice, user2=host_user).exists())
+
+        # Calling host when DND is enabled returns 403 user_dnd
+        host_profile.is_dnd = True
+        host_profile.save(update_fields=['is_dnd'])
+
+        self.client.force_login(self.alice)
+        res = self.post_json(reverse('call_initiate_api'), {'receiver_id': host_user.pk})
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.json()['message'], 'user_dnd')
+
+        # When DND is disabled, call initiates with ringing status and zero upfront deduction
+        host_profile.is_dnd = False
+        host_profile.save(update_fields=['is_dnd'])
+
+        res = self.post_json(reverse('call_initiate_api'), {'receiver_id': host_user.pk})
+        self.assertEqual(res.status_code, 201)
+        self.assertIn('room_id', res.json())
+        call = CallSession.objects.get(room_id=res.json()['room_id'])
+        self.assertEqual(call.status, 'ringing')
+        self.assertEqual(call.coins_spent, 0)
+        # Alice's coin balance is untouched while dialing
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 50)
+
+    def test_declined_and_cancelled_calls_do_not_deduct_coins(self):
+        host_user, host_profile = self.make_profile('host_sarah', mode='SEX_CALL', age=24)
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.coin_balance = 50
+        self.alice_profile.save()
+
+        # 1. Host declines call
+        self.client.force_login(self.alice)
+        res = self.post_json(reverse('call_initiate_api'), {'receiver_id': host_user.pk})
+        room_id = res.json()['room_id']
+
+        self.client.force_login(host_user)
+        dec_res = self.post_json(reverse('call_respond_api', args=[room_id]), {'action': 'decline'})
+        self.assertEqual(dec_res.status_code, 200)
+
+        call = CallSession.objects.get(room_id=room_id)
+        self.assertEqual(call.status, 'declined')
+        self.assertEqual(call.coins_spent, 0)
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 50)
+
+        # 2. Caller cancels call before answer
+        self.client.force_login(self.alice)
+        res2 = self.post_json(reverse('call_initiate_api'), {'receiver_id': host_user.pk})
+        room_id2 = res2.json()['room_id']
+
+        cancel_res = self.post_json(reverse('call_end_api', args=[room_id2]), {})
+        self.assertEqual(cancel_res.status_code, 200)
+
+        call2 = CallSession.objects.get(room_id=room_id2)
+        self.assertEqual(call2.status, 'cancelled')
+        self.assertEqual(call2.coins_spent, 0)
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 50)
+
+    def test_quick_connect_and_say_hi_apis(self):
+        target_user, target_profile = self.make_profile('target_john', mode='SEX_CALL', age=25)
+        self.client.force_login(self.alice)
+
+        # Quick connect (⚡ Match / Connect)
+        conn_res = self.client.post(reverse('quick_connect_api', args=[target_user.pk]))
+        self.assertEqual(conn_res.status_code, 200)
+        self.assertTrue(conn_res.json()['is_matched'])
+        self.assertTrue(Match.objects.filter(
+            Q(user1=self.alice, user2=target_user) | Q(user2=self.alice, user1=target_user)
+        ).exists())
+
+        # Quick say hi (💬 Say Hi)
+        hi_res = self.client.post(reverse('quick_say_hi_api', args=[target_user.pk]))
+        self.assertEqual(hi_res.status_code, 200)
+        self.assertIn('redirect_url', hi_res.json())
+        conv = Conversation.objects.filter(participants=self.alice).filter(participants=target_user).first()
+        self.assertIsNotNone(conv)
+        self.assertTrue(conv.messages.filter(sender=self.alice).exists())
+
+    def test_public_profile_view_chamet_standards(self):
+        target_user, target_profile = self.make_profile('host_bella', mode='SEX_CALL', age=22)
+        # Add 3 photos
+        p1 = ProfilePhoto.objects.create(profile=target_profile, image='profile_media/staff_test_f.svg', is_main=True)
+        p2 = ProfilePhoto.objects.create(profile=target_profile, image='profile_media/staff_test_m.svg', is_main=False)
+        p3 = ProfilePhoto.objects.create(profile=target_profile, image='profile_media/staff_test_f.svg', is_main=False)
+
+        self.client.force_login(self.alice)
+        res = self.client.get(reverse('public_profile', args=[target_user.pk]))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'Instant Video Call')
+        self.assertContains(res, 'Say Hi')
+        self.assertContains(res, 'Match')
+        self.assertContains(res, 'Identity Gallery')
+        self.assertContains(res, 'Voice Intro')
+        self.assertContains(res, 'Gifts Received')
+        self.assertContains(res, 'Languages Spoken')
+        self.assertContains(res, 'Call Rate')
+
 
 
 

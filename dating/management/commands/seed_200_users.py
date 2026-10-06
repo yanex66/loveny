@@ -144,14 +144,23 @@ class Command(BaseCommand):
                 profile.save()
                 profile.tags.set(rng.sample(tags, 5))
 
-                if not profile.photos.exists():
-                    photo = ProfilePhoto(
-                        profile=profile,
-                        image=avatar_names[gender],
-                        is_main=True,
-                    )
-                    photo.save()
-                    created_photos += 1
+                desired_photos = 2 + (offset % 3)  # 2 to 4 diverse photos per profile
+                current_photos = profile.photos.count()
+                if current_photos < desired_photos:
+                    has_main = profile.photos.filter(is_main=True).exists()
+                    for p_idx in range(current_photos, desired_photos):
+                        p_name = f'profile_media/staff_test_{number}_{p_idx}.svg'
+                        if not default_storage.exists(p_name):
+                            default_storage.save(
+                                p_name,
+                                ContentFile(make_avatar(number * 10 + p_idx, gender).encode('utf-8')),
+                            )
+                        ProfilePhoto.objects.create(
+                            profile=profile,
+                            image=p_name,
+                            is_main=(not has_main and p_idx == 0),
+                        )
+                        created_photos += 1
 
         total_test_profiles = Profile.objects.filter(is_test_profile=True).count()
         self.stdout.write(self.style.SUCCESS(

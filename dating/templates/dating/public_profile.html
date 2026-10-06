@@ -1,145 +1,234 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}{{ profile.user.username }}'s Profile | LOVENY{% endblock %}
 
-{% block content %}
-<div class="relative mx-auto min-h-screen w-full max-w-md overflow-hidden bg-gradient-to-br from-rose-50 via-white to-orange-50 pb-40 font-sans text-slate-900 shadow-2xl">
+{% block extra_head %}
+<style>
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    @keyframes voice-wave {
+        0%, 100% { height: 4px; }
+        50% { height: 14px; }
+    }
+    .wave-bar-1 { animation: voice-wave 0.8s ease-in-out infinite; }
+    .wave-bar-2 { animation: voice-wave 0.8s ease-in-out infinite 0.2s; }
+    .wave-bar-3 { animation: voice-wave 0.8s ease-in-out infinite 0.4s; }
+</style>
+{% endblock %}
 
-    <div class="absolute top-0 left-0 w-full z-20 p-4 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
-        <button onclick="history.back()" class="pointer-events-auto w-10 h-10 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-pink-700 border border-pink-100 hover:bg-white transition shadow-lg">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+{% block content %}
+<div class="relative mx-auto min-h-screen w-full max-w-md overflow-hidden bg-slate-950 pb-52 font-sans text-white shadow-2xl">
+
+    <!-- Top Navigation Bar (Glass Overlay) -->
+    <div class="absolute top-0 left-0 w-full z-30 p-4 flex justify-between items-center bg-gradient-to-b from-black/80 via-black/30 to-transparent pointer-events-none">
+        <button onclick="history.back()" aria-label="Back" class="pointer-events-auto h-10 w-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white border border-white/20 hover:bg-black/60 transition shadow-lg">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
         </button>
         
-        <div class="relative group pointer-events-auto">
-            <button class="w-10 h-10 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-pink-700 border border-pink-100 hover:bg-white transition shadow-lg">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/></svg>
+        <div class="flex items-center gap-2 pointer-events-auto">
+            <button onclick="shareProfile()" aria-label="Share" class="h-10 w-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white border border-white/20 hover:bg-black/60 transition shadow-lg">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
             </button>
-            <div class="absolute right-0 mt-2 w-44 bg-white border border-pink-100 rounded-2xl shadow-2xl overflow-hidden hidden group-hover:block z-50">
-                <button onclick="shareProfile()" class="w-full text-left px-5 py-4 text-xs font-black uppercase tracking-widest text-slate-700 hover:bg-rose-50 transition border-b border-rose-100">Share Profile</button>
-                <button onclick="reportUser()" class="w-full text-left px-5 py-4 text-xs font-black uppercase tracking-widest text-red-600 hover:bg-red-50 transition">Report User</button>
-            </div>
         </div>
     </div>
 
-    <div class="relative h-[58vh] min-h-[360px] max-h-[560px] w-full cursor-pointer group" 
-         onclick="handleLightbox(this)"
-         data-url="{{ main_photo.image.url }}"
-         data-is-video="{{ main_photo.is_video|yesno:'true,false' }}">
-        {% if main_photo.is_video %}
-            <video src="{{ main_photo.image.url }}" class="w-full h-full object-cover" autoplay muted loop playsinline></video>
-        {% elif main_photo %}
-            <img src="{{ main_photo.image.url }}" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105">
-        {% else %}
-            <div class="w-full h-full bg-rose-50 flex items-center justify-center">
-                <span class="text-slate-400 font-black uppercase tracking-tighter text-2xl italic opacity-60 sm:text-3xl">No Media</span>
-            </div>
-        {% endif %}
-        <div class="absolute inset-0 bg-gradient-to-t from-gray-950 via-transparent to-transparent pointer-events-none"></div>
-        
-        <div class="absolute bottom-0 left-0 w-full p-8">
-            <div class="flex items-center gap-3 mb-2">
-                <h1 class="break-words text-2xl font-black text-white italic drop-shadow-2xl leading-tight tracking-tighter sm:text-3xl">
+    <!-- Multi-Photo Hero Carousel -->
+    <div class="relative h-[62vh] min-h-[380px] max-h-[580px] w-full bg-slate-900 select-none overflow-hidden" id="hero-carousel-container">
+        <!-- Story / Photo Indicator Pips -->
+        <div id="carousel-pips" class="absolute top-4 left-16 right-16 z-30 flex gap-1.5 justify-center">
+            {% for p in all_photos %}
+            <div class="carousel-pip flex-1 h-1 rounded-full {% if forloop.first %}bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]{% else %}bg-white/40{% endif %} transition-all duration-300"></div>
+            {% empty %}
+            <div class="carousel-pip flex-1 h-1 rounded-full bg-white"></div>
+            {% endfor %}
+        </div>
+
+        <!-- Left / Right Tap Zones -->
+        <div class="absolute inset-y-0 left-0 w-1/3 z-20 cursor-pointer" onclick="prevPhoto()" aria-label="Previous photo"></div>
+        <div class="absolute inset-y-0 right-0 w-1/3 z-20 cursor-pointer" onclick="nextPhoto()" aria-label="Next photo"></div>
+
+        <!-- Hero Photo Display -->
+        <div id="hero-media-wrapper" class="w-full h-full cursor-zoom-in" onclick="openCurrentInLightbox()">
+            {% if main_photo.is_video %}
+                <video id="hero-video" src="{{ main_photo.image.url }}" class="w-full h-full object-cover" autoplay muted loop playsinline></video>
+                <img id="hero-img" src="" class="w-full h-full object-cover hidden">
+            {% elif main_photo %}
+                <img id="hero-img" src="{{ main_photo.image.url }}" class="w-full h-full object-cover transition-transform duration-700">
+                <video id="hero-video" src="" class="w-full h-full object-cover hidden" autoplay muted loop playsinline></video>
+            {% else %}
+                <div class="w-full h-full bg-gradient-to-tr from-slate-900 via-rose-950 to-slate-900 flex items-center justify-center">
+                    <span class="text-white/40 font-black uppercase text-xl">Host Profile</span>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Bottom Gradient Vignette -->
+        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent pointer-events-none"></div>
+
+        <!-- Hero Overlay Details -->
+        <div class="absolute bottom-3 left-4 right-4 z-20 pointer-events-none">
+            <div class="flex items-center gap-2 mb-1">
+                <h1 class="text-2xl sm:text-3xl font-black text-white italic drop-shadow-md tracking-tight">
                     {{ profile.user.username }}
                 </h1>
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/90 text-white text-[10px] font-black uppercase tracking-wider backdrop-blur-sm shadow-sm">
-                    <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                <span class="text-2xl font-black text-pink-400 drop-shadow-md">, {{ profile.age }}</span>
+                {% if profile.is_verified %}
+                <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-white shadow-sm" title="Verified">
+                    <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 5.29a1 1 0 0 1 .006 1.414l-7.2 7.26a1 1 0 0 1-1.42.002l-3.8-3.8a1 1 0 0 1 1.414-1.414l3.09 3.09 6.493-6.546a1 1 0 0 1 1.417-.006Z" clip-rule="evenodd"/></svg>
+                </span>
+                {% endif %}
+            </div>
+
+            <div class="flex items-center gap-2 text-xs font-semibold text-white/80">
+                <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 px-2 py-0.5 text-[10px] font-black text-emerald-300">
+                    <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                     Online
                 </span>
-                {% if profile.is_verified %}
-                <svg class="w-5 h-5 text-blue-400 fill-current" viewBox="0 0 24 24"><path d="M22.5 12.5c0-1.58-.875-2.95-2.148-3.6.154-.435.238-.905.238-1.4 0-2.21-1.71-3.998-3.818-3.998-.47 0-.92.084-1.336.25C14.818 2.415 13.51 1.5 12 1.5s-2.816.917-3.437 2.25c-.415-.165-.866-.25-1.336-.25-2.11 0-3.818 1.79-3.818 4 0 .495.083.965.238 1.4-1.272.65-2.147 2.02-2.147 3.6 0 1.457.748 2.73 1.844 3.468-.092.44-.145.895-.145 1.365 0 2.66 2.305 4.817 5.148 4.817.65 0 1.267-.113 1.84-.32.617.896 1.636 1.487 2.813 1.487s2.196-.59 2.813-1.487c.573.207 1.19.32 1.84.32 2.843 0 5.148-2.157 5.148-4.817 0-.47-.053-.925-.145-1.365 1.097-.738 1.845-2.012 1.845-3.468zm-9.337 2.716l-3.328-3.328 1.37-1.37 1.96 1.958 4.67-4.67 1.368 1.37-6.04 6.04z"/></svg>
-                {% endif %}
-            </div>
-            <div class="flex items-center gap-3">
-                <span class="text-pink-500 font-black text-2xl italic sm:text-3xl">{{ profile.age }}</span>
-                <span class="text-white/90 text-sm font-black uppercase tracking-widest">• {{ profile.location|default:"Lekki, Lagos" }}</span>
-            </div>
-            <div class="mt-3 flex flex-wrap gap-2">
-                <span class="rounded-full bg-white/10 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-white">{{ profile.get_relationship_mode_display }}</span>
-                {% if profile.is_verified %}
-                    <span class="rounded-full bg-blue-500/80 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-white">Verified</span>
-                {% endif %}
-                {% if profile.is_vip %}
-                    <span class="rounded-full bg-yellow-400 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-black">VIP</span>
-                {% endif %}
+                <span>•</span>
+                <span>{{ profile.location|default:"Lekki, Lagos" }}</span>
+                <span>•</span>
+                <span class="text-amber-300 font-bold">🪙 {{ rate_per_minute }}/m</span>
             </div>
         </div>
     </div>
 
-    <div class="soft-card px-5 py-8 sm:px-8 space-y-10 -mt-10 relative z-10 rounded-t-[2rem] shadow-2xl">
-        {% if not is_sex_call and profile.relationship_mode != 'SEX_CALL' %}
-            {% if profile.bio %}
-            <div class="max-w-md">
-                <h3 class="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-4 ml-1">The Vibe</h3>
-                <p class="text-slate-800 text-xl leading-relaxed font-medium italic">"{{ profile.bio }}"</p>
-            </div>
-            {% endif %}
+    <!-- Main Content Body -->
+    <div class="relative z-10 px-4 pt-3 space-y-4">
 
-            {% if profile.tags.all %}
+        <!-- Chamet / HiiClub Standards Host Stats Ribbon -->
+        <div class="grid grid-cols-3 gap-2 p-3 rounded-3xl bg-slate-900/90 border border-white/10 shadow-xl backdrop-blur-md text-center">
+            <div class="flex flex-col items-center justify-center">
+                <span class="text-[9px] uppercase font-black tracking-widest text-amber-400">Call Rate</span>
+                <span class="text-xs sm:text-sm font-black text-white mt-0.5 flex items-center gap-1">
+                    <span>🪙</span><span>{{ rate_per_minute }} / min</span>
+                </span>
+            </div>
+            <div class="flex flex-col items-center justify-center border-x border-white/10">
+                <span class="text-[9px] uppercase font-black tracking-widest text-emerald-400">Pickup</span>
+                <span class="text-xs sm:text-sm font-black text-white mt-0.5">{{ response_status }}</span>
+            </div>
+            <div class="flex flex-col items-center justify-center">
+                <span class="text-[9px] uppercase font-black tracking-widest text-rose-400">Host Rank</span>
+                <span class="text-xs sm:text-sm font-black text-white mt-0.5">{{ host_level }}</span>
+            </div>
+        </div>
+
+        <!-- Flirty Mood Line & Short Voice Greeting Preview -->
+        <div class="rounded-3xl border border-pink-500/20 bg-gradient-to-r from-pink-950/40 via-purple-950/30 to-slate-900/80 p-4 shadow-lg backdrop-blur-md">
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-1.5">
+                    <span class="text-xs">✨</span>
+                    <span class="text-[10px] font-black uppercase tracking-widest text-pink-400">Mood &amp; Vibe</span>
+                </div>
+
+                <!-- Chamet-Style Voice Greeting Preview Player -->
+                <button type="button" id="voice-preview-btn" onclick="toggleVoiceGreeting()"
+                        class="flex items-center gap-1.5 rounded-full bg-pink-500/20 border border-pink-400/40 px-3 py-1 text-[10px] font-black uppercase text-pink-300 hover:bg-pink-500/30 active:scale-95 transition shadow-sm"
+                        title="Voice Preview">
+                    <span id="voice-btn-icon">▶</span>
+                    <span id="voice-btn-text">Voice Intro</span>
+                    <div id="voice-equalizer" class="flex items-end gap-0.5 h-3.5 hidden">
+                        <span class="w-1 bg-pink-400 rounded-full wave-bar-1"></span>
+                        <span class="w-1 bg-pink-400 rounded-full wave-bar-2"></span>
+                        <span class="w-1 bg-pink-400 rounded-full wave-bar-3"></span>
+                    </div>
+                </button>
+            </div>
+            <p class="text-sm font-bold italic text-white/95 leading-relaxed">
+                “{{ mood_line }}”
+            </p>
+        </div>
+
+        <!-- Languages Spoken -->
+        <div class="rounded-3xl bg-slate-900/70 border border-white/10 p-4">
+            <h3 class="text-[10px] font-black uppercase tracking-widest text-white/50 mb-2.5">Languages Spoken</h3>
             <div class="flex flex-wrap gap-2">
-                {% for tag in profile.tags.all %}
-                <span class="px-4 py-2 bg-rose-50 rounded-2xl text-[10px] font-black text-slate-600 border border-rose-100 uppercase tracking-widest">
-                    #{{ tag.name }}
+                {% for lang in languages %}
+                <span class="rounded-full bg-white/10 border border-white/10 px-3 py-1 text-xs font-bold text-white flex items-center gap-1">
+                    <span>🗣️</span><span>{{ lang }}</span>
                 </span>
                 {% endfor %}
             </div>
-            {% endif %}
-        {% endif %}
+        </div>
 
-        <section>
-            <h3 class="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-6 ml-1">Identity Gallery</h3>
-            <div class="grid grid-cols-2 gap-3">
-                {% for photo in other_photos %}
-                <div class="aspect-[3/4] rounded-[2rem] overflow-hidden bg-white border border-rose-100 cursor-pointer shadow-xl group" 
-                     onclick="handleLightbox(this)"
-                     data-url="{{ photo.image.url }}"
-                     data-is-video="{{ photo.is_video|yesno:'true,false' }}">
-                    {% if photo.is_video %}
-                        <video src="{{ photo.image.url }}" class="w-full h-full object-cover group-hover:scale-110 transition duration-700"></video>
-                    {% else %}
-                        <img src="{{ photo.image.url }}" class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
-                    {% endif %}
+        <!-- Gift Showcase (Chamet / HiiClub Standard) -->
+        <div class="rounded-3xl bg-slate-900/70 border border-white/10 p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-[10px] font-black uppercase tracking-widest text-white/50">Gifts Received</h3>
+                <span class="text-[10px] font-extrabold text-pink-400">Host Showcase</span>
+            </div>
+            <div class="grid grid-cols-5 gap-2 text-center">
+                {% for g in gifts_showcase %}
+                <div class="flex flex-col items-center justify-center p-2 rounded-2xl bg-white/5 border border-white/10 shadow-sm">
+                    <span class="text-xl sm:text-2xl">{{ g.icon }}</span>
+                    <span class="text-[10px] font-black text-white/90 mt-1">×{{ g.count }}</span>
                 </div>
                 {% endfor %}
             </div>
-        </section>
+        </div>
+
+        <!-- Identity Gallery (Horizontal Thumbnail Rail) -->
+        <div class="rounded-3xl bg-slate-900/70 border border-white/10 p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-[10px] font-black uppercase tracking-widest text-white/50">Identity Gallery</h3>
+                <span class="text-xs font-bold text-white/40">{{ all_photos|length }} Photos</span>
+            </div>
+            <div class="flex gap-2.5 overflow-x-auto no-scrollbar pb-1 scroll-smooth">
+                {% for photo in all_photos %}
+                <div class="shrink-0 w-24 aspect-[3/4] rounded-2xl overflow-hidden bg-slate-800 border-2 {% if photo == main_photo %}border-pink-500 shadow-lg shadow-pink-500/20{% else %}border-white/10{% endif %} cursor-pointer hover:scale-105 transition-transform duration-200 relative group"
+                     onclick="openLightboxByIndex({{ forloop.counter0 }})">
+                    {% if photo.is_video %}
+                    <video src="{{ photo.image.url }}" class="w-full h-full object-cover"></video>
+                    <span class="absolute bottom-1 right-1 rounded-full bg-black/70 px-1 py-0.5 text-[8px] font-black text-white">▶</span>
+                    {% else %}
+                    <img src="{{ photo.image.url }}" alt="" class="w-full h-full object-cover">
+                    {% endif %}
+                    {% if photo.is_main %}
+                    <span class="absolute top-1 left-1 rounded-full bg-pink-600 px-1.5 py-0.2 text-[8px] font-black text-white uppercase">Main</span>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <p class="text-xs text-white/40 italic">No gallery photos added yet.</p>
+                {% endfor %}
+            </div>
+        </div>
+
     </div>
 
-    <div class="fixed bottom-[calc(7rem+env(safe-area-inset-bottom))] left-1/2 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 px-4 flex justify-center items-center gap-3 z-40 pointer-events-none">
-        {% if is_sex_call or profile.relationship_mode == 'SEX_CALL' %}
+    <!-- FLOATING ACTION CONTROLS (Chamet / HiiClub Standard) -->
+    <div class="fixed bottom-[calc(5.2rem+env(safe-area-inset-bottom))] left-1/2 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 px-2 z-40 space-y-2 pointer-events-auto">
+
+        <!-- Row 1: Side-by-side Quick Actions: [ 💬 Say Hi ] and [ ⚡ Match / Connect ] -->
+        <div class="grid grid-cols-2 gap-2">
+            <button type="button" id="say-hi-btn" onclick="sayHiAction()"
+                    class="flex items-center justify-center gap-1.5 rounded-2xl bg-slate-900/90 border border-white/20 py-3 text-xs font-black uppercase tracking-wider text-white shadow-xl backdrop-blur-md hover:bg-slate-800 active:scale-95 transition">
+                <span class="text-base">💬</span>
+                <span id="say-hi-label">Say Hi</span>
+            </button>
+
+            <button type="button" id="connect-btn" onclick="connectAction()"
+                    class="flex items-center justify-center gap-1.5 rounded-2xl {% if is_matched %}bg-emerald-600 text-white border border-emerald-400{% else %}bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow-pink-500/25{% endif %} py-3 text-xs font-black uppercase tracking-wider shadow-xl active:scale-95 transition">
+                <span id="connect-icon">{% if is_matched %}❤️{% else %}⚡{% endif %}</span>
+                <span id="connect-label">{% if is_matched %}Connected{% else %}Match{% endif %}</span>
+            </button>
+        </div>
+
+        <!-- Row 2: Full-Bleed INSTANT VIDEO CALL Bar -->
         <button type="button"
-                data-call-target-id="{{ profile.user.id }}"
-                data-call-target-name="{{ profile.user.username }}"
-                onclick="window.lovenyStartVideoCall && window.lovenyStartVideoCall({{ profile.user.id }})"
-                class="pointer-events-auto flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 px-8 py-4 text-white font-black text-sm uppercase tracking-wider shadow-2xl border-2 border-white active:scale-95 transition hover:scale-105"
-                title="Direct Video Call">
+                id="instant-call-btn"
+                onclick="startDirectCall({{ profile.user.id }}, '{{ profile.user.username }}')"
+                class="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 via-rose-500 to-pink-600 py-4 text-white font-black text-sm uppercase tracking-wider shadow-2xl shadow-rose-500/40 border-2 border-white/20 active:scale-95 hover:scale-[1.01] transition"
+                title="Instant Video Call">
             <span class="text-xl">📹</span>
             <span>Instant Video Call</span>
-            <span class="rounded-full bg-black/35 px-2.5 py-0.5 text-xs text-amber-200 font-bold">🪙{{ site_config.call_rate_per_minute|default:20 }}/m</span>
+            <span class="rounded-full bg-black/40 px-2.5 py-0.5 text-xs text-amber-300 font-black">🪙 {{ rate_per_minute }}/m</span>
         </button>
-        {% else %}
-        <button onclick="handleSwipe('PASS')" class="pointer-events-auto w-14 h-14 rounded-full bg-gray-950 border-2 border-red-500 text-red-500 flex items-center justify-center shadow-2xl active:scale-90 transition hover:bg-red-500 hover:text-white backdrop-blur-md">
-            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
-        </button>
-        <button type="button"
-                data-call-target-id="{{ profile.user.id }}"
-                data-call-target-name="{{ profile.user.username }}"
-                onclick="window.lovenyStartVideoCall && window.lovenyStartVideoCall({{ profile.user.id }})"
-                class="pointer-events-auto flex items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 px-5 py-3.5 text-white font-black text-xs uppercase tracking-wider shadow-2xl border-2 border-white active:scale-90 transition hover:scale-105"
-                title="Direct Video Call">
-            <span class="text-base">📹</span>
-            <span>Call Now</span>
-            <span class="rounded-full bg-black/35 px-1.5 py-0.5 text-[10px] text-amber-200 font-bold">🪙{{ site_config.call_rate_per_minute|default:20 }}/m</span>
-        </button>
-        <button onclick="handleSwipe('LIKE')" class="pointer-events-auto w-16 h-16 rounded-full bg-gradient-to-tr from-pink-600 to-purple-600 text-white flex items-center justify-center shadow-2xl border-4 border-gray-950 active:scale-90 transition hover:scale-110">
-            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-        </button>
-        {% endif %}
     </div>
 
-    <div id="lightbox" class="fixed inset-0 bg-black/98 z-[100] hidden items-center justify-center p-4 backdrop-blur-2xl transition-all duration-500" onclick="closeLightbox()">
-        <button class="absolute top-8 right-8 text-white/40 hover:text-white transition-colors">
-            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-        </button>
+    <!-- Lightbox Modal -->
+    <div id="lightbox" class="fixed inset-0 bg-black/95 z-[100] hidden items-center justify-center p-4 backdrop-blur-2xl transition-all duration-300" onclick="closeLightbox()">
+        <button class="absolute top-6 right-6 text-white/60 hover:text-white transition-colors text-2xl font-black">✕</button>
         <div class="relative max-w-full max-h-[85vh] shadow-2xl rounded-3xl overflow-hidden border border-white/10" onclick="event.stopPropagation()">
             <img id="lightbox-img" src="" class="max-w-full max-h-[85vh] object-contain hidden">
             <video id="lightbox-video" src="" class="max-w-full max-h-[85vh] hidden" controls autoplay loop playsinline></video>
@@ -148,69 +237,275 @@
 </div>
 
 <script>
-    // NEW: Function to safely bridge Django and JavaScript
-    function handleLightbox(element) {
-        const url = element.getAttribute('data-url');
-        const isVideo = element.getAttribute('data-is-video') === 'true';
-        openLightbox(url, isVideo);
-    }
+(() => {
+    const TARGET_USER_ID = {{ profile.user.id }};
+    const TARGET_USERNAME = "{{ profile.user.username }}";
+    const CSRF_TOKEN = "{{ csrf_token }}";
 
-    function openLightbox(url, isVideo) {
-        const lightbox = document.getElementById('lightbox');
-        const img = document.getElementById('lightbox-img');
-        const vid = document.getElementById('lightbox-video');
-        if (isVideo) {
+    // Photos data list
+    const photos = [
+        {% for p in all_photos %}
+        { url: "{{ p.image.url }}", isVideo: {{ p.is_video|yesno:'true,false' }} },
+        {% endfor %}
+    ];
+
+    let currentPhotoIndex = 0;
+
+    // Carousel Navigation
+    function updateCarousel() {
+        if (!photos.length) return;
+        const current = photos[currentPhotoIndex];
+        const img = document.getElementById('hero-img');
+        const vid = document.getElementById('hero-video');
+
+        if (current.isVideo) {
             img.classList.add('hidden');
             vid.classList.remove('hidden');
-            vid.src = url;
+            vid.src = current.url;
             vid.play();
         } else {
             vid.classList.add('hidden');
             vid.pause();
             img.classList.remove('hidden');
-            img.src = url;
+            img.src = current.url;
         }
-        lightbox.classList.remove('hidden');
-        lightbox.classList.add('flex');
-        document.body.style.overflow = 'hidden'; 
-    }
 
-    function closeLightbox() {
-        const lightbox = document.getElementById('lightbox');
-        document.getElementById('lightbox-video').pause();
-        lightbox.classList.add('hidden');
-        lightbox.classList.remove('flex');
-        document.body.style.overflow = 'auto';
-    }
-
-    const TARGET_USER_ID = "{{ profile.user.id }}";
-    const ACTION_URL = "{% url 'swipe_action' %}";
-    const CSRF_TOKEN = "{{ csrf_token }}";
-
-    function handleSwipe(action) {
-        fetch(ACTION_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
-            body: JSON.stringify({ 'target_user_id': TARGET_USER_ID, 'action': action })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                window.location.href = "{% url 'match_list' %}";
+        // Update pip styles
+        const pips = document.querySelectorAll('.carousel-pip');
+        pips.forEach((pip, idx) => {
+            if (idx === currentPhotoIndex) {
+                pip.className = 'carousel-pip flex-1 h-1 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)] transition-all duration-300';
+            } else {
+                pip.className = 'carousel-pip flex-1 h-1 rounded-full bg-white/40 transition-all duration-300';
             }
         });
     }
 
-    function shareProfile() {
-        if (navigator.share) {
-            navigator.share({ title: 'LOVENY Profile', url: window.location.href });
-        } else {
-            alert('Link copied to clipboard!');
-        }
-    }
+    window.nextPhoto = () => {
+        if (!photos.length) return;
+        currentPhotoIndex = (currentPhotoIndex + 1) % photos.length;
+        updateCarousel();
+    };
 
-    function reportUser() {
-        if(confirm('Report this user?')) alert('Reported.');
-    }
+    window.prevPhoto = () => {
+        if (!photos.length) return;
+        currentPhotoIndex = (currentPhotoIndex - 1 + photos.length) % photos.length;
+        updateCarousel();
+    };
+
+    window.goToPhoto = (idx) => {
+        if (idx >= 0 && idx < photos.length) {
+            currentPhotoIndex = idx;
+            updateCarousel();
+        }
+    };
+
+    // Lightbox Logic
+    window.openCurrentInLightbox = () => {
+        openLightboxByIndex(currentPhotoIndex);
+    };
+
+    window.openLightboxByIndex = (idx) => {
+        if (!photos.length || idx < 0 || idx >= photos.length) return;
+        const item = photos[idx];
+        const lightbox = document.getElementById('lightbox');
+        const img = document.getElementById('lightbox-img');
+        const vid = document.getElementById('lightbox-video');
+
+        if (item.isVideo) {
+            img.classList.add('hidden');
+            vid.classList.remove('hidden');
+            vid.src = item.url;
+            vid.play();
+        } else {
+            vid.classList.add('hidden');
+            vid.pause();
+            img.classList.remove('hidden');
+            img.src = item.url;
+        }
+        lightbox.classList.remove('hidden');
+        lightbox.classList.add('flex');
+        document.body.style.overflow = 'hidden';
+    };
+
+    window.closeLightbox = () => {
+        const lightbox = document.getElementById('lightbox');
+        const vid = document.getElementById('lightbox-video');
+        if (vid) vid.pause();
+        lightbox.classList.add('hidden');
+        lightbox.classList.remove('flex');
+        document.body.style.overflow = 'auto';
+    };
+
+    // Chamet-Style Voice Greeting Audio Preview
+    let isPlayingVoice = false;
+    let voiceAudioCtx = null;
+    let voiceOsc = null;
+
+    window.toggleVoiceGreeting = () => {
+        const btnText = document.getElementById('voice-btn-text');
+        const btnIcon = document.getElementById('voice-btn-icon');
+        const equalizer = document.getElementById('voice-equalizer');
+
+        if (isPlayingVoice) {
+            isPlayingVoice = false;
+            btnText.textContent = 'Voice Intro';
+            btnIcon.textContent = '▶';
+            equalizer.classList.add('hidden');
+            if (voiceAudioCtx) {
+                try { voiceAudioCtx.close(); } catch (_) {}
+                voiceAudioCtx = null;
+            }
+            return;
+        }
+
+        isPlayingVoice = true;
+        btnText.textContent = 'Playing...';
+        btnIcon.textContent = '⏸';
+        equalizer.classList.remove('hidden');
+
+        // Play gentle melodic chime sequence
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (AudioContext) {
+                voiceAudioCtx = new AudioContext();
+                const notes = [440, 554.37, 659.25, 880];
+                notes.forEach((freq, idx) => {
+                    const osc = voiceAudioCtx.createOscillator();
+                    const gain = voiceAudioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, voiceAudioCtx.currentTime + idx * 0.25);
+                    gain.gain.setValueAtTime(0.001, voiceAudioCtx.currentTime + idx * 0.25);
+                    gain.gain.exponentialRampToValueAtTime(0.12, voiceAudioCtx.currentTime + idx * 0.25 + 0.05);
+                    gain.gain.exponentialRampToValueAtTime(0.001, voiceAudioCtx.currentTime + idx * 0.25 + 0.4);
+                    osc.connect(gain);
+                    gain.connect(voiceAudioCtx.destination);
+                    osc.start(voiceAudioCtx.currentTime + idx * 0.25);
+                    osc.stop(voiceAudioCtx.currentTime + idx * 0.25 + 0.45);
+                });
+            }
+        } catch (_) {}
+
+        setTimeout(() => {
+            if (isPlayingVoice) {
+                isPlayingVoice = false;
+                btnText.textContent = 'Voice Intro';
+                btnIcon.textContent = '▶';
+                equalizer.classList.add('hidden');
+            }
+        }, 1800);
+    };
+
+    // Quick Action 1: Say Hi (💬)
+    window.sayHiAction = async () => {
+        const btn = document.getElementById('say-hi-btn');
+        const label = document.getElementById('say-hi-label');
+        const originalText = label.textContent;
+        label.textContent = 'Sending...';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch(`/api/say-hi/${TARGET_USER_ID}/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': CSRF_TOKEN,
+                },
+            });
+            const data = await res.json();
+            if (res.ok && data.redirect_url) {
+                window.location.href = data.redirect_url;
+            } else {
+                alert(data.message || 'Unable to open chat');
+                label.textContent = originalText;
+                btn.disabled = false;
+            }
+        } catch (err) {
+            alert('Connection error: ' + err.message);
+            label.textContent = originalText;
+            btn.disabled = false;
+        }
+    };
+
+    // Quick Action 2: Match / Connect (⚡ / ❤️)
+    window.connectAction = async () => {
+        const btn = document.getElementById('connect-btn');
+        const label = document.getElementById('connect-label');
+        const icon = document.getElementById('connect-icon');
+        label.textContent = 'Connecting...';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch(`/api/connect/${TARGET_USER_ID}/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': CSRF_TOKEN,
+                },
+            });
+            const data = await res.json();
+            if (res.ok) {
+                btn.className = 'flex items-center justify-center gap-1.5 rounded-2xl bg-emerald-600 text-white border border-emerald-400 py-3 text-xs font-black uppercase tracking-wider shadow-xl active:scale-95 transition';
+                icon.textContent = '❤️';
+                label.textContent = 'Connected';
+            } else {
+                alert(data.message || 'Unable to connect');
+                label.textContent = 'Match';
+                btn.disabled = false;
+            }
+        } catch (err) {
+            alert('Connection error: ' + err.message);
+            label.textContent = 'Match';
+            btn.disabled = false;
+        }
+    };
+
+    // Action 3: Instant Video Call (📹)
+    window.startDirectCall = async (receiverId, receiverName) => {
+        const btn = document.getElementById('instant-call-btn');
+        btn.classList.add('opacity-75');
+
+        try {
+            const res = await fetch("/api/calls/initiate/", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': CSRF_TOKEN,
+                },
+                body: JSON.stringify({ receiver_id: receiverId }),
+            });
+            const data = await res.json();
+            btn.classList.remove('opacity-75');
+
+            if (!res.ok) {
+                if (data.message === 'insufficient_coins' || data.message === 'sex_call_pass_required') {
+                    window.location.href = "{% url 'coin_shop' %}";
+                } else {
+                    alert(data.detail || data.message || 'Unable to initiate call');
+                }
+                return;
+            }
+
+            const targetRoomId = data.room_id || (data.call && data.call.room_id);
+            if (targetRoomId) {
+                window.location.href = `/call/${targetRoomId}/`;
+            } else if (window.lovenyStartVideoCall) {
+                window.lovenyStartVideoCall(receiverId);
+            }
+        } catch (err) {
+            btn.classList.remove('opacity-75');
+            alert('Call initiation error: ' + err.message);
+        }
+    };
+
+    window.shareProfile = () => {
+        if (navigator.share) {
+            navigator.share({ title: `${TARGET_USERNAME} on LOVENY`, url: window.location.href });
+        } else {
+            navigator.clipboard?.writeText(window.location.href);
+            alert('Profile link copied to clipboard!');
+        }
+    };
+})();
 </script>
 {% endblock %}

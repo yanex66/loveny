@@ -53,6 +53,8 @@ urlpatterns = [
     path('terms-of-service/', views.terms, name='terms'),
     
     path('users/<int:pk>/', views.public_profile, name='public_profile'),
+    path('api/connect/<int:user_id>/', views.quick_connect_api, name='quick_connect_api'),
+    path('api/say-hi/<int:user_id>/', views.quick_say_hi_api, name='quick_say_hi_api'),
 
     path('premium/', views.premium_landing, name='premium_landing'),
     path('premium/checkout/', views.premium_checkout, name='premium_checkout'),

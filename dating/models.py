@@ -402,8 +402,11 @@ class CallSession(models.Model):
         ('initiated', 'Initiated'),
         ('ringing', 'Ringing'),
         ('connected', 'Connected'),
+        ('active', 'Active'),
         ('ended', 'Ended'),
         ('declined', 'Declined'),
+        ('missed', 'Missed'),
+        ('cancelled', 'Cancelled'),
     )
 
     caller = models.ForeignKey(
@@ -423,6 +426,7 @@ class CallSession(models.Model):
     duration_seconds = models.PositiveIntegerField(default=0, help_text="Connected call duration in seconds")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     started_at = models.DateTimeField(null=True, blank=True)
+    connected_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
