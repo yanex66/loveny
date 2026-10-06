@@ -535,11 +535,10 @@ class DatingPlatformTests(TestCase):
         profile_page = self.client.get(reverse('profile'))
         self.assertEqual(profile_page.status_code, 200)
         self.assertContains(profile_page, 'max-w-md')
-        self.assertContains(profile_page, 'profile-hero')
-        self.assertContains(profile_page, 'profile-sheet')
-        self.assertContains(profile_page, 'Edit profile')
+        self.assertContains(profile_page, 'card-glass')
+        self.assertContains(profile_page, 'Edit Profile & Photos')
         self.assertContains(profile_page, 'Online')
-        self.assertContains(profile_page, 'backdrop-filter: blur(16px)')
+        self.assertContains(profile_page, 'Daily Check-In')
         self.assertEqual(self.client.get(reverse('edit_profile')).status_code, 200)
         self.assertNotContains(self.client.get(reverse('edit_profile')), 'Connection mode')
         self.assertNotContains(self.client.get(reverse('edit_profile')), 'WhatsApp')
@@ -1808,6 +1807,73 @@ class DatingPlatformTests(TestCase):
         self.assertContains(res, 'Gifts Received')
         self.assertContains(res, 'Languages Spoken')
         self.assertContains(res, 'Call Rate')
+
+    def test_daily_checkin_api_and_me_hub_view(self):
+        self.alice_profile.coin_balance = 20
+        self.alice_profile.save(update_fields=['coin_balance'])
+        self.client.force_login(self.alice)
+
+        # 1. Daily checkin awards +5 coins
+        checkin_res = self.client.post(reverse('daily_checkin_api'))
+        self.assertEqual(checkin_res.status_code, 200)
+        c_data = checkin_res.json()
+        self.assertEqual(c_data['status'], 'success')
+        self.assertEqual(c_data['coins_awarded'], 5)
+        self.assertEqual(c_data['coin_balance'], 25)
+
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 25)
+        self.assertTrue(
+            CoinTransaction.objects.filter(
+                user=self.alice,
+                transaction_type='DAILY_CHECKIN',
+                amount=5,
+            ).exists()
+        )
+
+        # 2. Second checkin on same day is blocked
+        dup_res = self.client.post(reverse('daily_checkin_api'))
+        self.assertEqual(dup_res.status_code, 400)
+        self.assertEqual(dup_res.json()['status'], 'already_claimed')
+
+        # 3. Access Me Hub (/profile/ and /profile/me/)
+        for path_name in ('profile', 'profile_me'):
+            res = self.client.get(reverse(path_name))
+            self.assertEqual(res.status_code, 200)
+            self.assertContains(res, 'My Profile')
+            self.assertContains(res, 'ID: 317')
+            self.assertContains(res, 'Daily Check-In')
+            self.assertContains(res, 'Customer Service')
+            self.assertContains(res, 'Recharge')
+
+    def test_chamet_chat_room_view_and_image_sending(self):
+        match = Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+        self.client.force_login(self.alice)
+        res = self.client.get(reverse('chat_room', args=[match.id]))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'Icebreakers:')
+        self.assertContains(res, 'Hello, how are you?')
+        self.assertContains(res, 'Photo')
+        self.assertContains(res, 'Video Call')
+        self.assertContains(res, 'Real-person Verified')
+
+        # Test sending image message via conversation_send_api
+        conv = Conversation.objects.filter(participants=self.alice).filter(participants=self.bob).first()
+        self.assertIsNotNone(conv)
+        send_res = self.post_json(
+            reverse('conversation_send_api', args=[conv.pk]),
+            {
+                'text': '📷 Photo',
+                'message_type': 'image',
+                'metadata': {'image_url': 'https://example.com/test.jpg'}
+            }
+        )
+        self.assertEqual(send_res.status_code, 201)
+        self.assertEqual(send_res.json()['message']['message_type'], 'image')
 
 
 

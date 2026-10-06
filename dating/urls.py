@@ -9,6 +9,7 @@ urlpatterns = [
     path('password-reset/', views.SafePasswordResetView.as_view(), name='password_reset_alias'),
     path('create-profile/', views.create_profile, name='create_profile'),
     path('profile/', views.profile_detail, name='profile'),
+    path('profile/me/', views.profile_detail, name='profile_me'),
     path('profile/edit/', views.edit_profile, name='edit_profile'),
     path('account/delete/', views.delete_account, name='delete_account'),
     
@@ -35,6 +36,7 @@ urlpatterns = [
     path('api/sex-call/hosts/', views.sex_call_hosts_api, name='sex_call_hosts_api'),
     path('api/wallet/convert-diamonds/', views.convert_diamonds_api, name='convert_diamonds_api'),
     path('api/wallet/balance/', views.wallet_balance_api, name='wallet_balance_api'),
+    path('api/wallet/check-in/', views.daily_checkin_api, name='daily_checkin_api'),
     path('api/wallet/withdraw/', views.withdrawal_request_api, name='withdrawal_request_api'),
     path('api/wallet/history/', views.wallet_history_api, name='wallet_history_api'),
     path('api/coins/packages/', views.coin_packages_api, name='coin_packages_api'),

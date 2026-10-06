@@ -94,6 +94,7 @@ class Profile(models.Model):
     show_in_discovery = models.BooleanField(default=True)
     allow_messages = models.BooleanField(default=True)
     is_dnd = models.BooleanField(default=False, help_text="When enabled, incoming video call rings and notifications are silenced.")
+    last_checkin_date = models.DateField(null=True, blank=True, help_text="Last daily coin reward check-in date")
     is_test_profile = models.BooleanField(default=False, editable=False)
 
     # --- PREMIUM FEATURES ---
@@ -252,6 +253,7 @@ class ChatMessage(models.Model):
         ('text', 'Text'),
         ('gift', 'Gift'),
         ('sticker', 'Sticker'),
+        ('image', 'Image'),
     )
 
     conversation = models.ForeignKey(
@@ -479,6 +481,7 @@ class CoinTransaction(models.Model):
         ('GIFT_SENT', 'Gift Sent'),
         ('GIFT_RECEIVED', 'Gift Received'),
         ('DIAMOND_CONVERSION', 'Diamond to Coin Exchange'),
+        ('DAILY_CHECKIN', 'Daily Check-In Reward'),
     )
 
     user = models.ForeignKey(User, related_name='coin_transactions', on_delete=models.CASCADE)

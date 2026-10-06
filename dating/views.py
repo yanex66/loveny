@@ -327,12 +327,30 @@ def profile_detail(request):
     main_photo = profile.photos.filter(is_main=True).first() or profile.photos.first()
     other_photos = profile.photos.exclude(id=main_photo.id) if main_photo else profile.photos.all()
     
+    today = timezone.localdate()
+    has_checked_in_today = bool(
+        profile.last_checkin_date == today
+        or CoinTransaction.objects.filter(
+            user=request.user,
+            transaction_type='DAILY_CHECKIN',
+            created_at__date=today,
+        ).exists()
+    )
+    following_count = Swipe.objects.filter(swiper=request.user, type='LIKE').count()
+    followers_count = Swipe.objects.filter(swiped=request.user, type='LIKE').count()
+    numeric_id = 317000000 + request.user.pk
+
     return render(request, 'dating/profile_detail.html', {
         'profile': profile, 
         'main_photo': main_photo, 
         'other_photos': other_photos, 
         'is_own_profile': True,
-        'is_online': profile.last_active >= timezone.now() - timedelta(minutes=10),
+        'is_online': True,
+        'numeric_id': numeric_id,
+        'following_count': following_count,
+        'followers_count': followers_count,
+        'has_checked_in_today': has_checked_in_today,
+        'customer_service_whatsapp_url': 'https://wa.me/2349130273282?text=Hello%20Loveny%20Support,%20I%20need%20help%20with%20my%20account',
     })
 
 @login_required
@@ -1865,6 +1883,63 @@ def wallet_balance_api(request):
     })
 
 
+@login_required
+@require_POST
+def daily_checkin_api(request):
+    """
+    Awards daily check-in free coins (+5 coins) to the active user once per calendar day.
+    """
+    profile = Profile.objects.filter(user=request.user).first()
+    if not profile:
+        return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
+
+    today = timezone.localdate()
+    already_claimed = (
+        profile.last_checkin_date == today
+        or CoinTransaction.objects.filter(
+            user=request.user,
+            transaction_type='DAILY_CHECKIN',
+            created_at__date=today,
+        ).exists()
+    )
+    if already_claimed:
+        return JsonResponse({
+            'status': 'already_claimed',
+            'message': 'You have already checked in today! Come back tomorrow for more coins.',
+            'coin_balance': profile.coin_balance,
+            'has_checked_in': True,
+        }, status=400)
+
+    reward_coins = 5
+    with transaction.atomic():
+        p = Profile.objects.select_for_update().get(pk=profile.pk)
+        p.coin_balance += reward_coins
+        p.last_checkin_date = today
+        p.save(update_fields=['coin_balance', 'last_checkin_date'])
+
+        wallet, _ = CoinWallet.objects.select_for_update().get_or_create(
+            user=request.user,
+            defaults={'coin_balance': p.coin_balance},
+        )
+        wallet.coin_balance = p.coin_balance
+        wallet.save(update_fields=['coin_balance'])
+
+        CoinTransaction.objects.create(
+            user=request.user,
+            amount=reward_coins,
+            transaction_type='DAILY_CHECKIN',
+            description=f'Daily Check-In Reward (+{reward_coins} Coins)',
+        )
+
+    return JsonResponse({
+        'status': 'success',
+        'coins_awarded': reward_coins,
+        'coin_balance': p.coin_balance,
+        'has_checked_in': True,
+        'message': f'Check-in successful! +{reward_coins} 🪙 added to your wallet.',
+    })
+
+
 @require_GET
 def gifts_api(request):
     gifts = list(GiftItem.objects.filter(is_active=True).order_by('order', 'coin_cost'))
@@ -2394,6 +2469,21 @@ def _build_chat_context(request, conversation, match, other_user, other_profile,
         )
     )
 
+    languages = ['English', 'Pidgin']
+    if other_user.id % 3 == 0:
+        languages.append('Yoruba')
+    elif other_user.id % 3 == 1:
+        languages.append('Hausa')
+    else:
+        languages.append('Igbo')
+
+    quick_icebreakers = [
+        "Hello, how are you? 😍",
+        "How old are you?",
+        "Nice to meet you ✨",
+        "Are you free for a call? 📹",
+    ]
+
     return {
         'conversation': conversation,
         'match': match,
@@ -2407,6 +2497,9 @@ def _build_chat_context(request, conversation, match, other_user, other_profile,
         'user_coin_balance': current_profile.coin_balance if current_profile else 100,
         'gifts': gift_list,
         'sticker_packs': STICKER_PACKS,
+        'languages': languages,
+        'quick_icebreakers': quick_icebreakers,
+        'other_numeric_id': 317000000 + other_user.pk,
         'messages_url': reverse('conversation_messages_api', args=[conversation.pk]),
         'send_url': reverse('conversation_send_api', args=[conversation.pk]),
         'send_gift_url': reverse('chat_send_gift_api'),
@@ -2649,17 +2742,33 @@ def conversation_send_api(request, conversation_id):
         or not recipient_profile.allow_messages
     ):
         return JsonResponse({'status': 'error', 'message': 'messaging_disabled'}, status=403)
-    try:
-        data = json.loads(request.body)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
-    if not isinstance(data, dict):
-        return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
-    text = str(data.get('text', '')).strip()
-    message_type = str(data.get('message_type', 'text')).lower()
-    if message_type not in ('text', 'sticker', 'gift'):
+    content_type = request.content_type or ''
+    if 'multipart/form-data' in content_type:
+        text = str(request.POST.get('text', '')).strip()
+        message_type = str(request.POST.get('message_type', 'text')).lower()
+        metadata = {}
+        uploaded_image = request.FILES.get('image')
+        if uploaded_image:
+            filename = f"chat_media/chat_{conversation.pk}_{int(timezone.now().timestamp())}_{uploaded_image.name}"
+            saved_name = default_storage.save(filename, uploaded_image)
+            image_url = default_storage.url(saved_name)
+            message_type = 'image'
+            metadata['image_url'] = image_url
+            if not text:
+                text = '📷 Photo'
+    else:
+        try:
+            data = json.loads(request.body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+        if not isinstance(data, dict):
+            return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
+        text = str(data.get('text', '')).strip()
+        message_type = str(data.get('message_type', 'text')).lower()
+        metadata = data.get('metadata') if isinstance(data.get('metadata'), dict) else {}
+
+    if message_type not in ('text', 'sticker', 'gift', 'image'):
         message_type = 'text'
-    metadata = data.get('metadata') if isinstance(data.get('metadata'), dict) else {}
 
     if not text or len(text) > MAX_MESSAGE_LENGTH:
         return JsonResponse({'status': 'error', 'message': 'invalid_message'}, status=400)

@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
+{% load static %}
 
-{% block title %}Private Chat with {{ other_user.first_name|default:other_user.username }} | LOVENY{% endblock %}
+{% block title %}Chat with {{ other_user.first_name|default:other_user.username }} | LOVENY{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -8,26 +9,24 @@
         0%, 100% { transform: scale(1); filter: drop-shadow(0 0 12px rgba(244, 63, 94, 0.4)); }
         50% { transform: scale(1.15) rotate(3deg); filter: drop-shadow(0 0 24px rgba(251, 191, 36, 0.8)); }
     }
-    @keyframes sparkleFloat {
-        0% { transform: translateY(0) rotate(0deg); opacity: 1; }
-        100% { transform: translateY(-30px) rotate(20deg); opacity: 0; }
-    }
     .gift-bounce {
         animation: giftPulse 2.4s infinite ease-in-out;
     }
     .custom-scrollbar::-webkit-scrollbar {
-        width: 6px;
+        width: 5px;
     }
     .custom-scrollbar::-webkit-scrollbar-track {
-        background: rgba(15, 12, 24, 0.4);
+        background: rgba(19, 9, 36, 0.6);
     }
     .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: rgba(244, 63, 94, 0.3);
+        background: rgba(168, 85, 247, 0.3);
         border-radius: 9999px;
     }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-        background: rgba(244, 63, 94, 0.6);
+        background: rgba(236, 72, 153, 0.6);
     }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     .confetti-canvas {
         pointer-events: none;
         position: fixed;
@@ -41,146 +40,172 @@
 {% endblock %}
 
 {% block content %}
-<main class="min-h-screen bg-[#0b0914] px-2 py-3 text-slate-100 sm:px-4 sm:py-6 sm:pb-28">
+<main class="min-h-screen bg-[#0e071c] px-2 py-2 text-slate-100 sm:px-4 sm:py-4 select-none pb-28">
     <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
 
-    <section class="mx-auto flex h-[min(88vh,56rem)] min-h-[34rem] max-w-4xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#120f20]/95 shadow-2xl backdrop-blur-2xl">
-        <!-- TOP NAVBAR (HiiClub Style Header) -->
-        <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#171329]/90 px-4 py-3.5 sm:px-6">
+    <section class="mx-auto flex h-[min(88vh,56rem)] min-h-[36rem] max-w-4xl flex-col overflow-hidden rounded-3xl border border-purple-500/20 bg-[#140a27]/95 shadow-2xl backdrop-blur-2xl">
+        
+        <!-- 1. TOP RECIPIENT CARD (Chamet/HiiClub Host Header) -->
+        <header class="flex items-center justify-between gap-2 border-b border-white/10 bg-[#1a0c33]/90 px-3 py-3 sm:px-5">
             <div class="flex items-center gap-3 min-w-0">
-                <a href="{% url 'match_list' %}" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white" title="Back to matches">
+                <!-- Back Button -->
+                <a href="{% url 'match_list' %}" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white active:scale-95" title="Back to matches">
                     <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" />
                     </svg>
                 </a>
 
-                <!-- Partner Avatar with Online Ring -->
+                <!-- Host Avatar with Glowing Online Ring -->
                 <a href="{% url 'public_profile' other_user.id %}" class="relative shrink-0 group">
                     <img src="{{ other_avatar }}" alt="{{ other_user.username }}"
-                         class="h-11 w-11 rounded-2xl object-cover ring-2 ring-pink-500/50 shadow-lg group-hover:scale-105 transition">
+                         class="h-11 w-11 rounded-2xl object-cover ring-2 ring-purple-500/60 shadow-[0_0_12px_rgba(168,85,247,0.4)] group-hover:scale-105 transition">
                     {% if is_other_online %}
                     <span class="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center">
                         <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-                        <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-[#171329]"></span>
+                        <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-[#1a0c33]"></span>
                     </span>
                     {% endif %}
                 </a>
 
+                <!-- Host Info (Name, Age, Location, Online Badge) -->
                 <div class="min-w-0">
                     <div class="flex items-center gap-2">
-                        <h1 class="truncate text-base font-black text-white sm:text-lg">
+                        <h1 class="truncate text-sm sm:text-base font-black text-white">
                             {{ other_user.first_name|default:other_user.username }}
                         </h1>
                         {% if other_profile.age %}
-                        <span class="shrink-0 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-bold text-pink-300">
+                        <span class="shrink-0 rounded-md bg-purple-500/20 border border-purple-400/30 px-1.5 py-0.2 text-[10px] font-black text-pink-300">
                             {{ other_profile.age }}
                         </span>
                         {% endif %}
-                        {% if other_profile.is_verified %}
-                        <span class="text-xs text-sky-400" title="Verified Member">✓</span>
-                        {% endif %}
                     </div>
-                    <div class="flex items-center gap-2 text-xs text-slate-400">
-                        <span class="truncate">{{ other_profile.location|default:'Nearby' }}</span>
-                        <span>·</span>
-                        <span class="text-pink-400 font-medium">
-                            {% if is_other_online %}Online Now{% else %}Sex Call Partner{% endif %}
+                    <div class="flex items-center gap-1.5 text-xs text-white/60">
+                        <span class="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400">
+                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                            Online
                         </span>
+                        <span>•</span>
+                        <span class="truncate text-[11px]">{{ other_profile.location|default:'Lekki, Lagos' }}</span>
                     </div>
                 </div>
             </div>
 
-            <!-- Top Right: Live Call Button + Coins Badge -->
-            <div class="flex items-center gap-2.5 sm:gap-3">
-                <!-- Coin Balance Pill -->
-                <div class="flex items-center gap-1.5 rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 to-amber-900/20 px-3 py-1.5 shadow-inner">
-                    <span class="text-sm">🪙</span>
-                    <span id="header-coin-balance" class="text-xs font-black text-amber-300 sm:text-sm">{{ user_coin_balance }}</span>
-                    <button id="btn-open-topup" type="button" class="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-xs font-black text-slate-950 shadow hover:bg-amber-300 transition" title="Get more coins">
+            <!-- Top Right Controls: Coin Balance Pill & 3-Dot Action Menu -->
+            <div class="flex items-center gap-2">
+                <!-- Live Coin Pill -->
+                <div class="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-950/40 px-2.5 py-1 text-xs font-black text-amber-300 shadow-inner">
+                    <span>🪙</span>
+                    <span id="header-coin-balance">{{ user_coin_balance }}</span>
+                    <button id="btn-open-topup" type="button" class="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[10px] font-black text-slate-950 hover:bg-amber-300 transition" title="Top Up Coins">
                         +
                     </button>
                 </div>
 
-                <!-- Instant 1-Tap Video Call Button -->
-                <button type="button" data-call-target-id="{{ other_user.id }}" data-call-name="{{ other_user.first_name|default:other_user.username }}"
-                        class="flex items-center gap-1.5 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-600 px-3.5 py-2 text-xs font-black text-white shadow-lg shadow-pink-600/30 transition hover:brightness-110 active:scale-95 sm:text-sm">
-                    <span>📹</span>
-                    <span class="hidden sm:inline">Call ({{ call_rate_per_minute }}🪙/min)</span>
-                    <span class="sm:hidden">Call</span>
-                </button>
+                <!-- 3-Dot Action Menu -->
+                <div class="relative">
+                    <button type="button" id="chat-menu-toggle" onclick="toggleChatMenu()"
+                            class="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition text-lg font-black active:scale-95"
+                            title="More Actions">
+                        ⋮
+                    </button>
+
+                    <!-- Dropdown Modal -->
+                    <div id="chat-dropdown-menu" class="absolute right-0 top-11 z-50 hidden w-44 rounded-2xl border border-purple-500/30 bg-[#1c0e38]/95 p-1.5 shadow-2xl backdrop-blur-xl divide-y divide-white/5">
+                        <a href="{% url 'public_profile' other_user.id %}" class="flex items-center gap-2 px-3 py-2 text-xs font-bold text-white/90 hover:bg-white/10 rounded-xl transition">
+                            <span>👤</span> View Full Profile
+                        </a>
+                        <button type="button" onclick="reportHost()" class="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-amber-300 hover:bg-white/10 rounded-xl text-left transition">
+                            <span>🚩</span> Report Host
+                        </button>
+                        <button type="button" onclick="blockHost()" class="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-400 hover:bg-white/10 rounded-xl text-left transition">
+                            <span>🚫</span> Block Host
+                        </button>
+                    </div>
+                </div>
             </div>
         </header>
 
-        <!-- PRIVACY BANNER -->
-        <div class="flex items-center justify-between border-b border-white/5 bg-[#140e24] px-4 py-2 text-[11px] text-slate-400 sm:px-6">
-            <span class="flex items-center gap-1.5">
-                <span class="text-pink-400">🔒</span> End-to-end private chat & interactive gifts.
+        <!-- QUICK HOST INFO BANNER (Pinned Below Header) -->
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 bg-[#170b2e]/90 px-3 py-2 text-xs text-white/75 sm:px-5">
+            <div class="flex items-center gap-2 flex-wrap">
+                <span class="inline-flex items-center gap-1 rounded-full bg-sky-500/20 border border-sky-400/30 px-2 py-0.5 text-[10px] font-black text-sky-300">
+                    <span>🛡️</span> Real-person Verified
+                </span>
+                <span class="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-white/80">
+                    🎂 {{ other_profile.age|default:22 }} yrs · 📍 {{ other_profile.location|default:'Lekki, Lagos' }}
+                </span>
+                <span class="rounded-full bg-purple-500/20 border border-purple-400/20 px-2 py-0.5 text-[10px] font-semibold text-purple-200">
+                    🗣️ Languages: {{ languages|join:", " }}
+                </span>
+            </div>
+            <div class="flex items-center gap-1 text-[11px] font-black text-amber-300">
+                <span>📹</span>
+                <span>{{ call_rate_per_minute|default:20 }} 🪙/min</span>
+            </div>
+        </div>
+
+        <!-- 2. CHAT FEED & MESSAGE STREAM -->
+        <div id="chat-messages" class="custom-scrollbar flex-1 space-y-3.5 overflow-y-auto p-4 sm:p-5" aria-live="polite" aria-relevant="additions text">
+            <!-- Messages, Gifts, Stickers & Images append here dynamically -->
+        </div>
+
+        <p id="chat-status" class="min-h-4 px-5 text-[11px] text-rose-400" role="status"></p>
+
+        <!-- QUICK ICEBREAKER CHIPS (Horizontal Scrollable Row Above Input) -->
+        <div class="border-t border-white/5 bg-[#160b2d]/80 px-3 py-2 sm:px-4 overflow-x-auto no-scrollbar flex items-center gap-2">
+            <span class="shrink-0 text-[10px] font-black uppercase tracking-wider text-pink-400 flex items-center gap-1">
+                <span>⚡</span> Icebreakers:
             </span>
-            <span class="text-slate-500">Max {{ max_message_length }} chars</span>
-        </div>
-
-        <!-- MESSAGE FEED (HiiClub Rich Scroll Area) -->
-        <div id="chat-messages" class="custom-scrollbar flex-1 space-y-4 overflow-y-auto p-4 sm:p-6" aria-live="polite" aria-relevant="additions text">
-            <!-- Messages, Gifts & Stickers will append here dynamically -->
-        </div>
-
-        <p id="chat-status" class="min-h-5 px-6 text-xs text-rose-400" role="status"></p>
-
-        <!-- QUICK EMOJI BAR (1-Tap Reactions) -->
-        <div class="flex items-center gap-2 border-t border-white/5 bg-[#140f26]/80 px-4 py-2 sm:px-6 overflow-x-auto no-scrollbar">
-            <span class="shrink-0 text-[11px] font-bold uppercase tracking-wider text-slate-400">Quick:</span>
-            <div class="flex items-center gap-1.5">
-                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="💋">💋</button>
-                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="🔥">🔥</button>
-                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="😍">😍</button>
-                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="💖">💖</button>
-                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="🍾">🍾</button>
-                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="🫦">🫦</button>
-                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="😈">😈</button>
-                <button type="button" class="quick-emoji-btn rounded-xl bg-white/5 px-2.5 py-1 text-sm transition hover:bg-white/15 hover:scale-110 active:scale-95" data-emoji="🌹">🌹</button>
+            <div class="flex items-center gap-2 shrink-0">
+                {% for ice in quick_icebreakers %}
+                <button type="button" onclick="sendIcebreaker('{{ ice|escapejs }}')"
+                        class="shrink-0 rounded-full bg-white/5 border border-purple-400/20 px-3 py-1 text-xs font-bold text-purple-200 hover:bg-purple-600/30 hover:border-pink-500/50 hover:text-white active:scale-95 transition shadow-sm">
+                    {{ ice }}
+                </button>
+                {% endfor %}
             </div>
         </div>
 
         <!-- STICKER DRAWER (Collapsible) -->
-        <div id="sticker-drawer" class="hidden border-t border-white/10 bg-[#161129] p-4 transition-all duration-300">
-            <div class="mb-3 flex items-center justify-between">
-                <div class="flex items-center gap-1.5 overflow-x-auto" id="sticker-pack-tabs">
+        <div id="sticker-drawer" class="hidden border-t border-white/10 bg-[#180c33] p-3.5 transition-all duration-300">
+            <div class="mb-2.5 flex items-center justify-between">
+                <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar" id="sticker-pack-tabs">
                     {% for pack in sticker_packs %}
                     <button type="button" data-pack-id="{{ pack.id }}"
-                            class="sticker-tab-btn rounded-xl px-3 py-1 text-xs font-black transition {% if forloop.first %}bg-pink-600 text-white shadow{% else %}bg-white/5 text-slate-400 hover:text-white{% endif %}">
+                            class="sticker-tab-btn rounded-xl px-2.5 py-1 text-xs font-black transition {% if forloop.first %}bg-pink-600 text-white shadow{% else %}bg-white/5 text-slate-400 hover:text-white{% endif %}">
                         {{ pack.icon }} {{ pack.name }}
                     </button>
                     {% endfor %}
                 </div>
-                <button id="close-sticker-drawer" type="button" class="text-xs text-slate-400 hover:text-white">✕</button>
+                <button id="close-sticker-drawer" type="button" class="text-xs text-slate-400 hover:text-white px-2">✕</button>
             </div>
             
-            <div id="sticker-grid" class="grid max-h-48 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-8">
+            <div id="sticker-grid" class="grid max-h-44 grid-cols-4 gap-2 overflow-y-auto custom-scrollbar sm:grid-cols-8">
                 <!-- Injected via JS based on selected pack -->
             </div>
         </div>
 
-        <!-- VIRTUAL GIFTS DRAWER (Collapsible) -->
-        <div id="gift-drawer" class="hidden border-t border-white/10 bg-[#18122c] p-4 sm:p-5 transition-all duration-300">
+        <!-- VIRTUAL GIFTS DRAWER (Collapsible Slide-Up Sheet) -->
+        <div id="gift-drawer" class="hidden border-t border-white/10 bg-[#1c0d3b] p-4 transition-all duration-300">
             <div class="mb-3 flex items-center justify-between">
                 <div class="flex items-center gap-2">
-                    <span class="text-lg">🎁</span>
-                    <h3 class="text-sm font-black text-white">Send Virtual Gift</h3>
-                    <span class="text-xs text-slate-400">(Awards diamonds to {{ other_user.first_name|default:other_user.username }})</span>
+                    <span class="text-xl">🎁</span>
+                    <h3 class="text-sm font-black text-white">Send Interactive Gift</h3>
+                    <span class="text-xs text-purple-300">(Host earns 70% 💎)</span>
                 </div>
                 <div class="flex items-center gap-3">
-                    <span class="text-xs text-amber-300">Your coins: <b id="drawer-coin-val">{{ user_coin_balance }}</b>🪙</span>
-                    <button id="close-gift-drawer" type="button" class="text-xs text-slate-400 hover:text-white">✕</button>
+                    <span class="text-xs text-amber-300">Coins: <b id="drawer-coin-val">{{ user_coin_balance }}</b>🪙</span>
+                    <button id="close-gift-drawer" type="button" class="text-xs text-slate-400 hover:text-white px-2 font-bold">✕</button>
                 </div>
             </div>
 
-            <div class="grid max-h-56 grid-cols-2 gap-2.5 overflow-y-auto sm:grid-cols-4 sm:gap-3">
+            <div class="grid max-h-52 grid-cols-2 gap-2.5 overflow-y-auto custom-scrollbar sm:grid-cols-4">
                 {% for gift in gifts %}
                 <button type="button" data-gift-slug="{{ gift.slug }}" data-gift-coins="{{ gift.coins }}" data-gift-name="{{ gift.name }}"
-                        class="chat-gift-item-btn group flex flex-col items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-3 text-center transition hover:border-pink-500/60 hover:bg-pink-600/10 hover:shadow-lg hover:shadow-pink-500/10 active:scale-95">
+                        class="chat-gift-item-btn group flex flex-col items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-2.5 text-center transition hover:border-pink-500/60 hover:bg-pink-600/15 hover:shadow-lg hover:shadow-pink-500/10 active:scale-95">
                     <span class="text-3xl transition group-hover:scale-125">{{ gift.icon }}</span>
-                    <span class="mt-1.5 text-xs font-bold text-white">{{ gift.name }}</span>
-                    <span class="mt-1 rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[11px] font-black text-amber-300">
+                    <span class="mt-1 text-xs font-bold text-white">{{ gift.name }}</span>
+                    <span class="mt-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-black text-amber-300">
                         {{ gift.coins }} 🪙
                     </span>
                 </button>
@@ -188,43 +213,67 @@
             </div>
         </div>
 
-        <!-- BOTTOM INPUT BAR -->
-        {% if messages_allowed %}
-        <form id="chat-form" class="flex items-center gap-2 border-t border-white/10 bg-[#151028] p-3 sm:gap-3 sm:p-4">
-            {% csrf_token %}
-            
-            <!-- Stickers Trigger -->
-            <button id="btn-toggle-stickers" type="button"
-                    class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-lg transition hover:bg-white/10 hover:scale-105 active:scale-95"
-                    title="Choose sticker">
-                ✨
-            </button>
+        <!-- 3. BOTTOM ACTION DOCK -->
+        <div class="border-t border-white/10 bg-[#160b2e] p-3 sm:p-4 space-y-2">
+            <!-- Hidden Image File Input for Gallery Icon -->
+            <input type="file" id="chat-photo-input" accept="image/*" class="hidden">
 
-            <!-- Gift Trigger -->
-            <button id="btn-toggle-gifts" type="button"
-                    class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-pink-500/30 bg-pink-500/10 text-lg shadow-sm transition hover:bg-pink-500/20 hover:scale-105 active:scale-95"
-                    title="Send a gift">
-                🎁
-            </button>
+            <!-- Primary Text Input Row -->
+            <form id="chat-form" class="flex items-center gap-2">
+                {% csrf_token %}
+                
+                <!-- Emoji / Sticker Toggle Button (😊) -->
+                <button id="btn-toggle-stickers" type="button"
+                        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-purple-500/30 bg-purple-950/40 text-xl transition hover:bg-purple-800/40 hover:scale-105 active:scale-95"
+                        title="Stickers & Emojis">
+                    😊
+                </button>
 
-            <!-- Input Box -->
-            <label for="chat-input" class="sr-only">Message</label>
-            <input id="chat-input" name="text" maxlength="{{ max_message_length }}" autocomplete="off" required
-                   class="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-slate-400 outline-none transition focus:border-pink-500 focus:bg-white/10 focus:ring-2 focus:ring-pink-500/20 sm:text-base"
-                   placeholder="Say something spicy...">
+                <!-- Rounded Text Input Bar -->
+                <label for="chat-input" class="sr-only">Type a message</label>
+                <input id="chat-input" name="text" maxlength="{{ max_message_length }}" autocomplete="off" required
+                       class="min-w-0 flex-1 rounded-2xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/40 outline-none transition focus:border-pink-500 focus:bg-white/10 focus:ring-2 focus:ring-pink-500/20"
+                       placeholder="Type a message...">
 
-            <!-- Send Button -->
-            <button id="send-button" type="submit"
-                    class="flex h-11 items-center justify-center gap-1.5 rounded-2xl bg-gradient-to-r from-pink-600 to-purple-600 px-5 text-sm font-black text-white shadow-lg shadow-pink-600/30 transition hover:brightness-110 active:scale-95">
-                <span>Send</span>
-                <span>🚀</span>
-            </button>
-        </form>
-        {% else %}
-        <div class="border-t border-white/10 bg-[#151028] p-5 text-center text-sm text-slate-400">
-            This member has disabled messages. You can still read previous messages.
+                <!-- Send Button (🚀 / Paper plane) -->
+                <button id="send-button" type="submit"
+                        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-r from-pink-600 to-purple-600 text-lg font-black text-white shadow-lg shadow-pink-600/30 transition hover:brightness-110 active:scale-95"
+                        title="Send Message">
+                    🚀
+                </button>
+            </form>
+
+            <!-- Secondary Icon Tray (Below Input) -->
+            <div class="flex items-center justify-between pt-1 border-t border-white/5">
+                <div class="flex items-center gap-2">
+                    <!-- Photo Gallery Icon (🖼️) -->
+                    <button type="button" onclick="triggerPhotoUpload()"
+                            class="flex items-center gap-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 text-xs font-bold text-white transition active:scale-95"
+                            title="Send Image from Gallery">
+                        <span class="text-base">🖼️</span>
+                        <span>Photo</span>
+                    </button>
+
+                    <!-- Gift Box Button (🎁) -->
+                    <button id="btn-toggle-gifts" type="button"
+                            class="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-pink-500/20 to-purple-500/20 hover:from-pink-500/30 hover:to-purple-500/30 border border-pink-500/30 px-3 py-1.5 text-xs font-black text-pink-300 transition active:scale-95"
+                            title="Send Animated Gift">
+                        <span class="text-base">🎁</span>
+                        <span>Gift</span>
+                    </button>
+                </div>
+
+                <!-- Direct Video Call Button (📹 20🪙/min) -->
+                <button type="button"
+                        onclick="startDirectVideoCall({{ other_user.id }}, '{{ other_user.username }}')"
+                        class="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 hover:from-rose-400 hover:to-pink-400 px-3.5 py-1.5 text-xs font-black text-white shadow-lg shadow-rose-500/25 active:scale-95 transition"
+                        title="Start Instant Video Call">
+                    <span class="text-base">📹</span>
+                    <span>Video Call ({{ call_rate_per_minute|default:20 }}🪙/m)</span>
+                </button>
+            </div>
         </div>
-        {% endif %}
+
     </section>
 
     <!-- COIN TOP-UP MODAL (Slide-up modal) -->
@@ -235,7 +284,7 @@
                     <span class="text-2xl">🪙</span>
                     <div>
                         <h2 class="text-lg font-black text-white">Refill Your Coins</h2>
-                        <p class="text-xs text-slate-400">Never run out during spicy private calls & gifts</p>
+                        <p class="text-xs text-slate-400">Never run out during spicy private calls &amp; gifts</p>
                     </div>
                 </div>
                 <button id="close-topup-modal" type="button" class="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-slate-400 hover:text-white">✕</button>
@@ -247,7 +296,7 @@
 
             <div class="mt-5 border-t border-white/10 pt-4 flex items-center justify-between text-xs text-slate-400">
                 <span>⚡ Instant activation</span>
-                <span>🔒 Secure Paystack & Flutterwave</span>
+                <span>🔒 Secure Paystack &amp; Flutterwave</span>
             </div>
         </div>
     </div>
@@ -311,7 +360,7 @@
             particles.forEach(p => {
                 p.x += p.vx;
                 p.y += p.vy;
-                p.vy += 0.4; // gravity
+                p.vy += 0.4;
                 p.alpha -= 0.015;
                 if (p.alpha > 0) {
                     alive = true;
@@ -340,7 +389,6 @@
     }
 
     function appendMessage(message, optimistic = false) {
-        // Prevent duplicate appending
         if (!optimistic && message.id && document.querySelector(`[data-message-id="${message.id}"]`)) {
             return null;
         }
@@ -354,10 +402,9 @@
         const bubble = document.createElement('div');
 
         if (msgType === 'gift') {
-            // SPECIAL RICH GIFT CARD (Hiiclub Style)
             bubble.className = isMe
-                ? 'max-w-[85%] rounded-3xl border border-amber-500/40 bg-gradient-to-br from-amber-950/40 via-purple-950/50 to-pink-950/50 p-4 text-white shadow-xl shadow-pink-900/20'
-                : 'max-w-[85%] rounded-3xl border border-pink-500/40 bg-gradient-to-br from-pink-950/40 via-purple-950/50 to-amber-950/40 p-4 text-white shadow-xl shadow-purple-900/20';
+                ? 'max-w-[85%] rounded-3xl border border-amber-500/40 bg-gradient-to-br from-amber-950/40 via-purple-950/50 to-pink-950/50 p-4 text-white shadow-xl'
+                : 'max-w-[85%] rounded-3xl border border-pink-500/40 bg-gradient-to-br from-pink-950/40 via-purple-950/50 to-amber-950/40 p-4 text-white shadow-xl';
 
             const meta = message.metadata || {};
             const icon = meta.icon || '🎁';
@@ -385,7 +432,6 @@
             if (!optimistic) triggerCelebration();
 
         } else if (msgType === 'sticker') {
-            // RICH STICKER ELEMENT
             bubble.className = isMe
                 ? 'max-w-[80%] rounded-3xl bg-pink-600/20 border border-pink-500/30 p-3 text-white'
                 : 'max-w-[80%] rounded-3xl bg-white/10 border border-white/10 p-3 text-white';
@@ -401,8 +447,19 @@
                 </div>
             `;
 
+        } else if (msgType === 'image') {
+            const meta = message.metadata || {};
+            const imgUrl = meta.image_url || message.text;
+            bubble.className = isMe
+                ? 'max-w-[80%] rounded-3xl bg-purple-900/30 border border-purple-500/40 p-2 text-white shadow-lg overflow-hidden'
+                : 'max-w-[80%] rounded-3xl bg-white/10 border border-white/15 p-2 text-white shadow-lg overflow-hidden';
+
+            bubble.innerHTML = `
+                <img src="${imgUrl}" class="rounded-2xl max-h-64 w-auto object-cover cursor-pointer hover:opacity-90 transition" onclick="window.open('${imgUrl}', '_blank')" alt="Shared image">
+                ${message.text && message.text !== '📷 Photo' ? `<p class="mt-1.5 px-2 text-xs text-white/90 leading-relaxed">${message.text}</p>` : ''}
+            `;
+
         } else {
-            // STANDARD TEXT BUBBLE
             bubble.className = isMe
                 ? 'max-w-[82%] rounded-2xl rounded-br-sm bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 px-4 py-2.5 text-white shadow-md'
                 : 'max-w-[82%] rounded-2xl rounded-bl-sm border border-white/10 bg-white/10 px-4 py-2.5 text-slate-100 backdrop-blur-md shadow-md';
@@ -413,7 +470,6 @@
             bubble.appendChild(body);
         }
 
-        // Metadata footer (time + read status)
         const metadata = document.createElement('div');
         metadata.className = 'mt-1.5 flex items-center justify-end gap-1 text-[10px] opacity-75';
         const time = document.createElement('time');
@@ -456,7 +512,6 @@
             }
             chatStatus.textContent = '';
         } catch (error) {
-            // Silently retain latest state without disrupting user
         } finally {
             polling = false;
         }
@@ -507,7 +562,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRFToken': chatForm.querySelector('[name=csrfmiddlewaretoken]').value,
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
                     },
                     body: JSON.stringify({text, message_type: 'text'}),
                 });
@@ -529,17 +584,122 @@
         });
     }
 
-    // Quick emoji pills click
-    document.querySelectorAll('.quick-emoji-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const emoji = btn.dataset.emoji;
-            const input = document.getElementById('chat-input');
-            if (input) {
-                input.value += emoji;
-                input.focus();
+    // Quick Icebreaker Chips Click
+    window.sendIcebreaker = function(text) {
+        const input = document.getElementById('chat-input');
+        if (input) {
+            input.value = text;
+            input.focus();
+            if (chatForm) {
+                chatForm.dispatchEvent(new Event('submit', { cancelable: true }));
+            }
+        }
+    };
+
+    // Photo Gallery Upload Trigger
+    window.triggerPhotoUpload = function() {
+        const fileInput = document.getElementById('chat-photo-input');
+        if (fileInput) fileInput.click();
+    };
+
+    const photoInput = document.getElementById('chat-photo-input');
+    if (photoInput) {
+        photoInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('image', file);
+            formData.append('message_type', 'image');
+            formData.append('text', '📷 Photo');
+
+            const csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+            chatStatus.textContent = 'Uploading photo...';
+
+            try {
+                const res = await fetch(SEND_URL, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrf },
+                    body: formData,
+                });
+                const data = await res.json();
+                if (res.ok && data.message) {
+                    appendMessage(data.message);
+                    chatStatus.textContent = '';
+                } else {
+                    alert(data.message || 'Failed to upload photo');
+                    chatStatus.textContent = '';
+                }
+            } catch (err) {
+                alert('Upload error: ' + err.message);
+                chatStatus.textContent = '';
+            } finally {
+                photoInput.value = '';
             }
         });
+    }
+
+    // 3-Dot Menu Toggle
+    window.toggleChatMenu = function() {
+        const menu = document.getElementById('chat-dropdown-menu');
+        if (menu) menu.classList.toggle('hidden');
+    };
+
+    document.addEventListener('click', (e) => {
+        const menu = document.getElementById('chat-dropdown-menu');
+        const toggleBtn = document.getElementById('chat-menu-toggle');
+        if (menu && !menu.classList.contains('hidden')) {
+            if (!menu.contains(e.target) && e.target !== toggleBtn) {
+                menu.classList.add('hidden');
+            }
+        }
     });
+
+    window.reportHost = function() {
+        alert('Thank you. Host has been flagged for investigation by our safety team.');
+        const menu = document.getElementById('chat-dropdown-menu');
+        if (menu) menu.classList.add('hidden');
+    };
+
+    window.blockHost = function() {
+        if (confirm(`Block ${OTHER_USERNAME}? You will no longer receive calls or messages.`)) {
+            alert(`${OTHER_USERNAME} has been blocked.`);
+            window.location.href = "{% url 'match_list' %}";
+        }
+    };
+
+    // Direct Video Call Trigger
+    window.startDirectVideoCall = async function(receiverId, receiverName) {
+        try {
+            const res = await fetch("/api/calls/initiate/", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '',
+                },
+                body: JSON.stringify({ receiver_id: receiverId }),
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                if (data.message === 'insufficient_coins' || data.message === 'sex_call_pass_required') {
+                    openTopupModal();
+                } else {
+                    alert(data.detail || data.message || 'Unable to initiate call');
+                }
+                return;
+            }
+
+            const roomId = data.room_id || (data.call && data.call.room_id);
+            if (roomId) {
+                window.location.href = `/call/${roomId}/`;
+            } else if (window.lovenyStartVideoCall) {
+                window.lovenyStartVideoCall(receiverId);
+            }
+        } catch (err) {
+            alert('Call error: ' + err.message);
+        }
+    };
 
     // STICKER DRAWER HANDLING
     const btnToggleStickers = document.getElementById('btn-toggle-stickers');
@@ -571,7 +731,6 @@
             </button>
         `).join('');
 
-        // Delegate sticker click
         stickerGrid.querySelectorAll('.send-sticker-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 sendSticker(btn.dataset.stickerIcon, btn.dataset.stickerName, btn.dataset.stickerCaption);
@@ -635,9 +794,9 @@
     document.querySelectorAll('.sticker-tab-btn').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.sticker-tab-btn').forEach(t => {
-                t.className = 'sticker-tab-btn rounded-xl px-3 py-1 text-xs font-black transition bg-white/5 text-slate-400 hover:text-white';
+                t.className = 'sticker-tab-btn rounded-xl px-2.5 py-1 text-xs font-black transition bg-white/5 text-slate-400 hover:text-white';
             });
-            tab.className = 'sticker-tab-btn rounded-xl px-3 py-1 text-xs font-black transition bg-pink-600 text-white shadow';
+            tab.className = 'sticker-tab-btn rounded-xl px-2.5 py-1 text-xs font-black transition bg-pink-600 text-white shadow';
             renderStickerPack(tab.dataset.packId);
         });
     });
@@ -696,7 +855,6 @@
                     return;
                 }
 
-                // Success
                 updateCoinDisplay(data.sender_balance);
                 if (data.message) {
                     appendMessage(data.message);
@@ -763,11 +921,9 @@
     }
 
     window.startCoinPurchase = function(packageId, price, coins) {
-        // Redirect to coin checkout or trigger paystack
         window.location.href = `{% url 'premium_checkout' %}?plan=${packageId}&mode=COINS`;
     };
 
-    // Auto-sync wallet balance periodically
     async function syncWalletBalance() {
         try {
             const res = await fetch(WALLET_BALANCE_API_URL);
@@ -778,9 +934,7 @@
         } catch (e) {}
     }
 
-    // Initial run
     startPolling();
     window.setInterval(syncWalletBalance, 15000);
 </script>
 {% endblock %}
-
