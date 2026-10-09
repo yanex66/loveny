@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% load static %}
 
 {% block title %}LOVENY - Discover{% endblock %}
@@ -63,8 +63,9 @@
 </style>
 {% endblock %}
 
-{% block content %}
 {% block floating_coin_pill %}{% endblock %}
+{% block body_class %}hide-floating-coin{% endblock %}
+{% block content %}
 <div class="min-h-screen relative overflow-hidden bg-gradient-to-br from-rose-50 via-white to-orange-50 font-sans flex flex-col items-center pb-24 text-slate-900">
 
     <div id="config-data" 

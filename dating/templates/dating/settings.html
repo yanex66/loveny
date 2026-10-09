@@ -1,82 +1,11 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Settings | LOVENY
-<script src="https://js.paystack.co/v1/inline.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const modeSelect = document.getElementById('mode-switch-select');
-    const switchBtn = document.getElementById('btn-switch-mode');
-    
-    if(modeSelect && switchBtn) {
-        modeSelect.addEventListener('change', function() {
-            if(this.value) {
-                switchBtn.disabled = false;
-                switchBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-            } else {
-                switchBtn.disabled = true;
-                switchBtn.classList.add('opacity-50', 'cursor-not-allowed');
-            }
-        });
-        
-        switchBtn.addEventListener('click', function() {
-            const targetMode = modeSelect.value;
-            if(!targetMode) return;
-            
-            const feeAmount = {{ site_config.mode_switch_fee|default:200 }} * 100;
-            const email = "{{ request.user.email|default:'user@example.com' }}";
-            
-            let handler = PaystackPop.setup({
-                key: '{{ paystack_public_key }}',
-                email: email,
-                amount: feeAmount,
-                currency: 'NGN',
-                ref: 'SW_' + Math.floor((Math.random() * 1000000000) + 1),
-                callback: function(response){
-                    switchBtn.disabled = true;
-                    switchBtn.innerHTML = '<span class="animate-pulse">Switching...</span>';
-                    
-                    fetch("{% url 'switch_profile_mode_api' %}", {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': '{{ csrf_token }}'
-                        },
-                        body: JSON.stringify({
-                            reference: response.reference,
-                            target_mode: targetMode
-                        })
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        if(data.status === 'success') {
-                            window.location.href = "{% url 'settings' %}";
-                        } else {
-                            alert("Error switching mode: " + data.message);
-                            switchBtn.disabled = false;
-                            switchBtn.innerHTML = 'Pay ?{{ site_config.mode_switch_fee|default:200 }} & Switch';
-                        }
-                    })
-                    .catch(err => {
-                        alert("Network error.");
-                        switchBtn.disabled = false;
-                        switchBtn.innerHTML = 'Pay ?{{ site_config.mode_switch_fee|default:200 }} & Switch';
-                    });
-                },
-                onClose: function(){
-                    alert('Payment cancelled.');
-                }
-            });
-            handler.openIframe();
-        });
-    }
-});
-</script>
+{% block title %}Settings | LOVENY{% endblock %}
 
-{% endblock %}
-
-{% block content %}
 {% block floating_coin_pill %}{% endblock %}
+{% block body_class %}hide-floating-coin{% endblock %}
+{% block content %}
 <div class="min-h-screen relative overflow-hidden bg-gradient-to-br from-rose-50 via-white to-orange-50 font-sans pb-32 text-slate-900">
 
     <div class="absolute -z-10 w-96 h-96 bg-pink-200/70 rounded-full filter blur-[120px] top-20 left-[-100px] animate-blob"></div>
@@ -139,9 +68,6 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <option value="" disabled selected>Select new mode...</option>
                                     <option value="DATING" {% if profile.relationship_mode == 'DATING' %}disabled{% endif %}>Dating</option>
                                     <option value="HOOKUP" {% if profile.relationship_mode == 'HOOKUP' %}disabled{% endif %}>Hookup</option>
-                                    <option value="SUGAR_BABY" {% if profile.relationship_mode == 'SUGAR_BABY' %}disabled{% endif %}>Sugar Baby</option>
-                                    <option value="SUGAR_DADDY" {% if profile.relationship_mode == 'SUGAR_DADDY' %}disabled{% endif %}>Sugar Daddy / Mommy</option>
-                                    <option value="FRIENDSHIP" {% if profile.relationship_mode == 'FRIENDSHIP' %}disabled{% endif %}>Friendship</option>
                                     <option value="SEX_CALL" {% if profile.relationship_mode == 'SEX_CALL' %}disabled{% endif %}>Sex Call</option>
                                 </select>
                                 
