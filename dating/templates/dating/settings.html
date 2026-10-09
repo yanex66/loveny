@@ -1,7 +1,79 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Settings | LOVENY{% endblock %}
+{% block title %}Settings | LOVENY
+<script src="https://js.paystack.co/v1/inline.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modeSelect = document.getElementById('mode-switch-select');
+    const switchBtn = document.getElementById('btn-switch-mode');
+    
+    if(modeSelect && switchBtn) {
+        modeSelect.addEventListener('change', function() {
+            if(this.value) {
+                switchBtn.disabled = false;
+                switchBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else {
+                switchBtn.disabled = true;
+                switchBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        });
+        
+        switchBtn.addEventListener('click', function() {
+            const targetMode = modeSelect.value;
+            if(!targetMode) return;
+            
+            const feeAmount = {{ site_config.mode_switch_fee|default:200 }} * 100;
+            const email = "{{ request.user.email|default:'user@example.com' }}";
+            
+            let handler = PaystackPop.setup({
+                key: '{{ paystack_public_key }}',
+                email: email,
+                amount: feeAmount,
+                currency: 'NGN',
+                ref: 'SW_' + Math.floor((Math.random() * 1000000000) + 1),
+                callback: function(response){
+                    switchBtn.disabled = true;
+                    switchBtn.innerHTML = '<span class="animate-pulse">Switching...</span>';
+                    
+                    fetch("{% url 'switch_profile_mode_api' %}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: JSON.stringify({
+                            reference: response.reference,
+                            target_mode: targetMode
+                        })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data.status === 'success') {
+                            window.location.href = "{% url 'settings' %}";
+                        } else {
+                            alert("Error switching mode: " + data.message);
+                            switchBtn.disabled = false;
+                            switchBtn.innerHTML = 'Pay ?{{ site_config.mode_switch_fee|default:200 }} & Switch';
+                        }
+                    })
+                    .catch(err => {
+                        alert("Network error.");
+                        switchBtn.disabled = false;
+                        switchBtn.innerHTML = 'Pay ?{{ site_config.mode_switch_fee|default:200 }} & Switch';
+                    });
+                },
+                onClose: function(){
+                    alert('Payment cancelled.');
+                }
+            });
+            handler.openIframe();
+        });
+    }
+});
+</script>
+
+{% endblock %}
 
 {% block content %}
 <div class="min-h-screen relative overflow-hidden bg-gradient-to-br from-rose-50 via-white to-orange-50 font-sans pb-32 text-slate-900">
@@ -49,15 +121,34 @@
                 {% endif %}
                 
                 <div class="soft-card rounded-3xl p-5 sm:p-7">
-                    <!-- Read-Only Connection Mode Status Badge -->
+                    <!-- Mode Switch Section -->
                     <div class="space-y-2 mb-6">
                         <span class="block text-xs font-bold text-pink-700 uppercase tracking-widest">Connection mode</span>
-                        <div class="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-gradient-to-r from-purple-50 via-pink-50 to-rose-50 border border-purple-200/80 shadow-sm">
-                            <span class="h-2.5 w-2.5 rounded-full bg-purple-600 animate-pulse shrink-0"></span>
-                            <span class="text-sm font-black text-purple-950">Active Mode: {{ profile.get_relationship_mode_display|default:profile.relationship_mode }}</span>
-                            <span class="ml-auto text-[10px] font-bold uppercase tracking-wider text-purple-600 bg-purple-200/60 px-2 py-0.5 rounded-full">Locked</span>
+                        <div class="p-4 rounded-2xl bg-gradient-to-r from-purple-50 via-pink-50 to-rose-50 border border-purple-200/80 shadow-sm">
+                            <div class="flex items-center gap-2.5 mb-3">
+                                <span class="h-2.5 w-2.5 rounded-full bg-purple-600 animate-pulse shrink-0"></span>
+                                <span class="text-sm font-black text-purple-950">Active Mode: {{ profile.get_relationship_mode_display|default:profile.relationship_mode }}</span>
+                            </div>
+                            
+                            <div class="space-y-2">
+                                <p class="text-xs text-slate-600 font-medium">Switch to a different mode. Your current profile data and photos will be safely saved, and you'll get a fresh profile for the new mode!</p>
+                                <p class="text-[10px] text-pink-600 font-bold uppercase">Switch Fee: ?{{ site_config.mode_switch_fee|default:200 }}</p>
+                                
+                                <select id="mode-switch-select" class="w-full mt-2 p-2 rounded-xl border border-pink-200 text-sm font-bold text-slate-700">
+                                    <option value="" disabled selected>Select new mode...</option>
+                                    <option value="DATING" {% if profile.relationship_mode == 'DATING' %}disabled{% endif %}>Dating</option>
+                                    <option value="HOOKUP" {% if profile.relationship_mode == 'HOOKUP' %}disabled{% endif %}>Hookup</option>
+                                    <option value="SUGAR_BABY" {% if profile.relationship_mode == 'SUGAR_BABY' %}disabled{% endif %}>Sugar Baby</option>
+                                    <option value="SUGAR_DADDY" {% if profile.relationship_mode == 'SUGAR_DADDY' %}disabled{% endif %}>Sugar Daddy / Mommy</option>
+                                    <option value="FRIENDSHIP" {% if profile.relationship_mode == 'FRIENDSHIP' %}disabled{% endif %}>Friendship</option>
+                                    <option value="SEX_CALL" {% if profile.relationship_mode == 'SEX_CALL' %}disabled{% endif %}>Sex Call</option>
+                                </select>
+                                
+                                <button type="button" id="btn-switch-mode" class="mt-3 w-full py-2.5 bg-purple-600 text-white font-black text-xs uppercase tracking-widest rounded-xl hover:bg-purple-700 transition opacity-50 cursor-not-allowed" disabled>
+                                    Pay ?{{ site_config.mode_switch_fee|default:200 }} & Switch
+                                </button>
+                            </div>
                         </div>
-                        <p class="text-[11px] text-slate-500 font-medium">To change your primary connection style, manage mode from your discovery dashboard.</p>
                     </div>
 
                     <!-- Do Not Disturb (DND) Toggle (Only User-Configurable Setting) -->
@@ -252,4 +343,76 @@
         animation: blob 15s infinite;
     }
 </style>
+
+<script src="https://js.paystack.co/v1/inline.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modeSelect = document.getElementById('mode-switch-select');
+    const switchBtn = document.getElementById('btn-switch-mode');
+    
+    if(modeSelect && switchBtn) {
+        modeSelect.addEventListener('change', function() {
+            if(this.value) {
+                switchBtn.disabled = false;
+                switchBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else {
+                switchBtn.disabled = true;
+                switchBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        });
+        
+        switchBtn.addEventListener('click', function() {
+            const targetMode = modeSelect.value;
+            if(!targetMode) return;
+            
+            const feeAmount = {{ site_config.mode_switch_fee|default:200 }} * 100;
+            const email = "{{ request.user.email|default:'user@example.com' }}";
+            
+            let handler = PaystackPop.setup({
+                key: '{{ paystack_public_key }}',
+                email: email,
+                amount: feeAmount,
+                currency: 'NGN',
+                ref: 'SW_' + Math.floor((Math.random() * 1000000000) + 1),
+                callback: function(response){
+                    switchBtn.disabled = true;
+                    switchBtn.innerHTML = '<span class="animate-pulse">Switching...</span>';
+                    
+                    fetch("{% url 'switch_profile_mode_api' %}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: JSON.stringify({
+                            reference: response.reference,
+                            target_mode: targetMode
+                        })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data.status === 'success') {
+                            window.location.href = "{% url 'settings' %}";
+                        } else {
+                            alert("Error switching mode: " + data.message);
+                            switchBtn.disabled = false;
+                            switchBtn.innerHTML = 'Pay ?{{ site_config.mode_switch_fee|default:200 }} & Switch';
+                        }
+                    })
+                    .catch(err => {
+                        alert("Network error.");
+                        switchBtn.disabled = false;
+                        switchBtn.innerHTML = 'Pay ?{{ site_config.mode_switch_fee|default:200 }} & Switch';
+                    });
+                },
+                onClose: function(){
+                    alert('Payment cancelled.');
+                }
+            });
+            handler.openIframe();
+        });
+    }
+});
+</script>
+
 {% endblock %}

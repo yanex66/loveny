@@ -591,11 +591,7 @@ def edit_profile(request):
                 has_main = profile.photos.filter(is_main=True).exists()
                 for index, uploaded_file in enumerate(more_photos):
                     is_main = index == main_index if main_index is not None else not has_main and index == 0
-                    ProfilePhoto.objects.create(
-                        profile=profile,
-                        image=uploaded_file,
-                        is_main=is_main,
-                    )
+                    ProfilePhoto.objects.create(profile=profile, user=profile.user, mode=profile.relationship_mode, image=uploaded_file, is_main=is_main)
                 return redirect(f"{reverse('edit_profile')}?saved=1")
     else:
         form = ProfileForm(
@@ -3170,7 +3166,7 @@ def create_profile(request):
         form.save_m2m()
         request.session['active_connection_mode'] = p.relationship_mode
         if request.FILES.get('photo'):
-            ProfilePhoto.objects.create(profile=p, image=request.FILES.get('photo'), is_main=True)
+            ProfilePhoto.objects.create(profile=p, user=p.user, mode=p.relationship_mode, image=request.FILES.get('photo'), is_main=True)
         if p.relationship_mode == 'SEX_CALL':
             return redirect('sex_call_hub')
         return redirect('swipe_card')
@@ -3197,7 +3193,14 @@ def settings_view(request):
         profile = form.save()
         request.session['active_connection_mode'] = profile.relationship_mode
         return redirect('swipe_card')
-    return render(request, 'dating/settings.html', {'form': form, 'profile': profile})
+    
+    site_config = SiteConfiguration.objects.first()
+    return render(request, 'dating/settings.html', {
+        'form': form, 
+        'profile': profile,
+        'site_config': site_config,
+        'paystack_public_key': settings.PAYSTACK_PUBLIC_KEY
+    })
 
 def privacy(request): return render(request, 'dating/privacy.html')
 def terms(request): return render(request, 'dating/terms.html')
@@ -3557,6 +3560,9 @@ def hookup_discovery_view(request):
             status='accepted'
         ).select_related('initiator', 'target', 'initiator__profile', 'target__profile')
     )
+    for m in accepted_matches:
+        m.is_initiator = (m.initiator_id == request.user.id)
+        m.has_paid = m.initiator_paid if m.is_initiator else m.target_paid
 
     # Active unlocked 24-hr chats
     active_unlocked = list(
@@ -3566,6 +3572,8 @@ def hookup_discovery_view(request):
         ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
         .select_related('initiator', 'target', 'initiator__profile', 'target__profile')
     )
+    for m in active_unlocked:
+        m.partner = m.target if m.initiator_id == request.user.id else m.initiator
 
     # Auto-expire matches where 24h passed
     HookupMatch.objects.filter(
@@ -3964,3 +3972,87 @@ def global_notifications_api(request):
         })
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+import json
+import requests
+from django.conf import settings
+from django.views.decorators.http import require_POST
+from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
+from dating.models import ProfileStateBackup, ProfilePhoto, SiteConfiguration, RELATIONSHIP_MODE_CHOICES
+
+@login_required
+@require_POST
+def switch_profile_mode_api(request):
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+    
+    target_mode = data.get('target_mode')
+    reference = data.get('reference')
+    if target_mode not in dict(RELATIONSHIP_MODE_CHOICES).keys():
+        return JsonResponse({'status': 'error', 'message': 'invalid_mode'}, status=400)
+        
+    profile = request.user.profile
+    if profile.relationship_mode == target_mode:
+        return JsonResponse({'status': 'error', 'message': 'already_in_mode'}, status=400)
+        
+    # Verify Payment if reference provided
+    if reference:
+        url = f"https://api.paystack.co/transaction/verify/{reference}"
+        headers = {
+            "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"
+        }
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            res_data = response.json()
+            if not res_data.get('status') or res_data['data']['status'] != 'success':
+                return JsonResponse({"status": "error", "message": "Payment failed or incomplete"}, status=400)
+            
+            # verify amount
+            expected_amount = SiteConfiguration.objects.first().mode_switch_fee * 100
+            if res_data['data']['amount'] < expected_amount:
+                return JsonResponse({"status": "error", "message": "Insufficient payment"}, status=400)
+        else:
+            return JsonResponse({"status": "error", "message": "Verification failed"}, status=400)
+            
+    # Perform Mode Switch (save current to backup, restore from backup if exists, update photos)
+    current_mode = profile.relationship_mode
+    
+    # 1. Backup current mode
+    backup, _ = ProfileStateBackup.objects.get_or_create(user=request.user, mode=current_mode)
+    backup.bio = profile.bio
+    backup.first_date_idea = profile.first_date_idea
+    backup.job_title = profile.job_title
+    backup.save()
+    backup.tags.set(profile.tags.all())
+    
+    # 2. Detach current photos (they retain user and mode)
+    profile.photos.all().update(profile=None)
+    
+    # 3. Restore target mode from backup if it exists
+    target_backup = ProfileStateBackup.objects.filter(user=request.user, mode=target_mode).first()
+    if target_backup:
+        profile.bio = target_backup.bio
+        profile.first_date_idea = target_backup.first_date_idea
+        profile.job_title = target_backup.job_title
+        profile.save()
+        profile.tags.set(target_backup.tags.all())
+    else:
+        # Defaults if new
+        profile.bio = ''
+        profile.first_date_idea = ''
+        profile.job_title = ''
+        profile.save()
+        profile.tags.clear()
+        
+    profile.relationship_mode = target_mode
+    profile.save()
+    
+    # 4. Attach photos for target mode
+    ProfilePhoto.objects.filter(user=request.user, mode=target_mode).update(profile=profile)
+    
+    request.session['active_connection_mode'] = target_mode
+    
+    return JsonResponse({'status': 'success'})
+

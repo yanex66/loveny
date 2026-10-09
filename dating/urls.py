@@ -14,6 +14,7 @@ urlpatterns = [
     path('account/delete/', views.delete_account, name='delete_account'),
     
     path('settings/', views.settings_view, name='settings'),
+    path('api/settings/switch-mode/', views.switch_profile_mode_api, name='switch_profile_mode_api'),
     path('settings/blocked/', views.blocked_users_view, name='blocked_users'),
 
     path('api/conversations/', views.conversations_api, name='conversations_api'),

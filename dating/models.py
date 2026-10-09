@@ -182,7 +182,9 @@ class Profile(models.Model):
         return self.user.username
 
 class ProfilePhoto(models.Model):
-    profile = models.ForeignKey(Profile, related_name='photos', on_delete=models.CASCADE)
+    user = models.ForeignKey(User, related_name='all_profile_photos', on_delete=models.CASCADE, null=True, blank=True)
+    mode = models.CharField(max_length=12, choices=RELATIONSHIP_MODE_CHOICES, default='DATING')
+    profile = models.ForeignKey(Profile, related_name='photos', on_delete=models.SET_NULL, null=True, blank=True)
     image = models.FileField(upload_to='profile_media/')
     is_main = models.BooleanField(default=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -192,7 +194,8 @@ class ProfilePhoto(models.Model):
         verbose_name_plural = 'Profile Media'
 
     def __str__(self):
-        return f"Media for {self.profile.user.username} (Main: {self.is_main})"
+        username = self.user.username if self.user else (self.profile.user.username if self.profile else "Unknown")
+        return f"Media for {username} in {self.mode} (Main: {self.is_main})"
 
     @property
     def is_video(self):
@@ -596,6 +599,10 @@ class SiteConfiguration(models.Model):
         default=20,
         help_text="Diamonds awarded on Day 7 of the check-in streak (Grand Prize)",
     )
+    mode_switch_fee = models.PositiveIntegerField(
+        default=200,
+        help_text="Amount in Naira to charge when switching profile modes",
+    )
     diamond_to_coin_percentage = models.PositiveIntegerField(
         default=70,
         validators=[MinValueValidator(1), MaxValueValidator(100)],
@@ -815,3 +822,16 @@ class ProfileView(models.Model):
 
     def __str__(self):
         return f'{self.viewer.username} viewed {self.viewed.username}'
+class ProfileStateBackup(models.Model):
+    user = models.ForeignKey(User, related_name='profile_backups', on_delete=models.CASCADE)
+    mode = models.CharField(max_length=12, choices=RELATIONSHIP_MODE_CHOICES)
+    bio = models.CharField(max_length=200, blank=True)
+    first_date_idea = models.CharField(max_length=255, blank=True)
+    tags = models.ManyToManyField(Tag, blank=True)
+    job_title = models.CharField(max_length=100, blank=True)
+    
+    class Meta:
+        unique_together = ('user', 'mode')
+        
+    def __str__(self):
+        return f"Backup for {self.user.username} in {self.mode} mode"

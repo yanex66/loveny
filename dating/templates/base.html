@@ -27,7 +27,6 @@
             min-height: 100vh;
             min-height: 100svh;
             overflow-x: hidden;
-            background-color: #fff8fc;
             color: var(--loveny-ink);
             -webkit-tap-highlight-color: transparent;
         }
@@ -38,7 +37,6 @@
             overflow-x: clip;
             padding-top: env(safe-area-inset-top);
             padding-bottom: 6rem;
-            background-color: #fff8fc;
             box-shadow: 0 0 48px rgba(53, 22, 47, 0.08);
         }
         .device-frame :where(p, a, h1, h2, h3, h4, h5, h6, li, label, button) {
@@ -117,6 +115,19 @@
         }
         .bottom-tab.nav-active span {
             color: #be185d;
+        }
+        .hookup-theme .bottom-tab {
+            color: #a855f7;
+        }
+        .hookup-theme .bottom-tab.nav-active {
+            color: #ec4899;
+        }
+        .hookup-theme .bottom-tab.nav-active::before {
+            background: linear-gradient(90deg, #c084fc, #ec4899);
+        }
+        .hookup-theme .bottom-tab.nav-active svg,
+        .hookup-theme .bottom-tab.nav-active span {
+            color: #ec4899;
         }
         .bottom-nav-container {
             position: fixed;
@@ -214,7 +225,7 @@
     </style>
     {% block extra_head %}{% endblock %}
 </head>
-<body class="min-h-screen font-sans antialiased selection:bg-pink-500 selection:text-white {% block body_class %}{% endblock %}">
+<body class="min-h-screen font-sans antialiased selection:bg-pink-500 selection:text-white {% block body_class %}bg-[#fff8fc] text-[#35162f]{% endblock %}">
     <div class="device-frame w-full overflow-x-hidden {% if user.is_authenticated %}pb-36{% endif %}">
         {% block content %}{% endblock %}
     </div>
@@ -628,7 +639,7 @@
     </div>
     <div class="bottom-nav-container">
         
-        <nav class="bottom-tabs pointer-events-auto mx-auto flex max-w-sm items-center justify-around rounded-[1.75rem] px-3 py-3">
+        <nav class="pointer-events-auto mx-auto flex max-w-sm items-center justify-around rounded-[1.75rem] px-3 py-3 {% if user.profile.relationship_mode == 'HOOKUP' %}bg-[#1c0f33]/90 border border-purple-800/40 backdrop-blur-xl shadow-2xl text-purple-300{% else %}bottom-tabs{% endif %}">
             
             {% if user.profile.relationship_mode == 'SEX_CALL' %}
             <a href="{% url 'sex_call_hub' %}" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'sex_call_hub' or request.resolver_match.url_name == 'swipe_card' %}nav-active{% endif %}">

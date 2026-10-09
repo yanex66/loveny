@@ -3,7 +3,7 @@
 
 {% block title %}Hookup Discovery · Available Tonight | LOVENY{% endblock %}
 
-{% block body_class %}hide-floating-coin bg-[#0e071a] text-slate-100{% endblock %}
+{% block body_class %}hide-floating-coin bg-[#0e071a] text-slate-100 hookup-theme{% endblock %}
 
 {% block content %}
 <main class="min-h-screen pb-28 pt-4 px-4 max-w-lg mx-auto" role="main" aria-label="Hookup Discovery">
@@ -43,14 +43,13 @@
         </h2>
         <div class="space-y-2.5">
             {% for m in active_unlocked %}
-            {% with partner=m.target|default:m.initiator %}
             <div class="flex items-center justify-between rounded-2xl border border-emerald-500/40 bg-emerald-950/30 p-3 backdrop-blur-md">
                 <div class="flex items-center gap-3">
                     <div class="h-12 w-12 rounded-xl bg-purple-900 overflow-hidden ring-2 ring-emerald-400/50">
-                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed={{ partner.username }}" alt="{{ partner.username }}" class="h-full w-full object-cover">
+                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed={{ m.partner.username }}" alt="{{ m.partner.username }}" class="h-full w-full object-cover">
                     </div>
                     <div>
-                        <div class="text-sm font-bold text-white">{{ partner.first_name|default:partner.username }}</div>
+                        <div class="text-sm font-bold text-white">{{ m.partner.first_name|default:m.partner.username }}</div>
                         <div class="text-[11px] font-mono text-emerald-300">⚡ 24h Window Active</div>
                     </div>
                 </div>
@@ -58,7 +57,6 @@
                     Open Chat →
                 </a>
             </div>
-            {% endwith %}
             {% endfor %}
         </div>
     </section>
@@ -99,8 +97,6 @@
 
             <!-- Accepted Matches Awaiting Escrow Payment -->
             {% for m in accepted_matches %}
-            {% with is_initiator=request.user.pk|stringformat:"s" == m.initiator.pk|stringformat:"s" %}
-            {% with has_paid=m.initiator_paid if is_initiator else m.target_paid %}
             <div class="rounded-2xl border border-amber-400/40 bg-purple-950/60 p-3.5 backdrop-blur-md" id="escrow-card-{{ m.id }}">
                 <div class="flex items-center justify-between mb-2">
                     <div class="flex items-center gap-2.5">
@@ -110,20 +106,20 @@
                             <div class="text-[10px] text-amber-300">₦{{ m.connection_fee|default:1500 }} Dual-Fiat Fee</div>
                         </div>
                     </div>
-                    {% if has_paid %}
-                    <span class="rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold">You Paid ✅</span>
+                    {% if m.has_paid %}
+                    <span class="rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold">You Paid ✓</span>
                     {% else %}
                     <span class="rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold">Payment Needed</span>
                     {% endif %}
                 </div>
                 <p class="text-[11px] text-purple-200/80 mb-3">
-                    {% if has_paid %}
+                    {% if m.has_paid %}
                     Your fee is deposited in escrow! Awaiting your partner's payment to unlock the 24h chat.
                     {% else %}
                     Both parties must pay ₦{{ m.connection_fee|default:1500 }} to unlock the 24-hour chat room.
                     {% endif %}
                 </p>
-                {% if not has_paid %}
+                {% if not m.has_paid %}
                 <div class="space-y-2">
                     <button type="button" onclick="payHookupFee('{{ m.id }}', 'flutterwave')" class="w-full rounded-xl bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 py-2 text-[11px] font-black text-slate-950 shadow-lg shadow-orange-500/25 active:scale-95 transition">
                         Pay ₦{{ m.connection_fee|default:1500 }} via Flutterwave
@@ -134,8 +130,6 @@
                 </div>
                 {% endif %}
             </div>
-            {% endwith %}
-            {% endwith %}
             {% endfor %}
         </div>
     </section>
