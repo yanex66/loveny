@@ -2906,11 +2906,14 @@ def conversation_messages_api(request, conversation_id):
                     request.user,
                 ]
 
+    profile = request.user.profile if hasattr(request.user, 'profile') else None
+    
     return JsonResponse({
         'messages': [
             serialize_chat_message(message, other_user.pk)
             for message in messages
         ],
+        'coin_balance': profile.coin_balance if profile else 0,
     })
 
 

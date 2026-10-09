@@ -505,6 +505,9 @@
             if (data.messages && Array.isArray(data.messages)) {
                 data.messages.forEach(msg => appendMessage(msg));
             }
+            if (data.coin_balance !== undefined) {
+                updateCoinDisplay(data.coin_balance);
+            }
             chatStatus.textContent = '';
         } catch (error) {
         } finally {
