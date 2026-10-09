@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% load static %}
 
 {% block title %}LOVENY — Make a connection that feels like you{% endblock %}
@@ -71,6 +71,7 @@
             <div class="absolute -bottom-7 -left-8 rounded-2xl border border-white bg-white/95 px-5 py-4 shadow-xl shadow-pink-200/40">
                 <p class="text-[10px] font-black uppercase tracking-[0.2em] text-pink-600">A little more you</p>
                 <p class="mt-1 text-sm font-bold text-slate-800">Switch modes whenever you like.</p>
+                <p class="mt-0.5 text-[10px] text-slate-500 font-bold uppercase">(₦{{ site_config.mode_switch_fee|default:200 }} switch fee applies)</p>
             </div>
         </div>
     </section>
@@ -80,7 +81,7 @@
             <div class="rounded-3xl p-6">
                 <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-pink-100 text-xl font-black text-pink-700">1</span>
                 <h2 class="mt-4 font-black text-slate-900">Choose your mode</h2>
-                <p class="mt-2 text-sm leading-relaxed text-slate-600">Set your intent and preferences. You control what appears in discovery.</p>
+                <p class="mt-2 text-sm leading-relaxed text-slate-600">Set your intent and preferences. You control what appears in discovery. Switching modes later costs just ₦{{ site_config.mode_switch_fee|default:200 }}.</p>
             </div>
             <div class="rounded-3xl p-6">
                 <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-100 text-xl font-black text-orange-700">2</span>
