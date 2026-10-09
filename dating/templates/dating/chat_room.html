@@ -3,6 +3,8 @@
 
 {% block title %}Chat with {{ other_user.first_name|default:other_user.username }} | LOVENY{% endblock %}
 
+{% block body_class %}hide-floating-coin{% endblock %}
+
 {% block extra_head %}
 <style>
     @keyframes giftPulse {
@@ -215,9 +217,6 @@
 
         <!-- 3. BOTTOM ACTION DOCK -->
         <div class="border-t border-white/10 bg-[#160b2e] p-3 sm:p-4 space-y-2">
-            <!-- Hidden Image File Input for Gallery Icon -->
-            <input type="file" id="chat-photo-input" accept="image/*" class="hidden">
-
             <!-- Primary Text Input Row -->
             <form id="chat-form" class="flex items-center gap-2">
                 {% csrf_token %}
@@ -246,13 +245,7 @@
             <!-- Secondary Icon Tray (Below Input) -->
             <div class="flex items-center justify-between pt-1 border-t border-white/5">
                 <div class="flex items-center gap-2">
-                    <!-- Photo Gallery Icon (🖼️) -->
-                    <button type="button" onclick="triggerPhotoUpload()"
-                            class="flex items-center gap-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 text-xs font-bold text-white transition active:scale-95"
-                            title="Send Image from Gallery">
-                        <span class="text-base">🖼️</span>
-                        <span>Photo</span>
-                    </button>
+
 
                     <!-- Gift Box Button (🎁) -->
                     <button id="btn-toggle-gifts" type="button"
@@ -263,6 +256,7 @@
                     </button>
                 </div>
 
+                {% if can_video_call %}
                 <!-- Direct Video Call Button (📹 20🪙/min) -->
                 <button type="button"
                         onclick="startDirectVideoCall({{ other_user.id }}, '{{ other_user.username }}')"
@@ -271,6 +265,7 @@
                     <span class="text-base">📹</span>
                     <span>Video Call ({{ call_rate_per_minute|default:20 }}🪙/m)</span>
                 </button>
+                {% endif %}
             </div>
         </div>
 

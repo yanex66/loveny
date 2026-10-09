@@ -15,7 +15,8 @@
         Having trouble with your account or payment? Our support team in Lagos is ready to assist.
     </p>
 
-    <a href="https://wa.me/2349130273282?text=Hello%20Loveny%20Support,%20I%20need%20help%20with%20my%20account"
+    {% if site_config.support_whatsapp %}
+    <a href="https://wa.me/{{ site_config.support_whatsapp|urlencode }}?text=Hello%20Loveny%20Support,%20I%20need%20help%20with%20my%20account"
        target="_blank" rel="noopener noreferrer"
        class="flex min-h-14 w-full max-w-sm items-center justify-center gap-3 rounded-2xl bg-[#25D366] px-6 py-4 text-base font-bold text-white shadow-lg transition hover:bg-emerald-600">
         <svg class="h-5 w-5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -23,6 +24,14 @@
         </svg>
         Chat on WhatsApp
     </a>
+    {% else %}
+    <p class="text-gray-400 text-sm mb-8 max-w-xs mx-auto">
+        WhatsApp support is currently unavailable.
+        {% if site_config.support_email %}
+        Email us at: <a href="mailto:{{ site_config.support_email }}" class="text-pink-500">{{ site_config.support_email }}</a>
+        {% endif %}
+    </p>
+    {% endif %}
 
     <button onclick="history.back()" class="mt-8 text-gray-500 text-xs font-bold uppercase tracking-widest hover:text-white transition">
         Cancel &amp; Return

@@ -20,12 +20,15 @@ from .forms import ProfileCreationForm, ProfileForm, SettingsForm
 from .models import (
     CallGift,
     CallSession,
+    CallSignal,
     ChatMessage,
     CoinPackage,
     CoinTransaction,
     CoinWallet,
     Conversation,
     GiftItem,
+    HookupMatch,
+    HookupMessage,
     Match,
     PaymentTransaction,
     Profile,
@@ -34,6 +37,7 @@ from .models import (
     SubscriptionPlan,
     Swipe,
 )
+from .services.content_filter import ContentFilter
 from .views import _provider_payment, get_profile_batch
 
 
@@ -338,6 +342,18 @@ class DatingPlatformTests(TestCase):
         self.assertRedirects(response, f"{reverse('edit_profile')}?saved=1")
         self.alice.refresh_from_db()
         self.assertEqual(self.alice.first_name, 'Alice Newname')
+
+        # Test editing without gender in POST data (gracefully falls back to existing instance.gender)
+        response2 = self.client.post(reverse('edit_profile'), {
+            'name': 'Alice Fallback',
+            'age': 27,
+            'preferred_gender': 'M',
+            'location': 'Abuja',
+        })
+        self.assertRedirects(response2, f"{reverse('edit_profile')}?saved=1")
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.gender, 'F')
+        self.assertEqual(self.alice_profile.location, 'Abuja')
 
     def test_signup_and_login_require_and_store_connection_mode(self):
         self.assertContains(
@@ -1013,14 +1029,26 @@ class DatingPlatformTests(TestCase):
 
     def test_wallet_balance_api_and_welcome_bonus(self):
         self.client.force_login(self.alice)
+
+        # 1. Initially newcomer has 0 coins and has not claimed welcome bonus
         response = self.client.get(reverse('wallet_balance_api'))
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data['status'], 'success')
-        self.assertEqual(data['coin_balance'], 30)
+        self.assertEqual(data['coin_balance'], 0)
+        self.assertFalse(data['has_claimed_welcome'])
+
+        # 2. Claim welcome bonus via popup API
+        claim_res = self.client.post(reverse('claim_welcome_bonus_api'))
+        self.assertEqual(claim_res.status_code, 200)
+        c_data = claim_res.json()
+        self.assertEqual(c_data['status'], 'success')
+        self.assertEqual(c_data['coins_awarded'], 30)
+        self.assertEqual(c_data['coin_balance'], 30)
 
         self.alice_profile.refresh_from_db()
         self.assertEqual(self.alice_profile.coin_balance, 30)
+        self.assertTrue(self.alice_profile.has_claimed_welcome)
         self.assertTrue(
             CoinTransaction.objects.filter(
                 user=self.alice,
@@ -1028,16 +1056,72 @@ class DatingPlatformTests(TestCase):
             ).exists()
         )
 
-        # Subsequent call does not grant duplicate welcome bonus
+        # 3. Subsequent claim attempt is blocked
+        dup_claim = self.client.post(reverse('claim_welcome_bonus_api'))
+        self.assertEqual(dup_claim.status_code, 400)
+        self.assertEqual(dup_claim.json()['status'], 'already_claimed')
+
+        # 4. Wallet balance returns updated claimed status
         response2 = self.client.get(reverse('wallet_balance_api'))
         self.assertEqual(response2.json()['coin_balance'], 30)
-        self.assertEqual(
-            CoinTransaction.objects.filter(
-                user=self.alice,
-                transaction_type='WELCOME_BONUS',
-            ).count(),
-            1,
-        )
+        self.assertTrue(response2.json()['has_claimed_welcome'])
+
+    def test_7_day_streak_awards_diamonds_grand_prize(self):
+        self.alice_profile.coin_balance = 0
+        self.alice_profile.earned_diamonds = 0
+        self.alice_profile.checkin_streak = 6
+        self.alice_profile.last_checkin_date = timezone.localdate() - timedelta(days=1)
+        self.alice_profile.save(update_fields=['coin_balance', 'earned_diamonds', 'checkin_streak', 'last_checkin_date'])
+
+        self.client.force_login(self.alice)
+
+        res = self.client.post(reverse('daily_checkin_api'))
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['status'], 'success')
+        self.assertEqual(data['checkin_streak'], 7)
+        self.assertTrue(data['is_grand_prize'])
+        self.assertEqual(data['coins_awarded'], 10)
+        self.assertEqual(data['diamonds_awarded'], 20)
+        self.assertEqual(data['coin_balance'], 10)
+        self.assertEqual(data['earned_diamonds'], 20)
+
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 10)
+        self.assertEqual(self.alice_profile.earned_diamonds, 20)
+        self.assertEqual(self.alice_profile.checkin_streak, 7)
+
+    def test_admin_configurable_7_day_rewards(self):
+        cfg = SiteConfiguration.get_solo()
+        cfg.daily_checkin_coins = 15
+        cfg.day_7_bonus_coins = 50
+        cfg.day_7_bonus_diamonds = 100
+        cfg.save()
+
+        # Day 1 with custom admin coins
+        self.alice_profile.coin_balance = 0
+        self.alice_profile.save(update_fields=['coin_balance'])
+        self.client.force_login(self.alice)
+
+        res = self.client.post(reverse('daily_checkin_api'))
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()['coins_awarded'], 15)
+        self.assertEqual(res.json()['coin_balance'], 15)
+
+        # Day 7 with custom admin coins and diamonds
+        self.bob_profile.coin_balance = 0
+        self.bob_profile.earned_diamonds = 0
+        self.bob_profile.checkin_streak = 6
+        self.bob_profile.last_checkin_date = timezone.localdate() - timedelta(days=1)
+        self.bob_profile.save(update_fields=['coin_balance', 'earned_diamonds', 'checkin_streak', 'last_checkin_date'])
+
+        self.client.force_login(self.bob)
+        res_d7 = self.client.post(reverse('daily_checkin_api'))
+        self.assertEqual(res_d7.status_code, 200)
+        self.assertEqual(res_d7.json()['coins_awarded'], 50)
+        self.assertEqual(res_d7.json()['diamonds_awarded'], 100)
+        self.assertEqual(res_d7.json()['coin_balance'], 50)
+        self.assertEqual(res_d7.json()['earned_diamonds'], 100)
 
     def test_coin_packages_api(self):
         package = CoinPackage.objects.create(
@@ -1874,6 +1958,215 @@ class DatingPlatformTests(TestCase):
         )
         self.assertEqual(send_res.status_code, 201)
         self.assertEqual(send_res.json()['message']['message_type'], 'image')
+
+    def test_content_filter_detection_and_blocking(self):
+        # 1. Digits detection
+        blocked, _ = ContentFilter.inspect("Call me on 08012345678")
+        self.assertTrue(blocked)
+        blocked, _ = ContentFilter.inspect("Reach me: +234 801 234 5678")
+        self.assertTrue(blocked)
+        blocked, _ = ContentFilter.inspect("Price ₦08012345678")
+        self.assertTrue(blocked)
+
+        # 2. Leet-speak and obfuscation
+        blocked, _ = ContentFilter.inspect("wh@ts@pp me later")
+        self.assertTrue(blocked)
+        blocked, _ = ContentFilter.inspect("w.h.a.t.s.a.p.p")
+        self.assertTrue(blocked)
+        blocked, _ = ContentFilter.inspect("t.e.l.e.g.r.a.m me")
+        self.assertTrue(blocked)
+
+        # 3. Worded numbers
+        blocked, _ = ContentFilter.inspect("zero eight zero one two three four five six seven")
+        self.assertTrue(blocked)
+
+        # 4. Clean conversation
+        blocked, _ = ContentFilter.inspect("Hey, it is so nice to meet you on LOVENY!")
+        self.assertFalse(blocked)
+
+        # 5. Blocking inside conversation_send_api & incrementing off_platform_attempts
+        match = Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+        conv = Conversation.objects.create()
+        conv.participants.add(self.alice, self.bob)
+        self.client.force_login(self.alice)
+
+        initial_attempts = self.alice.profile.off_platform_attempts
+        blocked_res = self.post_json(
+            reverse('conversation_send_api', args=[conv.pk]),
+            {'text': 'Text me on 08012345678 please'}
+        )
+        self.assertEqual(blocked_res.status_code, 400)
+        self.assertEqual(blocked_res.json()['message'], 'prohibited_content')
+
+        self.alice.profile.refresh_from_db()
+        self.assertEqual(self.alice.profile.off_platform_attempts, initial_attempts + 1)
+
+    def test_settings_page_read_only_mode_and_dnd(self):
+        self.client.force_login(self.alice)
+        res = self.client.get(reverse('settings'))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'Active Mode:')
+        self.assertContains(res, 'Do Not Disturb (DND)')
+        # Ensure select dropdown for relationship mode is removed
+        self.assertNotContains(res, '<select name="relationship_mode"')
+
+        # Test toggling DND via settings post
+        post_res = self.client.post(reverse('settings'), {
+            'is_dnd': 'on',
+        }, follow=True)
+        self.assertEqual(post_res.status_code, 200)
+        self.alice.profile.refresh_from_db()
+        self.assertTrue(self.alice.profile.is_dnd)
+
+    def test_call_signal_privacy_and_mutual_face_verification(self):
+        call = CallSession.objects.create(
+            caller=self.alice,
+            receiver=self.bob,
+            status='connected',
+        )
+        self.client.force_login(self.alice)
+
+        # Send privacy blur engaged signal
+        blur_res = self.post_json(
+            reverse('call_signal_send_api', args=[call.room_id]),
+            {'type': 'privacy_blur_engaged', 'payload': {'blurred': True}}
+        )
+        self.assertEqual(blur_res.status_code, 201)
+
+        # Alice sends face_verified signal
+        alice_face_res = self.post_json(
+            reverse('call_signal_send_api', args=[call.room_id]),
+            {'type': 'face_verified', 'payload': {'verified': True}}
+        )
+        self.assertEqual(alice_face_res.status_code, 201)
+
+        # feeds_unlocked should not yet exist (Bob hasn't verified yet)
+        self.assertFalse(call.signals.filter(signal_type='feeds_unlocked').exists())
+
+        # Bob logs in and sends face_verified signal
+        self.client.force_login(self.bob)
+        bob_face_res = self.post_json(
+            reverse('call_signal_send_api', args=[call.room_id]),
+            {'type': 'face_verified', 'payload': {'verified': True}}
+        )
+        self.assertEqual(bob_face_res.status_code, 201)
+
+        # Both verified: feeds_unlocked signal should now be created!
+        self.assertTrue(call.signals.filter(signal_type='feeds_unlocked').exists())
+
+    def test_hookup_mode_lifecycle_and_paystack_webhook(self):
+        self.client.force_login(self.alice)
+
+        # 1. Send hookup request
+        req_res = self.post_json(
+            reverse('hookup_request_api'),
+            {'target_id': self.bob.pk}
+        )
+        self.assertEqual(req_res.status_code, 201)
+        match_id = req_res.json()['match_id']
+        match = HookupMatch.objects.get(pk=match_id)
+        self.assertEqual(match.status, 'pending')
+
+        # 2. Bob accepts hookup request
+        self.client.force_login(self.bob)
+        accept_res = self.post_json(
+            reverse('hookup_respond_api', args=[match.id]),
+            {'action': 'accept'}
+        )
+        self.assertEqual(accept_res.status_code, 200)
+        match.refresh_from_db()
+        self.assertEqual(match.status, 'accepted')
+
+        # 3. Simulate Alice paying fee via webhook
+        with override_settings(PAYSTACK_SECRET_KEY='test_secret'):
+            body_alice = json.dumps({
+                'event': 'charge.success',
+                'data': {
+                    'reference': f'HOOKUP_{match.id}_ALICE',
+                    'amount': 150000,
+                    'customer': {'email': self.alice.email},
+                    'metadata': {
+                        'match_id': str(match.id),
+                        'user_id': self.alice.id,
+                        'product': 'HOOKUP_MATCH',
+                    }
+                }
+            }).encode('utf-8')
+
+            import hmac
+            import hashlib
+            sig_alice = hmac.new(b'test_secret', body_alice, hashlib.sha512).hexdigest()
+
+            wh_res1 = self.client.post(
+                reverse('paystack_webhook'),
+                data=body_alice,
+                content_type='application/json',
+                HTTP_X_PAYSTACK_SIGNATURE=sig_alice,
+            )
+            self.assertEqual(wh_res1.status_code, 200)
+
+            match.refresh_from_db()
+            self.assertTrue(match.initiator_paid)
+            self.assertFalse(match.is_fully_paid())
+            self.assertEqual(match.status, 'accepted')
+
+            # 4. Simulate Bob paying fee via webhook
+            body_bob = json.dumps({
+                'event': 'charge.success',
+                'data': {
+                    'reference': f'HOOKUP_{match.id}_BOB',
+                    'amount': 150000,
+                    'customer': {'email': self.bob.email},
+                    'metadata': {
+                        'match_id': str(match.id),
+                        'user_id': self.bob.id,
+                        'product': 'HOOKUP_MATCH',
+                    }
+                }
+            }).encode('utf-8')
+            sig_bob = hmac.new(b'test_secret', body_bob, hashlib.sha512).hexdigest()
+
+            wh_res2 = self.client.post(
+                reverse('paystack_webhook'),
+                data=body_bob,
+                content_type='application/json',
+                HTTP_X_PAYSTACK_SIGNATURE=sig_bob,
+            )
+            self.assertEqual(wh_res2.status_code, 200)
+
+            match.refresh_from_db()
+            self.assertTrue(match.target_paid)
+            self.assertTrue(match.is_fully_paid())
+            self.assertEqual(match.status, 'unlocked')
+            self.assertIsNotNone(match.unlocked_at)
+            self.assertIsNotNone(match.expires_at)
+
+        # 5. Test unlocked hookup chat
+        self.client.force_login(self.alice)
+        chat_view_res = self.client.get(reverse('hookup_chat_room', args=[match.id]))
+        self.assertEqual(chat_view_res.status_code, 200)
+        self.assertContains(chat_view_res, 'Chat Window:')
+
+        # 6. Send clean hookup message
+        send_msg_res = self.post_json(
+            reverse('hookup_send_message_api', args=[match.id]),
+            {'text': 'Hello tonight! Where are you located?'}
+        )
+        self.assertEqual(send_msg_res.status_code, 201)
+        self.assertEqual(match.messages.count(), 1)
+
+        # 7. Send contact leak message in hookup chat (should be blocked)
+        leak_msg_res = self.post_json(
+            reverse('hookup_send_message_api', args=[match.id]),
+            {'text': 'My whatsapp is 08012345678'}
+        )
+        self.assertEqual(leak_msg_res.status_code, 400)
+        self.assertEqual(leak_msg_res.json()['message'], 'prohibited_content')
+
 
 
 

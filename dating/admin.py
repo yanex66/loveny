@@ -12,6 +12,8 @@ from .models import (
     CoinWallet,
     Conversation,
     GiftItem,
+    HookupMatch,
+    HookupMessage,
     Match,
     PaymentTransaction,
     Profile,
@@ -257,11 +259,19 @@ class SiteConfigurationAdmin(admin.ModelAdmin):
             ),
             'description': 'Adjust live call pricing, free grace periods, and host diamond earnings in real-time.',
         }),
+        ('7-Day Daily Sign-In & Streak Rewards', {
+            'fields': (
+                'daily_checkin_coins',
+                'day_7_bonus_coins',
+                'day_7_bonus_diamonds',
+            ),
+            'description': 'Configure the 7-day sign-in reward ladder. Days 1 through 6 award daily coins; Day 7 awards the Grand Prize of bonus coins and diamonds.',
+        }),
         ('Host Diamond & Closed-Loop Economy', {
             'fields': (
                 'diamond_to_coin_percentage',
             ),
-            'description': 'Closed-loop economy: Diamonds can be converted back to Coins (e.g. 70 means 100💎 = 70🪙). Zero real-money cashouts.',
+            'description': 'Closed-loop economy: Diamonds can be converted back to Coins (e.g. 70 means 100 diamonds = 70 coins). Zero real-money cashouts.',
         }),
         ('Live Announcements & Promotions', {
             'fields': (
@@ -270,11 +280,40 @@ class SiteConfigurationAdmin(admin.ModelAdmin):
             ),
             'description': 'Display promotional announcements or event banners to all users across the app.',
         }),
+        ('Advanced Platform Controls', {
+            'fields': (
+                'min_coins_for_video_call',
+                'hookup_connection_fee',
+                'default_user_coins',
+            ),
+            'description': 'Control the minimum coins for calls, hookup connection fees, and default starter wallet balance.',
+        }),
+        ('System Status & Maintenance', {
+            'fields': (
+                'is_maintenance_mode',
+                'maintenance_message',
+            ),
+            'description': 'Control access to the application. When maintenance mode is active, non-admin users will see the maintenance message.',
+        }),
+        ('Contact & Legal Links', {
+            'fields': (
+                'support_email',
+                'support_whatsapp',
+                'terms_of_service_url',
+                'privacy_policy_url',
+            ),
+            'description': 'Configure contact information and legal URLs globally.',
+        }),
     )
 
     def has_add_permission(self, request):
-        # Enforce singleton - only 1 configuration object allowed
         return not SiteConfiguration.objects.exists()
+
+    def changelist_view(self, request, extra_context=None):
+        if self.model.objects.exists():
+            from django.shortcuts import redirect
+            return redirect('admin:dating_siteconfiguration_change', self.model.objects.first().pk)
+        return super().changelist_view(request, extra_context=extra_context)
 
     def has_delete_permission(self, request, obj=None):
         return False
@@ -287,3 +326,37 @@ class GiftItemAdmin(admin.ModelAdmin):
     list_filter = ('is_active',)
     search_fields = ('name', 'slug')
     ordering = ('order', 'coin_cost')
+
+
+@admin.register(HookupMatch)
+class HookupMatchAdmin(admin.ModelAdmin):
+    list_display = (
+        'id', 'initiator', 'target', 'status',
+        'initiator_paid', 'target_paid', 'connection_fee',
+        'created_at', 'expires_at',
+    )
+    list_filter = ('status', 'initiator_paid', 'target_paid')
+    search_fields = ('id', 'initiator__username', 'target__username')
+    readonly_fields = ('id', 'created_at', 'unlocked_at')
+
+
+@admin.register(HookupMessage)
+class HookupMessageAdmin(admin.ModelAdmin):
+    list_display = ('id', 'match', 'sender', 'created_at')
+    search_fields = ('sender__username', 'text', 'match__id')
+    readonly_fields = ('id', 'created_at')
+
+from dating.models import UserBlock, UserReport
+
+@admin.register(UserBlock)
+class UserBlockAdmin(admin.ModelAdmin):
+    list_display = ('id', 'blocker', 'blocked', 'created_at')
+    search_fields = ('blocker__username', 'blocked__username')
+    readonly_fields = ('created_at',)
+
+@admin.register(UserReport)
+class UserReportAdmin(admin.ModelAdmin):
+    list_display = ('id', 'reporter', 'reported', 'reason', 'is_resolved', 'created_at')
+    list_filter = ('is_resolved', 'reason', 'created_at')
+    search_fields = ('reporter__username', 'reported__username', 'details')
+    readonly_fields = ('created_at',)

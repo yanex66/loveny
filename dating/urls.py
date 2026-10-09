@@ -14,6 +14,7 @@ urlpatterns = [
     path('account/delete/', views.delete_account, name='delete_account'),
     
     path('settings/', views.settings_view, name='settings'),
+    path('settings/blocked/', views.blocked_users_view, name='blocked_users'),
 
     path('api/conversations/', views.conversations_api, name='conversations_api'),
     path('api/conversations/<int:conversation_id>/messages/', views.conversation_messages_api, name='conversation_messages_api'),
@@ -36,6 +37,7 @@ urlpatterns = [
     path('api/sex-call/hosts/', views.sex_call_hosts_api, name='sex_call_hosts_api'),
     path('api/wallet/convert-diamonds/', views.convert_diamonds_api, name='convert_diamonds_api'),
     path('api/wallet/balance/', views.wallet_balance_api, name='wallet_balance_api'),
+    path('api/wallet/claim-welcome/', views.claim_welcome_bonus_api, name='claim_welcome_bonus_api'),
     path('api/wallet/check-in/', views.daily_checkin_api, name='daily_checkin_api'),
     path('api/wallet/withdraw/', views.withdrawal_request_api, name='withdrawal_request_api'),
     path('api/wallet/history/', views.wallet_history_api, name='wallet_history_api'),
@@ -65,4 +67,17 @@ urlpatterns = [
     path('premium/verify/', views.verify_payment, name='verify_payment'),
     path('contact/', views.contact, name='contact'),
     path('swipe/rewind/', views.rewind_last_swipe, name='rewind_swipe'),
+
+    # Hookup Mode & Dual-Fiat Paystack Handshake URLs
+    path('hookup/', views.hookup_discovery_view, name='hookup_discovery'),
+    path('hookup/chat/<uuid:match_id>/', views.hookup_chat_room_view, name='hookup_chat_room'),
+    path('api/hookup/request/', views.hookup_request_api, name='hookup_request_api'),
+    path('api/hookup/<uuid:match_id>/respond/', views.hookup_respond_api, name='hookup_respond_api'),
+    path('api/hookup/<uuid:match_id>/pay/', views.hookup_initialize_payment_api, name='hookup_initialize_payment_api'),
+    path('api/hookup/<uuid:match_id>/verify/', views.hookup_verify_payment_api, name='hookup_verify_payment_api'),
+    path('api/hookup/chat/<uuid:match_id>/messages/', views.hookup_messages_api, name='hookup_messages_api'),
+    path('api/hookup/chat/<uuid:match_id>/send/', views.hookup_send_message_api, name='hookup_send_message_api'),
+    path('api/notifications/global/', views.global_notifications_api, name='global_notifications_api'),
+    path('api/report/', views.report_user_api, name='report_user_api'),
+    path('payments/paystack/webhook/', views.paystack_webhook_api, name='paystack_webhook'),
 ]

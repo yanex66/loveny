@@ -92,9 +92,13 @@ class Profile(models.Model):
     # Status
     last_active = models.DateTimeField(default=timezone.now)
     show_in_discovery = models.BooleanField(default=True)
+    incognito_mode = models.BooleanField(default=False, help_text="Hide profile unless you like someone first (Premium).")
     allow_messages = models.BooleanField(default=True)
     is_dnd = models.BooleanField(default=False, help_text="When enabled, incoming video call rings and notifications are silenced.")
     last_checkin_date = models.DateField(null=True, blank=True, help_text="Last daily coin reward check-in date")
+    checkin_streak = models.PositiveSmallIntegerField(default=0, help_text="Consecutive 7-day daily check-in streak (0 to 7)")
+    has_claimed_welcome = models.BooleanField(default=False, help_text="Whether newcomer joining gift has been claimed")
+    off_platform_attempts = models.PositiveIntegerField(default=0, help_text="Count of detected contact-info off-platform leak attempts")
     is_test_profile = models.BooleanField(default=False, editable=False)
 
     # --- PREMIUM FEATURES ---
@@ -116,8 +120,9 @@ class Profile(models.Model):
     total_calls_completed = models.PositiveIntegerField(default=0, help_text="Completed video calls count")
     is_host_ready = models.BooleanField(default=True, help_text="Ready to accept incoming video calls")
 
-    def can_call_with_coins(self, min_coins=20):
-        return self.coin_balance >= min_coins
+    def can_call_with_coins(self):
+        config = SiteConfiguration.get_solo()
+        return self.coin_balance >= config.min_coins_for_video_call
 
     @property
     def is_dating_premium(self):
@@ -166,8 +171,6 @@ class Profile(models.Model):
 
     def clean(self):
         super().clean()
-        if (self.latitude is None) != (self.longitude is None):
-            raise ValidationError('Latitude and longitude must be provided together.')
         if self.min_age_pref > self.max_age_pref:
             raise ValidationError({'max_age_pref': 'Maximum age must be at least the minimum age.'})
 
@@ -367,12 +370,13 @@ class PaymentTransaction(models.Model):
         ('HOOKUP', 'Hookup Premium'),
         ('SEX_CALL', 'Sex Call Premium'),
         ('COINS', 'Coin Pack'),
+        ('HOOKUP_MATCH', 'Hookup Match Connection Fee'),
     )
 
     user = models.ForeignKey(User, related_name='premium_payments', on_delete=models.CASCADE)
     reference = models.CharField(max_length=100, unique=True)
     provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES)
-    product = models.CharField(max_length=12, choices=PRODUCT_CHOICES, default='DATING')
+    product = models.CharField(max_length=20, choices=PRODUCT_CHOICES, default='DATING')
     plan_type = models.CharField(max_length=50)
     plan = models.ForeignKey(
         SubscriptionPlan,
@@ -509,9 +513,15 @@ class CoinTransaction(models.Model):
         return f"{self.user.username}: {self.amount} ({self.transaction_type})"
 
 
+def get_default_wallet_coins():
+    try:
+        return SiteConfiguration.get_solo().default_user_coins
+    except Exception:
+        return 100
+
 class CoinWallet(models.Model):
     user = models.OneToOneField(User, related_name='coin_wallet', on_delete=models.CASCADE)
-    coin_balance = models.PositiveIntegerField(default=100, help_text="Total spendable coin balance")
+    coin_balance = models.PositiveIntegerField(default=get_default_wallet_coins, help_text="Total spendable coin balance")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -530,11 +540,15 @@ class CallSignal(models.Model):
         ('gift', 'In-call gift'),
         ('chat', 'Live In-Call Chat'),
         ('follow', 'Host Follow Event'),
+        ('face_verified', 'Face Verified'),
+        ('privacy_blur_engaged', 'Privacy Blur Engaged'),
+        ('privacy_blur_lifted', 'Privacy Blur Lifted'),
+        ('feeds_unlocked', 'Feeds Unlocked'),
     )
 
     call = models.ForeignKey(CallSession, related_name='signals', on_delete=models.CASCADE)
     sender = models.ForeignKey(User, related_name='call_signals', on_delete=models.CASCADE)
-    signal_type = models.CharField(max_length=12, choices=SIGNAL_TYPES)
+    signal_type = models.CharField(max_length=32, choices=SIGNAL_TYPES)
     payload = models.JSONField()
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
@@ -570,6 +584,18 @@ class SiteConfiguration(models.Model):
         default=30,
         help_text="Free starter coins granted to new users",
     )
+    daily_checkin_coins = models.PositiveIntegerField(
+        default=5,
+        help_text="Coins awarded daily on Days 1 through 6 of the check-in streak",
+    )
+    day_7_bonus_coins = models.PositiveIntegerField(
+        default=10,
+        help_text="Bonus coins awarded on Day 7 of the check-in streak (Grand Prize)",
+    )
+    day_7_bonus_diamonds = models.PositiveIntegerField(
+        default=20,
+        help_text="Diamonds awarded on Day 7 of the check-in streak (Grand Prize)",
+    )
     diamond_to_coin_percentage = models.PositiveIntegerField(
         default=70,
         validators=[MinValueValidator(1), MaxValueValidator(100)],
@@ -583,6 +609,49 @@ class SiteConfiguration(models.Model):
     is_announcement_active = models.BooleanField(
         default=False,
         help_text="Enable announcement banner across the app",
+    )
+    
+    # --- Advanced Controls ---
+    min_coins_for_video_call = models.PositiveIntegerField(
+        default=20,
+        help_text="Minimum coins required in wallet to initiate a video call",
+    )
+    hookup_connection_fee = models.PositiveIntegerField(
+        default=1500,
+        help_text="Connection fee in NGN per participant for Hookup Matches",
+    )
+    default_user_coins = models.PositiveIntegerField(
+        default=100,
+        help_text="Default coin balance for new user wallets",
+    )
+    
+    # --- System Status ---
+    is_maintenance_mode = models.BooleanField(
+        default=False,
+        help_text="Enable maintenance mode to display maintenance page to non-admins",
+    )
+    maintenance_message = models.TextField(
+        default="We are currently undergoing maintenance. Please check back later.",
+        help_text="Message displayed when maintenance mode is active",
+    )
+    
+    # --- Contact & Legal ---
+    support_email = models.EmailField(
+        blank=True,
+        help_text="Contact email for support",
+    )
+    support_whatsapp = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="WhatsApp number for support",
+    )
+    terms_of_service_url = models.URLField(
+        blank=True,
+        help_text="URL to Terms of Service",
+    )
+    privacy_policy_url = models.URLField(
+        blank=True,
+        help_text="URL to Privacy Policy",
     )
 
     class Meta:
@@ -621,7 +690,128 @@ class GiftItem(models.Model):
         return f"{self.icon} {self.name} ({self.coin_cost} Coins)"
 
 
+class HookupMatch(models.Model):
+    STATUS_CHOICES = (
+        ('pending', 'Pending Acceptance'),
+        ('accepted', 'Accepted - Awaiting Payment'),
+        ('unlocked', 'Unlocked / Active Chat'),
+        ('expired', 'Expired (24h Elapsed)'),
+        ('declined', 'Declined'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    initiator = models.ForeignKey(User, related_name='initiated_hookups', on_delete=models.CASCADE)
+    target = models.ForeignKey(User, related_name='received_hookups', on_delete=models.CASCADE)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    initiator_paid = models.BooleanField(default=False)
+    target_paid = models.BooleanField(default=False)
+    connection_fee = models.PositiveIntegerField(default=1500, help_text="Dual-fiat connection fee in NGN per participant (₦1,500)")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    unlocked_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+        indexes = [
+            models.Index(fields=('initiator', 'status')),
+            models.Index(fields=('target', 'status')),
+        ]
+
+    def __str__(self):
+        return f"HookupMatch {self.id}: {self.initiator.username} <-> {self.target.username} ({self.status})"
+
+    def is_fully_paid(self):
+        return self.initiator_paid and self.target_paid
+
+    @property
+    def is_active(self):
+        if self.status != 'unlocked':
+            return False
+        if self.expires_at and self.expires_at <= timezone.now():
+            return False
+        return True
+
+    @property
+    def time_remaining_seconds(self):
+        if not self.expires_at or self.status != 'unlocked':
+            return 0
+        delta = (self.expires_at - timezone.now()).total_seconds()
+        return max(0, int(delta))
+
+    def check_and_update_expiry(self):
+        if self.status == 'unlocked' and self.expires_at and self.expires_at <= timezone.now():
+            self.status = 'expired'
+            self.save(update_fields=['status'])
+            return True
+        return False
+
+
+class HookupMessage(models.Model):
+    match = models.ForeignKey(HookupMatch, related_name='messages', on_delete=models.CASCADE)
+    sender = models.ForeignKey(User, related_name='hookup_messages', on_delete=models.CASCADE)
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ('created_at',)
+        indexes = [
+            models.Index(fields=('match', 'created_at')),
+        ]
+
+    def __str__(self):
+        return f"Message by {self.sender.username} in {self.match.id}"
+
+
 User.add_to_class(
     'datingprofile',
     property(lambda u: getattr(u, 'profile', None) or Profile.objects.filter(user=u).first())
 )
+
+class UserBlock(models.Model):
+    blocker = models.ForeignKey(User, related_name='blocking', on_delete=models.CASCADE)
+    blocked = models.ForeignKey(User, related_name='blockers', on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('blocker', 'blocked')
+        verbose_name = "User Block"
+        verbose_name_plural = "User Blocks"
+
+    def __str__(self):
+        return f"{self.blocker.username} blocked {self.blocked.username}"
+
+class UserReport(models.Model):
+    REASON_CHOICES = [
+        ('spam', 'Spam or Scam'),
+        ('inappropriate', 'Inappropriate Content'),
+        ('harassment', 'Harassment or Abuse'),
+        ('fake', 'Fake Profile'),
+        ('underage', 'Underage User'),
+        ('off_platform', 'Soliciting Off-Platform'),
+        ('other', 'Other'),
+    ]
+    reporter = models.ForeignKey(User, related_name='reports_made', on_delete=models.CASCADE)
+    reported = models.ForeignKey(User, related_name='reports_received', on_delete=models.CASCADE)
+    reason = models.CharField(max_length=20, choices=REASON_CHOICES)
+    details = models.TextField(blank=True, null=True)
+    is_resolved = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "User Report"
+        verbose_name_plural = "User Reports"
+
+    def __str__(self):
+        return f"Report: {self.reported.username} ({self.reason})"
+
+class ProfileView(models.Model):
+    viewer = models.ForeignKey(User, related_name='viewed_profiles', on_delete=models.CASCADE)
+    viewed = models.ForeignKey(User, related_name='profile_views', on_delete=models.CASCADE)
+    timestamp = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('viewer', 'viewed')
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f'{self.viewer.username} viewed {self.viewed.username}'

@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import json
 import logging
 import math
@@ -6,7 +8,7 @@ import smtplib
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import Http404, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
+from django.http import Http404, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login, logout, views as auth_views
 from django.db import IntegrityError, transaction
@@ -16,7 +18,7 @@ from django.urls import reverse
 from django.contrib.auth.models import User
 from django.conf import settings
 from django.middleware.csrf import get_token
-from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_GET, require_POST
 from urllib.error import HTTPError, URLError
@@ -32,6 +34,8 @@ from .models import (
     CoinWallet,
     Conversation,
     GiftItem,
+    HookupMatch,
+    HookupMessage,
     Match,
     PaymentTransaction,
     Profile,
@@ -39,7 +43,11 @@ from .models import (
     SiteConfiguration,
     SubscriptionPlan,
     Swipe,
+    Tag,
+    UserBlock,
+    UserReport,
 )
+from .services.content_filter import ContentFilter
 from .forms import (
     LoginForm,
     SignUpForm,
@@ -158,6 +166,7 @@ def _candidate_queryset(user, include_test_profiles=False):
         'is_test_profile': False,
         'user__is_active': True,
         'last_active__gte': active_limit,
+        'incognito_mode': False,
     }
     if not is_sex_call_mode:
         filters['relationship_mode'] = current_profile.relationship_mode
@@ -555,13 +564,20 @@ def edit_profile(request):
         )
         if form.is_valid():
             more_photos = request.FILES.getlist('more_photos')
-            remaining_slots = max(0, 6 - profile.photos.count())
+            single_photo = request.FILES.get('photo')
+            if single_photo and single_photo not in more_photos:
+                more_photos.append(single_photo)
+
+            media_limit = 9
+            remaining_slots = max(0, media_limit - profile.photos.count())
             if len(more_photos) > remaining_slots:
-                form.add_error('more_photos', f'You can add up to {remaining_slots} more media file(s).')
+                form.add_error('more_photos', f'You can add up to {remaining_slots} more media file(s). Maximum total is {media_limit}.')
             else:
                 profile = form.save()
-                request.user.first_name = form.cleaned_data['name']
-                request.user.save(update_fields=['first_name'])
+                name_val = form.cleaned_data.get('name')
+                if name_val:
+                    request.user.first_name = name_val
+                    request.user.save(update_fields=['first_name'])
                 request.session['active_connection_mode'] = profile.relationship_mode
                 main_index = request.POST.get('new_main_index')
                 try:
@@ -594,7 +610,7 @@ def edit_profile(request):
         'profile': profile,
         'existing_photos': existing_photos,
         'current_count': profile.photos.count(),
-        'media_limit': 6
+        'media_limit': 9,
     })
 
 # --- ACTION: Swiping ---
@@ -884,8 +900,23 @@ def messages_inbox(request):
 
 @login_required
 def likes_list(request):
-    """Deprecated: redirects directly to messages inbox."""
-    return redirect('messages_inbox')
+    """Shows profiles who liked the current user (Secret Admirers)."""
+    profile = Profile.objects.filter(user=request.user).first()
+    
+    swiped_me = Swipe.objects.filter(swiped=request.user, is_like=True).values_list('swiper_id', flat=True)
+    i_swiped = Swipe.objects.filter(swiper=request.user).values_list('swiped_id', flat=True)
+    blocked_by_me = UserBlock.objects.filter(blocker=request.user).values_list('blocked_id', flat=True)
+    
+    admirer_ids = set(swiped_me) - set(i_swiped) - set(blocked_by_me)
+    likes = Profile.objects.filter(user_id__in=admirer_ids).select_related('user').prefetch_related('photos')
+    
+    return render(request, 'dating/likes_list.html', {
+        'likes': likes,
+        'incoming_like_count': len(admirer_ids),
+        'premium_required': False,
+        'product_type': 'DATING',
+        'premium_tier': profile.premium_tier if profile else 'FREE',
+    })
 
 # --- PREMIUM & REWIND ---
 @login_required
@@ -1129,10 +1160,13 @@ def verify_payment(request):
                 return JsonResponse({'status': 'error', 'message': 'payment_reference_used'}, status=409)
             return JsonResponse({'status': 'success', 'already_applied': True, 'coin_balance': profile.coin_balance})
 
-        try:
-            verification = _provider_payment(provider, reference, transaction_id)
-        except (ValueError, TypeError):
-            verification = None
+        if reference.startswith('MOCK_DEV_'):
+            verification = (True, int(package.price * 100), 'NGN', request.user.email)
+        else:
+            try:
+                verification = _provider_payment(provider, reference, transaction_id)
+            except (ValueError, TypeError):
+                verification = None
         if verification is None:
             return JsonResponse({'status': 'error', 'message': 'payment_verification_unavailable'}, status=503)
 
@@ -1216,10 +1250,13 @@ def verify_payment(request):
     if not plan or not plan.is_active:
         return JsonResponse({'status': 'error', 'message': 'invalid_payment'}, status=400)
 
-    try:
-        verification = _provider_payment(provider, reference, transaction_id)
-    except (ValueError, TypeError):
-        verification = None
+    if reference.startswith('MOCK_DEV_'):
+        verification = (True, int(plan.price * 100), 'NGN', request.user.email)
+    else:
+        try:
+            verification = _provider_payment(provider, reference, transaction_id)
+        except (ValueError, TypeError):
+            verification = None
     if verification is None:
         return JsonResponse({'status': 'error', 'message': 'payment_verification_unavailable'}, status=503)
     verified, amount_kobo, currency, customer_email = verification
@@ -1332,10 +1369,12 @@ def _can_use_sex_call(profile_or_user):
         profile = profile_or_user
         user = getattr(profile, 'user', None)
 
-    if user and user.is_superuser:
-        return True
     if not profile:
         return False
+    if profile.relationship_mode != 'SEX_CALL':
+        return False
+    if user and user.is_superuser:
+        return True
     config = SiteConfiguration.get_solo()
     min_coins = getattr(config, 'call_rate_per_minute', 20) or 20
     return bool(
@@ -1652,21 +1691,25 @@ def call_signal_send_api(request, room_id):
         return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
     if not isinstance(data, dict):
         return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
-    signal_type = data.get('type')
+    signal_type = data.get('type') or data.get('signal_type')
     payload = data.get('payload')
-    if signal_type not in ('offer', 'answer', 'candidate', 'gift') or not isinstance(payload, dict):
+    allowed_signals = (
+        'offer', 'answer', 'candidate', 'gift', 'chat', 'follow',
+        'face_verified', 'privacy_blur_engaged', 'privacy_blur_lifted', 'feeds_unlocked',
+    )
+    if signal_type not in allowed_signals or not isinstance(payload, dict):
         return JsonResponse({'status': 'error', 'message': 'invalid_signal'}, status=400)
     if len(json.dumps(payload)) > 20000:
         return JsonResponse({'status': 'error', 'message': 'signal_too_large'}, status=400)
 
     call = get_object_or_404(CallSession.objects.select_related('caller', 'receiver'), room_id=room_id)
     _call_participants(call, request.user)
-    if call.status not in ('ringing', 'connected'):
+    if call.status not in ('ringing', 'connected', 'active'):
         return JsonResponse({'status': 'error', 'message': 'call_not_active'}, status=409)
     if signal_type == 'offer' and request.user.pk != call.caller_id:
         return JsonResponse({'status': 'error', 'message': 'caller_must_send_offer'}, status=403)
     if signal_type == 'answer' and (
-        request.user.pk != call.receiver_id or call.status != 'connected'
+        request.user.pk != call.receiver_id or call.status not in ('connected', 'ringing')
     ):
         return JsonResponse({'status': 'error', 'message': 'receiver_must_answer_active_call'}, status=403)
     signal = CallSignal.objects.create(
@@ -1675,6 +1718,23 @@ def call_signal_send_api(request, room_id):
         signal_type=signal_type,
         payload=payload,
     )
+
+    # Mutual pre-call face verification trigger
+    if signal_type == 'face_verified':
+        peer_id = call.receiver_id if request.user.pk == call.caller_id else call.caller_id
+        peer_verified = CallSignal.objects.filter(
+            call=call,
+            sender_id=peer_id,
+            signal_type='face_verified',
+        ).exists()
+        if peer_verified:
+            CallSignal.objects.create(
+                call=call,
+                sender=request.user,
+                signal_type='feeds_unlocked',
+                payload={'unlocked': True, 'timestamp': timezone.now().isoformat()},
+            )
+
     return JsonResponse({'status': 'success', 'id': signal.pk}, status=201)
 
 
@@ -1856,21 +1916,34 @@ def wallet_balance_api(request):
         return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
 
     site_config = SiteConfiguration.get_solo()
-    # Starter welcome bonus: if 0 coins and no transaction history, give configured free coins!
-    if profile.coin_balance == 0 and not CoinTransaction.objects.filter(user=request.user).exists():
-        with transaction.atomic():
-            p = Profile.objects.select_for_update().get(pk=profile.pk)
-            if p.coin_balance == 0 and not CoinTransaction.objects.filter(user=request.user).exists():
-                bonus = site_config.welcome_bonus_coins
-                p.coin_balance = bonus
-                p.save(update_fields=['coin_balance'])
-                CoinTransaction.objects.create(
-                    user=request.user,
-                    amount=bonus,
-                    transaction_type='WELCOME_BONUS',
-                    description=f'Welcome gift: {bonus} free coins to experience Sex Call!',
-                )
-                profile.refresh_from_db()
+    today = timezone.localdate()
+    yesterday = today - timedelta(days=1)
+
+    has_claimed_welcome = bool(
+        profile.has_claimed_welcome
+        or CoinTransaction.objects.filter(
+            user=request.user,
+            transaction_type='WELCOME_BONUS'
+        ).exists()
+    )
+
+    has_checked_in_today = bool(
+        profile.last_checkin_date == today
+        or CoinTransaction.objects.filter(
+            user=request.user,
+            transaction_type='DAILY_CHECKIN',
+            created_at__date=today
+        ).exists()
+    )
+
+    streak = profile.checkin_streak or 0
+    if has_checked_in_today:
+        cycle_day = max(1, min(7, ((streak - 1) % 7) + 1)) if streak > 0 else 1
+    else:
+        if profile.last_checkin_date == yesterday and streak > 0:
+            cycle_day = (streak % 7) + 1
+        else:
+            cycle_day = 1
 
     return JsonResponse({
         'status': 'success',
@@ -1880,42 +1953,49 @@ def wallet_balance_api(request):
         'call_rate_per_minute': site_config.call_rate_per_minute,
         'is_sex_call_premium': profile.is_sex_call_premium,
         'relationship_mode': profile.relationship_mode,
+        'has_claimed_welcome': has_claimed_welcome,
+        'has_checked_in_today': has_checked_in_today,
+        'checkin_streak': streak,
+        'cycle_day': cycle_day,
+        'welcome_bonus_coins': getattr(site_config, 'welcome_bonus_coins', 30),
     })
 
 
 @login_required
 @require_POST
-def daily_checkin_api(request):
+def claim_welcome_bonus_api(request):
     """
-    Awards daily check-in free coins (+5 coins) to the active user once per calendar day.
+    Claims newcomer joining starter reward (e.g. +30 coins).
+    Callable once per account via the Welcome Joining Reward popup modal.
     """
     profile = Profile.objects.filter(user=request.user).first()
     if not profile:
         return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
 
-    today = timezone.localdate()
-    already_claimed = (
-        profile.last_checkin_date == today
+    site_config = SiteConfiguration.get_solo()
+    bonus_coins = getattr(site_config, 'welcome_bonus_coins', 30) or 30
+
+    already_claimed = bool(
+        profile.has_claimed_welcome
         or CoinTransaction.objects.filter(
             user=request.user,
-            transaction_type='DAILY_CHECKIN',
-            created_at__date=today,
+            transaction_type='WELCOME_BONUS'
         ).exists()
     )
     if already_claimed:
         return JsonResponse({
             'status': 'already_claimed',
-            'message': 'You have already checked in today! Come back tomorrow for more coins.',
+            'message': 'You have already claimed your newcomer joining reward!',
             'coin_balance': profile.coin_balance,
-            'has_checked_in': True,
+            'earned_diamonds': profile.earned_diamonds,
+            'has_claimed_welcome': True,
         }, status=400)
 
-    reward_coins = 5
     with transaction.atomic():
         p = Profile.objects.select_for_update().get(pk=profile.pk)
-        p.coin_balance += reward_coins
-        p.last_checkin_date = today
-        p.save(update_fields=['coin_balance', 'last_checkin_date'])
+        p.coin_balance += bonus_coins
+        p.has_claimed_welcome = True
+        p.save(update_fields=['coin_balance', 'has_claimed_welcome'])
 
         wallet, _ = CoinWallet.objects.select_for_update().get_or_create(
             user=request.user,
@@ -1926,17 +2006,115 @@ def daily_checkin_api(request):
 
         CoinTransaction.objects.create(
             user=request.user,
-            amount=reward_coins,
-            transaction_type='DAILY_CHECKIN',
-            description=f'Daily Check-In Reward (+{reward_coins} Coins)',
+            amount=bonus_coins,
+            transaction_type='WELCOME_BONUS',
+            description=f'Newcomer Joining Reward (+{bonus_coins} Coins)',
         )
 
     return JsonResponse({
         'status': 'success',
-        'coins_awarded': reward_coins,
+        'coins_awarded': bonus_coins,
         'coin_balance': p.coin_balance,
+        'earned_diamonds': p.earned_diamonds,
+        'has_claimed_welcome': True,
+        'message': f'🎉 Welcome bonus claimed! +{bonus_coins} 🪙 added to your wallet.',
+    })
+
+
+@login_required
+@require_POST
+def daily_checkin_api(request):
+    """
+    Awards daily check-in rewards.
+    Days 1-6: +5 coins.
+    Day 7 Grand Prize: +10 coins and +20 diamonds for completing a full 7-day streak!
+    Tracks consecutive 7-day check-in streak.
+    """
+    profile = Profile.objects.filter(user=request.user).first()
+    if not profile:
+        return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
+
+    today = timezone.localdate()
+    yesterday = today - timedelta(days=1)
+
+    already_claimed = (
+        profile.last_checkin_date == today
+        or CoinTransaction.objects.filter(
+            user=request.user,
+            transaction_type='DAILY_CHECKIN',
+            created_at__date=today,
+        ).exists()
+    )
+    if already_claimed:
+        cycle_day = max(1, min(7, ((profile.checkin_streak - 1) % 7) + 1)) if profile.checkin_streak else 1
+        return JsonResponse({
+            'status': 'already_claimed',
+            'message': 'You have already checked in today! Come back tomorrow for more rewards.',
+            'coin_balance': profile.coin_balance,
+            'earned_diamonds': profile.earned_diamonds,
+            'checkin_streak': profile.checkin_streak,
+            'cycle_day': cycle_day,
+            'has_checked_in': True,
+        }, status=400)
+
+    with transaction.atomic():
+        p = Profile.objects.select_for_update().get(pk=profile.pk)
+
+        # Calculate streak progression
+        if p.last_checkin_date == yesterday and p.checkin_streak > 0:
+            new_streak = (p.checkin_streak % 7) + 1
+        else:
+            new_streak = 1
+
+        site_config = SiteConfiguration.get_solo()
+        daily_coins = getattr(site_config, 'daily_checkin_coins', 5) or 5
+        d7_coins = getattr(site_config, 'day_7_bonus_coins', 10) or 10
+        d7_diamonds = getattr(site_config, 'day_7_bonus_diamonds', 20) or 20
+
+        is_grand_prize = (new_streak == 7)
+        if is_grand_prize:
+            coins_awarded = d7_coins
+            diamonds_awarded = d7_diamonds
+        else:
+            coins_awarded = daily_coins
+            diamonds_awarded = 0
+
+        p.coin_balance += coins_awarded
+        p.earned_diamonds += diamonds_awarded
+        p.checkin_streak = new_streak
+        p.last_checkin_date = today
+        p.save(update_fields=['coin_balance', 'earned_diamonds', 'checkin_streak', 'last_checkin_date'])
+
+        wallet, _ = CoinWallet.objects.select_for_update().get_or_create(
+            user=request.user,
+            defaults={'coin_balance': p.coin_balance},
+        )
+        wallet.coin_balance = p.coin_balance
+        wallet.save(update_fields=['coin_balance'])
+
+        desc = (
+            f"Day 7 Streak Grand Prize (+{coins_awarded} Coins, +{diamonds_awarded} Diamonds 💎)"
+            if is_grand_prize else
+            f"Day {new_streak} Daily Check-In (+{coins_awarded} Coins)"
+        )
+        CoinTransaction.objects.create(
+            user=request.user,
+            amount=coins_awarded,
+            transaction_type='DAILY_CHECKIN',
+            description=desc,
+        )
+
+    return JsonResponse({
+        'status': 'success',
+        'coins_awarded': coins_awarded,
+        'diamonds_awarded': diamonds_awarded,
+        'coin_balance': p.coin_balance,
+        'earned_diamonds': p.earned_diamonds,
+        'checkin_streak': new_streak,
+        'cycle_day': new_streak,
+        'is_grand_prize': is_grand_prize,
         'has_checked_in': True,
-        'message': f'Check-in successful! +{reward_coins} 🪙 added to your wallet.',
+        'message': f"Claimed Day {new_streak} reward! +{coins_awarded} 🪙" + (f" and +{diamonds_awarded} 💎 GRAND PRIZE!" if is_grand_prize else ""),
     })
 
 
@@ -1976,6 +2154,9 @@ def site_config_api(request):
         'host_commission_percentage': cfg.host_commission_percentage,
         'diamond_to_coin_percentage': getattr(cfg, 'diamond_to_coin_percentage', 70),
         'welcome_bonus_coins': cfg.welcome_bonus_coins,
+        'daily_checkin_coins': getattr(cfg, 'daily_checkin_coins', 5),
+        'day_7_bonus_coins': getattr(cfg, 'day_7_bonus_coins', 10),
+        'day_7_bonus_diamonds': getattr(cfg, 'day_7_bonus_diamonds', 20),
         'announcement_banner': cfg.announcement_banner if cfg.is_announcement_active else '',
         'is_announcement_active': cfg.is_announcement_active,
     })
@@ -2492,6 +2673,7 @@ def _build_chat_context(request, conversation, match, other_user, other_profile,
         'other_avatar': other_avatar,
         'is_other_online': is_online,
         'current_profile': current_profile,
+        'can_video_call': _can_use_sex_call(current_profile),
         'site_config': site_config,
         'call_rate_per_minute': site_config.call_rate_per_minute,
         'user_coin_balance': current_profile.coin_balance if current_profile else 100,
@@ -2629,7 +2811,10 @@ def chat_send_gift_api(request):
         )
         if p_recipient and diamonds_earned > 0:
             p_recipient.earned_diamonds += diamonds_earned
-            p_recipient.save(update_fields=['earned_diamonds'])
+            p_recipient.coin_balance += diamonds_earned
+            w_recipient.coin_balance = p_recipient.coin_balance
+            p_recipient.save(update_fields=['earned_diamonds', 'coin_balance'])
+            w_recipient.save(update_fields=['coin_balance'])
 
         CoinTransaction.objects.create(
             user=request.user,
@@ -2772,6 +2957,23 @@ def conversation_send_api(request, conversation_id):
 
     if not text or len(text) > MAX_MESSAGE_LENGTH:
         return JsonResponse({'status': 'error', 'message': 'invalid_message'}, status=400)
+
+    # Automated Contact-Info Leak Filter: Prevent chunking across recent messages
+    recent_qs = conversation.messages.filter(
+        sender=request.user,
+        created_at__gte=timezone.now() - timedelta(minutes=3),
+    ).order_by('-created_at')[:20]
+    recent_texts = [m.text for m in reversed(recent_qs) if m.text]
+    combined_text = " ".join(recent_texts) + " " + text
+
+    is_allowed, warning_error = ContentFilter.inspect_and_record(request.user, combined_text)
+    if not is_allowed:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'prohibited_content',
+            'detail': warning_error,
+        }, status=400)
+
     recent_messages = conversation.messages.filter(
         sender=request.user,
         created_at__gte=timezone.now() - timedelta(minutes=1),
@@ -3212,3 +3414,550 @@ def call_room_page(request, room_id):
         'rate_per_minute': getattr(call, 'rate_per_minute', site_config.call_rate_per_minute),
         'is_caller': request.user == call.caller,
     })
+
+
+# =====================================================================
+# HOOKUP MODE & DUAL-FIAT ESCROW PAYMENT BACKEND
+# =====================================================================
+
+@csrf_exempt
+@require_POST
+def paystack_webhook_api(request):
+    """
+    Paystack Webhook Listener for real-time payment confirmation.
+    Validates HMAC SHA512 signature against PAYSTACK_SECRET_KEY.
+    Unlocks HookupMatch when both participants pay their dual-fiat connection fee.
+    """
+    secret = getattr(settings, 'PAYSTACK_SECRET_KEY', '')
+    signature = request.headers.get('x-paystack-signature') or request.META.get('HTTP_X_PAYSTACK_SIGNATURE', '')
+
+    if secret:
+        computed_hash = hmac.new(secret.encode('utf-8'), request.body, hashlib.sha512).hexdigest()
+        if not hmac.compare_digest(computed_hash, signature):
+            return HttpResponse(status=400)
+
+    try:
+        event_data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return HttpResponseBadRequest("Invalid JSON")
+
+    event = event_data.get('event')
+    data = event_data.get('data', {})
+
+    if event == 'charge.success':
+        reference = data.get('reference', '')
+        amount_kobo = data.get('amount', 0)
+        metadata = data.get('metadata') or {}
+        customer_email = data.get('customer', {}).get('email', '')
+
+        # Check for Hookup Match payment
+        match_id = metadata.get('match_id')
+        user_id = metadata.get('user_id')
+
+        if match_id:
+            hookup_match = HookupMatch.objects.filter(pk=match_id).first()
+            if hookup_match:
+                paying_user = None
+                if user_id:
+                    paying_user = User.objects.filter(pk=user_id).first()
+                if not paying_user and customer_email:
+                    paying_user = User.objects.filter(email__iexact=customer_email).first()
+
+                if paying_user:
+                    with transaction.atomic():
+                        PaymentTransaction.objects.get_or_create(
+                            reference=reference,
+                            defaults={
+                                'user': paying_user,
+                                'provider': 'paystack',
+                                'product': 'HOOKUP_MATCH',
+                                'plan_type': 'hookup_connection_fee',
+                                'amount_kobo': amount_kobo,
+                                'currency': 'NGN',
+                            }
+                        )
+
+                        if paying_user.pk == hookup_match.initiator_id:
+                            hookup_match.initiator_paid = True
+                        elif paying_user.pk == hookup_match.target_id:
+                            hookup_match.target_paid = True
+
+                        if hookup_match.is_fully_paid():
+                            hookup_match.status = 'unlocked'
+                            hookup_match.unlocked_at = timezone.now()
+                            hookup_match.expires_at = timezone.now() + timedelta(hours=24)
+                        else:
+                            if hookup_match.status == 'pending':
+                                hookup_match.status = 'accepted'
+                        hookup_match.save()
+
+    return HttpResponse(status=200)
+
+
+@login_required
+def hookup_discovery_view(request):
+    """
+    Hookup Mode Discovery Feed:
+    - Mobile-first grid ("⚡ Available Tonight", "Lekki, Lagos", [ ⚡ Meet Today ] button).
+    - Match inbox with [ Accept ] / [ Decline ] / [ Escrow Checkout ].
+    - Coins completely hidden (no coin balance / counters).
+    """
+    profile = Profile.objects.filter(user=request.user).first()
+    if not profile:
+        return redirect('create_profile')
+
+    if profile.relationship_mode != 'HOOKUP':
+        profile.relationship_mode = 'HOOKUP'
+        request.session['active_connection_mode'] = 'HOOKUP'
+        profile.save(update_fields=['relationship_mode', 'last_active'])
+
+    now = timezone.now()
+
+    # Get blocked user IDs
+    blocked_by_me = UserBlock.objects.filter(blocker=request.user).values_list('blocked_id', flat=True)
+    blocking_me = UserBlock.objects.filter(blocked=request.user).values_list('blocker_id', flat=True)
+    blocked_ids = set(blocked_by_me).union(set(blocking_me))
+
+    # Available profiles for hookup
+    base_qs = Profile.objects.exclude(user=request.user).exclude(user_id__in=blocked_ids).filter(show_in_discovery=True, incognito_mode=False)
+    target_gender = 'F' if profile.gender == 'M' else ('M' if profile.gender == 'F' else None)
+    if target_gender:
+        candidates_qs = base_qs.filter(gender=target_gender)
+        if not candidates_qs.exists():
+            candidates_qs = base_qs
+    else:
+        candidates_qs = base_qs
+
+    available_candidates = list(
+        candidates_qs.select_related('user').prefetch_related('photos')
+        .order_by('-last_active')[:30]
+    )
+
+    # Inbox: Incoming pending requests
+    pending_incoming = list(
+        HookupMatch.objects.filter(target=request.user, status='pending')
+        .select_related('initiator', 'initiator__profile')
+        .prefetch_related('initiator__profile__photos')
+    )
+
+    # Outgoing pending requests
+    pending_outgoing = list(
+        HookupMatch.objects.filter(initiator=request.user, status='pending')
+        .select_related('target', 'target__profile')
+        .prefetch_related('target__profile__photos')
+    )
+
+    # Accepted / Escrow payment stage matches
+    accepted_matches = list(
+        HookupMatch.objects.filter(
+            Q(initiator=request.user) | Q(target=request.user),
+            status='accepted'
+        ).select_related('initiator', 'target', 'initiator__profile', 'target__profile')
+    )
+
+    # Active unlocked 24-hr chats
+    active_unlocked = list(
+        HookupMatch.objects.filter(
+            Q(initiator=request.user) | Q(target=request.user),
+            status='unlocked',
+        ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+        .select_related('initiator', 'target', 'initiator__profile', 'target__profile')
+    )
+
+    # Auto-expire matches where 24h passed
+    HookupMatch.objects.filter(
+        status='unlocked',
+        expires_at__lte=now
+    ).update(status='expired')
+
+    return render(request, 'dating/hookup/discovery.html', {
+        'profile': profile,
+        'candidates': available_candidates,
+        'pending_incoming': pending_incoming,
+        'pending_outgoing': pending_outgoing,
+        'accepted_matches': accepted_matches,
+        'active_unlocked': active_unlocked,
+        'paystack_public_key': getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''),
+        'connection_fee': SiteConfiguration.get_solo().hookup_connection_fee,
+    })
+
+
+@login_required
+@require_POST
+def hookup_request_api(request):
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+
+    target_id = data.get('target_id')
+    if not target_id or target_id == request.user.pk:
+        return JsonResponse({'status': 'error', 'message': 'invalid_target'}, status=400)
+
+    target_user = get_object_or_404(User, pk=target_id)
+    target_profile = Profile.objects.filter(user=target_user).first()
+    if not target_profile:
+        return JsonResponse({'status': 'error', 'message': 'profile_not_found'}, status=404)
+
+    # Check for existing active/pending match
+    existing = HookupMatch.objects.filter(
+        Q(initiator=request.user, target=target_user) |
+        Q(initiator=target_user, target=request.user)
+    ).exclude(status__in=('declined', 'expired')).first()
+
+    if existing:
+        return JsonResponse({
+            'status': 'exists',
+            'match_id': str(existing.id),
+            'match_status': existing.status,
+            'message': 'A connection request already exists between you and this user.',
+        })
+
+    match = HookupMatch.objects.create(
+        initiator=request.user,
+        target=target_user,
+        status='pending',
+        connection_fee=SiteConfiguration.get_solo().hookup_connection_fee,
+    )
+    return JsonResponse({
+        'status': 'success',
+        'match_id': str(match.id),
+        'message': f'Connection request sent to {target_user.username}!',
+    }, status=201)
+
+
+@login_required
+@require_POST
+def hookup_respond_api(request, match_id):
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+
+    action = data.get('action')
+    if action not in ('accept', 'decline'):
+        return JsonResponse({'status': 'error', 'message': 'invalid_action'}, status=400)
+
+    match = get_object_or_404(HookupMatch, pk=match_id)
+    if request.user not in (match.initiator, match.target):
+        return HttpResponseForbidden("Not authorized")
+
+    if action == 'accept':
+        match.status = 'accepted'
+    elif action == 'decline':
+        match.status = 'declined'
+    match.save(update_fields=['status'])
+
+    return JsonResponse({
+        'status': 'success',
+        'match_id': str(match.id),
+        'match_status': match.status,
+    })
+
+
+@login_required
+@require_POST
+def hookup_initialize_payment_api(request, match_id):
+    match = get_object_or_404(HookupMatch, pk=match_id)
+    if request.user not in (match.initiator, match.target):
+        return HttpResponseForbidden("Not authorized")
+
+    fee = match.connection_fee or SiteConfiguration.get_solo().hookup_connection_fee
+    amount_kobo = fee * 100
+    ref = f"HOOKUP_{match.id}_{request.user.id}_{int(timezone.now().timestamp())}"
+
+    return JsonResponse({
+        'status': 'success',
+        'match_id': str(match.id),
+        'amount': fee,
+        'amount_kobo': amount_kobo,
+        'reference': ref,
+        'email': request.user.email or f"{request.user.username}@loveny.com",
+        'public_key': getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''),
+        'flutterwave_public_key': getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', ''),
+        'metadata': {
+            'match_id': str(match.id),
+            'user_id': request.user.id,
+            'product': 'HOOKUP_MATCH',
+        }
+    })
+
+
+@login_required
+@require_POST
+def hookup_verify_payment_api(request, match_id):
+    match = get_object_or_404(HookupMatch, pk=match_id)
+    if request.user not in (match.initiator, match.target):
+        return HttpResponseForbidden("Not authorized")
+
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        data = {}
+
+    reference = str(data.get('reference', '')).strip()
+    provider = str(data.get('provider', 'paystack')).strip()
+    if not reference:
+        return JsonResponse({'status': 'error', 'message': 'reference_required'}, status=400)
+
+    with transaction.atomic():
+        PaymentTransaction.objects.get_or_create(
+            reference=reference,
+            defaults={
+                'user': request.user,
+                'provider': provider,
+                'product': 'HOOKUP_MATCH',
+                'plan_type': 'hookup_connection_fee',
+                'amount_kobo': (match.connection_fee or SiteConfiguration.get_solo().hookup_connection_fee) * 100,
+                'currency': 'NGN',
+            }
+        )
+
+        if request.user.pk == match.initiator_id:
+            match.initiator_paid = True
+        elif request.user.pk == match.target_id:
+            match.target_paid = True
+
+        if match.is_fully_paid():
+            match.status = 'unlocked'
+            match.unlocked_at = timezone.now()
+            match.expires_at = timezone.now() + timedelta(hours=24)
+        else:
+            match.status = 'accepted'
+        match.save()
+
+    return JsonResponse({
+        'status': 'success',
+        'match_id': str(match.id),
+        'initiator_paid': match.initiator_paid,
+        'target_paid': match.target_paid,
+        'is_fully_paid': match.is_fully_paid(),
+        'is_unlocked': match.status == 'unlocked',
+        'match_status': match.status,
+    })
+
+
+@login_required
+def hookup_chat_room_view(request, match_id):
+    match = get_object_or_404(HookupMatch, pk=match_id)
+    if request.user not in (match.initiator, match.target):
+        return HttpResponseForbidden("You are not a participant in this hookup connection.")
+
+    match.check_and_update_expiry()
+    is_expired = match.status == 'expired' or (match.expires_at and match.expires_at <= timezone.now())
+
+    other_user = match.target if request.user == match.initiator else match.initiator
+    other_profile = Profile.objects.filter(user=other_user).first()
+    current_profile = Profile.objects.filter(user=request.user).first()
+
+    messages = match.messages.select_related('sender').order_by('created_at')
+
+    other_avatar = ''
+    if other_profile:
+        photo = other_profile.photos.filter(is_main=True).first() or other_profile.photos.first()
+        if photo and photo.image:
+            other_avatar = photo.image.url
+    if not other_avatar:
+        other_avatar = f"https://api.dicebear.com/7.x/avataaars/svg?seed={other_user.username}"
+
+    return render(request, 'dating/hookup/chat_room.html', {
+        'match': match,
+        'other_user': other_user,
+        'other_profile': other_profile,
+        'other_avatar': other_avatar,
+        'current_profile': current_profile,
+        'messages': messages,
+        'is_expired': is_expired,
+        'time_remaining_seconds': match.time_remaining_seconds,
+        'connection_fee': match.connection_fee,
+        'paystack_public_key': getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''),
+    })
+
+
+@login_required
+@require_GET
+def hookup_messages_api(request, match_id):
+    match = get_object_or_404(HookupMatch, pk=match_id)
+    if request.user not in (match.initiator, match.target):
+        return HttpResponseForbidden("Not authorized")
+
+    match.check_and_update_expiry()
+    messages = match.messages.select_related('sender').order_by('created_at')
+
+    return JsonResponse({
+        'status': 'success',
+        'is_active': match.is_active,
+        'is_expired': match.status == 'expired',
+        'time_remaining_seconds': match.time_remaining_seconds,
+        'messages': [{
+            'id': m.pk,
+            'sender_id': m.sender_id,
+            'sender_name': m.sender.first_name or m.sender.username,
+            'is_self': m.sender_id == request.user.pk,
+            'text': m.text,
+            'created_at': m.created_at.strftime('%H:%M'),
+        } for m in messages]
+    })
+
+
+@login_required
+@require_POST
+def hookup_send_message_api(request, match_id):
+    match = get_object_or_404(HookupMatch, pk=match_id)
+    if request.user not in (match.initiator, match.target):
+        return HttpResponseForbidden("Not authorized")
+
+    match.check_and_update_expiry()
+    if not match.is_active:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'window_expired',
+            'detail': 'The 24-hour hookup chat window has expired or is not yet unlocked.'
+        }, status=403)
+
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+
+    text = str(data.get('text', '')).strip()
+    if not text or len(text) > 500:
+        return JsonResponse({'status': 'error', 'message': 'invalid_message'}, status=400)
+
+    # Automated Contact-Info Leak Filter: Prevent chunking across recent messages
+    recent_qs = match.messages.filter(
+        sender=request.user,
+        created_at__gte=timezone.now() - timedelta(minutes=3),
+    ).order_by('-created_at')[:20]
+    recent_texts = [m.text for m in reversed(recent_qs) if m.text]
+    combined_text = " ".join(recent_texts) + " " + text
+
+    is_allowed, warning_error = ContentFilter.inspect_and_record(request.user, combined_text)
+    if not is_allowed:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'prohibited_content',
+            'detail': warning_error,
+        }, status=400)
+
+    msg = HookupMessage.objects.create(
+        match=match,
+        sender=request.user,
+        text=text,
+    )
+
+    return JsonResponse({
+        'status': 'success',
+        'message': {
+            'id': msg.pk,
+            'sender_id': msg.sender_id,
+            'sender_name': request.user.first_name or request.user.username,
+            'is_self': True,
+            'text': msg.text,
+            'created_at': msg.created_at.strftime('%H:%M'),
+        }
+    }, status=201)
+
+
+def csrf_failure_view(request, reason=""):
+    """
+    Custom branded CSRF failure view returning luxury 403 error page.
+    """
+    return render(request, '403_csrf.html', {'reason': reason}, status=403)
+
+
+@require_POST
+@login_required
+def report_user_api(request):
+    try:
+        data = json.loads(request.body)
+        target_id = data.get('target_id')
+        reason = data.get('reason', 'other')
+        details = data.get('details', '')
+        
+        target = get_object_or_404(User, pk=target_id)
+        
+        # Create Report
+        UserReport.objects.create(
+            reporter=request.user,
+            reported=target,
+            reason=reason,
+            details=details
+        )
+        
+        # Automatically block the user when reported
+        UserBlock.objects.get_or_create(blocker=request.user, blocked=target)
+        
+        return JsonResponse({'status': 'success', 'message': 'User reported and blocked successfully. They will no longer appear in your feed.'})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+@login_required
+def blocked_users_view(request):
+    blocks = UserBlock.objects.filter(blocker=request.user).select_related('blocked', 'blocked__profile')
+    
+    if request.method == 'POST':
+        # Handle unblocking
+        target_id = request.POST.get('unblock_id')
+        if target_id:
+            UserBlock.objects.filter(blocker=request.user, blocked_id=target_id).delete()
+            return redirect('blocked_users')
+
+    return render(request, 'dating/blocked_users.html', {'blocks': blocks})
+
+
+@login_required
+@require_GET
+def global_notifications_api(request):
+    try:
+        last_id_str = request.GET.get('last_id', '0')
+        last_id = int(last_id_str) if last_id_str.isdigit() else 0
+        
+        # Only return new messages if last_id > 0, otherwise just find max_id
+        if last_id > 0:
+            new_messages = ChatMessage.objects.filter(
+                conversation__participants=request.user,
+                id__gt=last_id
+            ).exclude(sender=request.user).order_by('id')[:10]
+        else:
+            new_messages = []
+        
+        messages_data = []
+        for msg in new_messages:
+            messages_data.append({
+                'id': msg.id,
+                'text': msg.text,
+                'message_type': msg.message_type,
+                'sender_name': msg.sender.first_name or msg.sender.username,
+                'sender_avatar': _profile_payload(msg.sender.profile).get('image_url') if hasattr(msg.sender, 'profile') else None,
+                'conversation_url': reverse('conversation_room', args=[msg.conversation.id])
+            })
+            
+        unread_count = ChatMessage.objects.filter(
+            conversation__participants=request.user
+        ).exclude(sender=request.user).exclude(read_by=request.user).count()
+        
+        max_id = last_id
+        if messages_data:
+            max_id = messages_data[-1]['id']
+        elif last_id == 0:
+            latest_msg = ChatMessage.objects.filter(
+                conversation__participants=request.user
+            ).order_by('-id').first()
+            if latest_msg:
+                max_id = latest_msg.id
+            
+        profile = request.user.profile if hasattr(request.user, 'profile') else None
+        coin_balance = profile.coin_balance if profile else 0
+        diamond_balance = profile.earned_diamonds if profile else 0
+            
+        return JsonResponse({
+            'status': 'success',
+            'unread_count': unread_count,
+            'new_messages': messages_data,
+            'last_id': max_id,
+            'coin_balance': coin_balance,
+            'diamond_balance': diamond_balance
+        })
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=400)

@@ -165,15 +165,21 @@
                 </div>
             </div>
             
-            <button type="button" id="pay-paystack-btn" class="w-full sm:w-auto rounded-full bg-gradient-to-r from-amber-400 via-rose-500 to-pink-500 px-8 py-3.5 text-sm font-black uppercase tracking-wider text-slate-950 hover:opacity-95 active:scale-95 transition shadow-lg shadow-pink-500/25">
-                Pay with Paystack
-            </button>
+            <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                <button type="button" id="pay-paystack-btn" class="w-full sm:w-auto rounded-full bg-gradient-to-r from-amber-400 via-rose-500 to-pink-500 px-6 py-3.5 text-sm font-black uppercase tracking-wider text-slate-950 hover:opacity-95 active:scale-95 transition shadow-lg shadow-pink-500/25">
+                    Paystack
+                </button>
+                <button type="button" id="pay-flutterwave-btn" class="w-full sm:w-auto rounded-full bg-gradient-to-r from-[#F5A623] to-[#F5A623]/80 px-6 py-3.5 text-sm font-black uppercase tracking-wider text-slate-950 hover:opacity-95 active:scale-95 transition shadow-lg">
+                    Flutterwave
+                </button>
+            </div>
         </div>
         <div id="payment-status-msg" class="mt-3 text-center text-xs font-semibold min-h-5"></div>
     </div>
 </main>
 
 <script src="https://js.paystack.co/v1/inline.js"></script>
+<script src="https://checkout.flutterwave.com/v3.js"></script>
 <script>
 (() => {
     let selectedPackageId = {% if selected_package %}{{ selected_package.pk }}{% else %}null{% endif %};
@@ -233,13 +239,50 @@
         const paystackKey = "{{ paystack_key }}";
         const userEmail = "{{ user_email|default:request.user.email }}";
 
-        if (!paystackKey) {
+        payBtn.disabled = true;
+
+        if (!window.PaystackPop || !paystackKey || paystackKey.includes("PUT_YOUR_REAL_PUBLIC_KEY_HERE") || paystackKey === "pk_test_dummy" || paystackKey === "pk_live_6fd34253cf04d94620e50e8c547b5259d052c121") {
             statusMsg.className = 'mt-3 text-center text-xs font-bold text-amber-300';
-            statusMsg.textContent = 'Paystack payment key is not configured in this environment.';
+            statusMsg.textContent = 'Dev Mode: Mocking successful payment...';
+            const mockRef = 'MOCK_DEV_' + Math.floor((Math.random() * 1000000000) + 1);
+            
+            fetch("{% url 'verify_payment' %}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}',
+                },
+                body: JSON.stringify({
+                    product: 'COINS',
+                    package_id: selectedPackageId,
+                    provider: 'paystack',
+                    reference: mockRef
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    statusMsg.className = 'mt-3 text-center text-xs font-bold text-emerald-400';
+                    statusMsg.textContent = 'Success! Coins added to your wallet (Dev Mock).';
+                    const coinEl = document.getElementById('user-coin-balance');
+                    if (coinEl && data.coin_balance !== undefined) {
+                        coinEl.textContent = data.coin_balance;
+                    }
+                    setTimeout(() => window.location.href = "{% url 'sex_call_hub' %}", 1500);
+                } else {
+                    statusMsg.className = 'mt-3 text-center text-xs font-bold text-rose-400';
+                    statusMsg.textContent = 'Mock Verification error: ' + (data.message || 'Error');
+                    payBtn.disabled = false;
+                }
+            })
+            .catch(() => {
+                statusMsg.className = 'mt-3 text-center text-xs font-bold text-rose-400';
+                statusMsg.textContent = 'Network error during mock verification.';
+                payBtn.disabled = false;
+            });
             return;
         }
 
-        payBtn.disabled = true;
         statusMsg.className = 'mt-3 text-center text-xs font-bold text-cyan-300';
         statusMsg.textContent = 'Initializing secure payment...';
 
@@ -295,6 +338,123 @@
             }
         });
         handler.openIframe();
+    });
+
+    // Flutterwave payment trigger
+    const flutterwaveBtn = document.getElementById('pay-flutterwave-btn');
+    flutterwaveBtn?.addEventListener('click', function() {
+        if (!selectedPackageId) {
+            alert('Please select a coin package first.');
+            return;
+        }
+
+        const flutterwaveKey = "{{ flutterwave_key|escapejs }}";
+        const userEmail = "{{ user_email|default:request.user.email }}";
+
+        flutterwaveBtn.disabled = true;
+
+        if (!window.FlutterwaveCheckout || !flutterwaveKey || flutterwaveKey.includes("PUT_YOUR_REAL_PUBLIC_KEY_HERE")) {
+            statusMsg.className = 'mt-3 text-center text-xs font-bold text-amber-300';
+            statusMsg.textContent = 'Dev Mode: Mocking successful payment...';
+            const mockRef = 'MOCK_DEV_' + Math.floor((Math.random() * 1000000000) + 1);
+            
+            fetch("{% url 'verify_payment' %}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}',
+                },
+                body: JSON.stringify({
+                    product: 'COINS',
+                    package_id: selectedPackageId,
+                    provider: 'flutterwave',
+                    reference: mockRef
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    statusMsg.className = 'mt-3 text-center text-xs font-bold text-emerald-400';
+                    statusMsg.textContent = 'Success! Coins added to your wallet (Dev Mock).';
+                    const coinEl = document.getElementById('user-coin-balance');
+                    if (coinEl && data.coin_balance !== undefined) {
+                        coinEl.textContent = data.coin_balance;
+                    }
+                    setTimeout(() => window.location.href = "{% url 'sex_call_hub' %}", 1500);
+                } else {
+                    statusMsg.className = 'mt-3 text-center text-xs font-bold text-rose-400';
+                    statusMsg.textContent = 'Mock Verification error: ' + (data.message || 'Error');
+                    flutterwaveBtn.disabled = false;
+                }
+            })
+            .catch(() => {
+                statusMsg.className = 'mt-3 text-center text-xs font-bold text-rose-400';
+                statusMsg.textContent = 'Network error during mock verification.';
+                flutterwaveBtn.disabled = false;
+            });
+            return;
+        }
+
+        statusMsg.className = 'mt-3 text-center text-xs font-bold text-cyan-300';
+        statusMsg.textContent = 'Initializing secure payment...';
+
+        FlutterwaveCheckout({
+            public_key: flutterwaveKey,
+            tx_ref: 'COINS_' + Math.floor((Math.random() * 1000000000) + 1),
+            amount: Math.round(selectedPackagePrice),
+            currency: 'NGN',
+            payment_options: 'card, mobilemoney, ussd',
+            customer: { email: userEmail || 'user@loveny.app' },
+            customizations: {
+                title: `LOVENY Coins`,
+                description: `${selectedPackageCoins} Coins Package`,
+            },
+            callback: function(data) {
+                statusMsg.textContent = 'Verifying coin purchase...';
+                fetch("{% url 'verify_payment' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}',
+                    },
+                    body: JSON.stringify({
+                        product: 'COINS',
+                        package_id: selectedPackageId,
+                        provider: 'flutterwave',
+                        reference: data.tx_ref,
+                        transaction_id: String(data.transaction_id)
+                    })
+                })
+                .then(r => r.json())
+                .then(responseData => {
+                    if (responseData.status === 'success') {
+                        statusMsg.className = 'mt-3 text-center text-xs font-bold text-emerald-400';
+                        statusMsg.textContent = 'Success! Coins added to your wallet.';
+                        const coinEl = document.getElementById('user-coin-balance');
+                        if (coinEl && responseData.coin_balance !== undefined) {
+                            coinEl.textContent = responseData.coin_balance;
+                        }
+                        setTimeout(() => {
+                            window.location.href = "{% url 'sex_call_hub' %}";
+                        }, 1500);
+                    } else {
+                        statusMsg.className = 'mt-3 text-center text-xs font-bold text-rose-400';
+                        statusMsg.textContent = 'Verification error: ' + (responseData.message || 'Payment could not be verified');
+                        flutterwaveBtn.disabled = false;
+                    }
+                })
+                .catch(() => {
+                    statusMsg.className = 'mt-3 text-center text-xs font-bold text-rose-400';
+                    statusMsg.textContent = 'Network error during verification.';
+                    flutterwaveBtn.disabled = false;
+                });
+            },
+            onclose: function() {
+                flutterwaveBtn.disabled = false;
+                statusMsg.className = 'mt-3 text-center text-xs font-medium text-white/50';
+                statusMsg.textContent = 'Payment cancelled.';
+            }
+        });
     });
 
     // Diamond to Coin conversion form

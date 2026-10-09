@@ -112,6 +112,7 @@ CSRF_TRUSTED_ORIGINS = list(dict.fromkeys(CSRF_TRUSTED_ORIGINS))
 # Application definition
 
 INSTALLED_APPS = [
+    'jazzmin',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -132,6 +133,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'dating.middleware.MaintenanceModeMiddleware',
 ]
 if not DEBUG:
     MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
@@ -269,14 +271,18 @@ PAYSTACK_PUBLIC_KEY = os.environ.get(
     'PAYSTACK_PUBLIC_KEY',
     'pk_live_6fd34253cf04d94620e50e8c547b5259d052c121',
 )
-PAYSTACK_SECRET_KEY = os.environ.get('PAYSTACK_SECRET_KEY', '')
+# Add your real secret key here to process payments!
+PAYSTACK_SECRET_KEY = os.environ.get('PAYSTACK_SECRET_KEY', 'sk_live_PUT_YOUR_REAL_SECRET_KEY_HERE')
 
 # FLUTTERWAVE KEYS
 FLUTTERWAVE_PUBLIC_KEY = os.environ.get(
     'FLUTTERWAVE_PUBLIC_KEY',
     'FLWPUBK-9137e1d408bd082a5b9a72987b0e5ce7-X',
 )
-FLUTTERWAVE_SECRET_KEY = os.environ.get('FLUTTERWAVE_SECRET_KEY', '')
+FLUTTERWAVE_SECRET_KEY = os.environ.get('FLUTTERWAVE_SECRET_KEY', 'FLWSECK-PUT_YOUR_REAL_SECRET_KEY_HERE-X')
+
+# AI MONITORING
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
 # Use Gmail SMTP in production. Gmail requires an app password; never store it
 # in source control. Development defaults to the console email backend.
@@ -296,3 +302,110 @@ DEFAULT_FROM_EMAIL = os.environ.get(
     'DEFAULT_FROM_EMAIL',
     'LOVENY Support <help.hoxobil@gmail.com>',
 )
+
+JAZZMIN_SETTINGS = {
+    'site_title': 'LOVENY Admin',
+    'site_header': 'LOVENY',
+    'site_brand': ' ',
+    'site_logo': 'dating/images/loveny-logo.png',
+    'login_logo': 'dating/images/loveny-logo.png',
+    'site_logo_classes': '',
+    'welcome_sign': 'Welcome to LOVENY Admin',
+    'copyright': 'LOVENY',
+    'search_model': ['auth.User', 'dating.Profile'],
+    'show_sidebar': True,
+    'navigation_expanded': False,
+    'hide_apps': [],
+    'hide_models': [],
+    'topmenu_links': [
+        {'name': 'Dashboard Home', 'url': 'admin:index', 'permissions': ['auth.view_user']},
+        {'name': 'View Live Site', 'url': '/', 'new_window': True},
+        {'model': 'dating.SiteConfiguration'},
+    ],
+    'order_with_respect_to': [
+        'dating.SiteConfiguration',
+        'auth.User',
+        'dating.Profile',
+        'dating.ProfilePhoto',
+        'dating.Match',
+        'dating.Swipe',
+        'dating.Conversation',
+        'dating.ChatMessage',
+        'dating.HookupMatch',
+        'dating.HookupMessage',
+        'dating.CoinWallet',
+        'dating.CoinPackage',
+        'dating.SubscriptionPlan',
+        'dating.PaymentTransaction',
+        'dating.CoinTransaction',
+        'dating.CallSession',
+        'dating.CallGift',
+        'dating.GiftItem',
+        'dating.CallSignal',
+        'dating.UserReport',
+        'dating.UserBlock',
+    ],
+    'icons': {
+        'auth.User': 'fas fa-users-cog',
+        'auth.Group': 'fas fa-users',
+        'dating.SiteConfiguration': 'fas fa-cogs',
+        'dating.Profile': 'fas fa-user-circle',
+        'dating.ProfilePhoto': 'fas fa-image',
+        'dating.Match': 'fas fa-heart',
+        'dating.Swipe': 'fas fa-thumbs-up',
+        'dating.Conversation': 'fas fa-comments',
+        'dating.ChatMessage': 'fas fa-comment-dots',
+        'dating.HookupMatch': 'fas fa-fire',
+        'dating.HookupMessage': 'fas fa-comment-alt',
+        'dating.SubscriptionPlan': 'fas fa-crown',
+        'dating.CoinPackage': 'fas fa-coins',
+        'dating.PaymentTransaction': 'fas fa-file-invoice-dollar',
+        'dating.CallSession': 'fas fa-video',
+        'dating.CallGift': 'fas fa-gift',
+        'dating.GiftItem': 'fas fa-box-open',
+        'dating.CoinTransaction': 'fas fa-exchange-alt',
+        'dating.CoinWallet': 'fas fa-wallet',
+        'dating.CallSignal': 'fas fa-signal',
+        'dating.UserReport': 'fas fa-flag',
+        'dating.UserBlock': 'fas fa-ban',
+    },
+    'default_icon_parents': 'fas fa-folder',
+    'default_icon_children': 'fas fa-circle',
+    # Enable UI builder so user can tweak or reset themes
+    'show_ui_builder': True,
+    'custom_css': 'dating/css/admin_custom.css',
+    'custom_js': 'dating/js/clear_jazzmin.js',
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "navbar_small_text": False,
+    "footer_small_text": False,
+    "body_small_text": False,
+    "brand_small_text": False,
+    "brand_colour": "navbar-dark",
+    "accent": "accent-warning",
+    "navbar": "navbar-dark",
+    "no_navbar_border": False,
+    "navbar_fixed": True,
+    "layout_boxed": False,
+    "footer_fixed": True,
+    "sidebar_fixed": True,
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": True,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": True,
+    "theme": "default",
+    "dark_mode_theme": None,
+    "button_classes": {
+        "primary": "btn-warning",
+        "secondary": "btn-secondary",
+        "info": "btn-info",
+        "warning": "btn-warning",
+        "danger": "btn-danger",
+        "success": "btn-success"
+    },
+    "actions_sticky_top": True
+}

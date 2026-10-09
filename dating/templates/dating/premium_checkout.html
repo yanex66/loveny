@@ -74,6 +74,12 @@
     const paymentStatus = document.getElementById('payment-status');
 
     function payWithPaystack() {
+        if (!window.PaystackPop || !PAYSTACK_KEY || PAYSTACK_KEY.includes("PUT_YOUR_REAL_PUBLIC_KEY_HERE") || PAYSTACK_KEY === "pk_test_dummy" || PAYSTACK_KEY === "pk_live_6fd34253cf04d94620e50e8c547b5259d052c121") {
+            paymentStatus.textContent = 'Dev Mode: Mocking successful payment...';
+            const mockRef = 'MOCK_DEV_' + Math.floor((Math.random() * 1000000000) + 1);
+            verifyAndUpgrade(mockRef, 'paystack');
+            return;
+        }
         const handler = PaystackPop.setup({
             key: PAYSTACK_KEY,
             email: USER_EMAIL,

@@ -27,6 +27,9 @@
         </button>
         
         <div class="flex items-center gap-2 pointer-events-auto">
+            <button onclick="reportUser({{ profile.user.pk }})" aria-label="Report" class="h-10 w-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white border border-white/20 hover:bg-rose-500/80 transition shadow-lg">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" /></svg>
+            </button>
             <button onclick="shareProfile()" aria-label="Share" class="h-10 w-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white border border-white/20 hover:bg-black/60 transition shadow-lg">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
             </button>
@@ -504,6 +507,34 @@
         } else {
             navigator.clipboard?.writeText(window.location.href);
             alert('Profile link copied to clipboard!');
+        }
+    };
+
+    window.reportUser = async (targetId) => {
+        const reason = prompt("Report this user? Please enter a reason (spam, harassment, fake, etc):");
+        if (!reason) return;
+        
+        try {
+            const token = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));
+            const csrf = token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
+            
+            const res = await fetch('/api/report/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrf,
+                },
+                body: JSON.stringify({ target_id: targetId, reason: reason }),
+            });
+            if (res.ok) {
+                alert("User has been reported and blocked.");
+                window.location.href = "{% url 'swipe_card' %}";
+            } else {
+                const data = await res.json();
+                alert(data.message || 'Could not report user');
+            }
+        } catch (err) {
+            console.error(err);
         }
     };
 })();

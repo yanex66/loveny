@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Hookup Chat with {{ other_user.username }} (24h) | LOVENY{% endblock %}
+
+{% block body_class %}hide-floating-coin bg-[#0e071a] text-slate-100{% endblock %}
+
+{% block content %}
+<main class="flex flex-col h-[100dvh] max-w-lg mx-auto bg-[#10071f] text-white relative overflow-hidden" role="main" aria-label="24-Hour Hookup Chat">
+    <!-- Top Header -->
+    <header class="flex items-center justify-between px-4 py-3 bg-[#180b2e] border-b border-purple-900/40 z-20 shadow-md">
+        <div class="flex items-center gap-3">
+            <a href="{% url 'hookup_discovery' %}" class="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white/80 hover:bg-white/20 active:scale-95 transition" aria-label="Back to Discovery">
+                ←
+            </a>
+            <div class="relative">
+                <img src="{{ other_avatar }}" alt="{{ other_user.username }}" class="h-10 w-10 rounded-full border-2 border-pink-500/80 object-cover bg-purple-950">
+                <span class="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-[#180b2e]"></span>
+            </div>
+            <div>
+                <h1 class="text-sm font-black text-white leading-tight flex items-center gap-1.5">
+                    <span>{{ other_user.first_name|default:other_user.username }}</span>
+                    {% if other_profile.age %}<span class="text-xs font-bold text-pink-300">{{ other_profile.age }}</span>{% endif %}
+                </h1>
+                <p class="text-[10px] text-purple-300/80 font-medium">📍 {{ other_profile.location|default:"Lekki, Lagos" }}</p>
+            </div>
+        </div>
+        <div class="rounded-full bg-pink-500/20 border border-pink-500/40 px-2.5 py-1 text-[10px] font-black uppercase text-pink-300">
+            ⚡ Escrow
+        </div>
+    </header>
+
+    <!-- 24-Hour Countdown Ribbon -->
+    <div id="countdown-ribbon" class="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-purple-950 via-amber-950/60 to-purple-950 border-b border-amber-400/20 text-xs z-10">
+        <div class="flex items-center gap-2">
+            <span class="animate-spin text-sm" style="animation-duration: 4s;">⏱️</span>
+            <div>
+                <span class="text-[10px] uppercase font-bold text-amber-300 tracking-wider">Chat Window:</span>
+                <span id="countdown-timer" class="font-mono font-black text-white ml-1">Loading...</span>
+            </div>
+        </div>
+        <div class="text-[10px] text-purple-300/70 font-semibold">Auto-locks in 24h</div>
+    </div>
+
+    <!-- Security Warning Notice (Off-Platform Filter) -->
+    <div id="filter-warning-banner" class="hidden mx-4 mt-2 rounded-xl border border-rose-500/40 bg-rose-950/80 p-2 text-center text-xs text-rose-200">
+        ⚠️ Sharing external contact numbers or social media handles is prohibited. Please keep your chats safe on LOVENY.
+    </div>
+
+    <!-- Messages Stream -->
+    <div id="messages-container" class="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-none">
+        <div class="text-center py-4">
+            <div class="inline-flex items-center gap-1.5 rounded-full bg-white/5 border border-white/10 px-3 py-1 text-[10px] text-purple-300 font-medium">
+                🛡️ Dual-fiat escrow verified. 24-hour private direct chat unlocked.
+            </div>
+        </div>
+
+        {% for msg in messages %}
+        <div class="flex flex-col {% if msg.sender_id == request.user.pk %}items-end{% else %}items-start{% endif %}">
+            <div class="max-w-[78%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-md
+                {% if msg.sender_id == request.user.pk %}
+                bg-gradient-to-r from-pink-600 to-rose-600 text-white rounded-br-none
+                {% else %}
+                bg-[#231244] border border-purple-800/40 text-purple-100 rounded-bl-none
+                {% endif %}">
+                {{ msg.text }}
+            </div>
+            <span class="text-[9px] text-purple-400/60 mt-1 px-1">{{ msg.created_at|date:"H:i" }}</span>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Expired Overlay Warning Banner -->
+    <div id="expired-banner" class="{% if not is_expired %}hidden{% endif %} p-3 bg-rose-950/90 border-t border-rose-600/40 text-center text-xs font-bold text-rose-200">
+        🔒 24-Hour Hookup Window Expired. This chat session is closed.
+    </div>
+
+    <!-- Bottom Message Input Form -->
+    <form id="chat-form" class="p-3 bg-[#180b2e] border-t border-purple-900/40 flex items-center gap-2 z-20">
+        <input type="text"
+               id="message-input"
+               placeholder="{% if is_expired %}Window expired{% else %}Type a message...{% endif %}"
+               {% if is_expired %}disabled{% endif %}
+               maxlength="500"
+               autocomplete="off"
+               class="flex-1 rounded-full bg-white/10 border border-white/15 px-4 py-2.5 text-xs text-white placeholder-purple-300/40 outline-none focus:border-pink-500 transition disabled:opacity-40 disabled:cursor-not-allowed">
+        <button type="submit"
+                id="send-button"
+                {% if is_expired %}disabled{% endif %}
+                class="rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-5 py-2.5 text-xs font-black uppercase text-white shadow-md active:scale-95 hover:brightness-110 transition disabled:opacity-40 disabled:cursor-not-allowed">
+            Send
+        </button>
+    </form>
+</main>
+
+<script>
+(() => {
+    const matchId = '{{ match.id }}';
+    const currentUserId = {{ request.user.pk }};
+    let remainingSeconds = {{ time_remaining_seconds|default:0 }};
+    let isExpired = {% if is_expired %}true{% else %}false{% endif %};
+
+    const container = document.getElementById('messages-container');
+    const form = document.getElementById('chat-form');
+    const input = document.getElementById('message-input');
+    const sendBtn = document.getElementById('send-button');
+    const countdownEl = document.getElementById('countdown-timer');
+    const expiredBanner = document.getElementById('expired-banner');
+    const warningBanner = document.getElementById('filter-warning-banner');
+
+    function csrfToken() {
+        const token = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));
+        return token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
+    }
+
+    // Scroll to bottom
+    const scrollToBottom = () => {
+        if (container) container.scrollTop = container.scrollHeight;
+    };
+    scrollToBottom();
+
+    // Live Countdown Timer
+    function updateCountdown() {
+        if (remainingSeconds <= 0 || isExpired) {
+            isExpired = true;
+            countdownEl.textContent = 'EXPIRED (00:00:00)';
+            countdownEl.className = 'font-mono font-black text-rose-400 ml-1';
+            input.disabled = true;
+            input.placeholder = '24-Hour Hookup Window Expired';
+            sendBtn.disabled = true;
+            expiredBanner.classList.remove('hidden');
+            return;
+        }
+
+        const hrs = Math.floor(remainingSeconds / 3600);
+        const mins = Math.floor((remainingSeconds % 3600) / 60);
+        const secs = remainingSeconds % 60;
+
+        countdownEl.textContent = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        remainingSeconds--;
+    }
+
+    updateCountdown();
+    const timerInterval = setInterval(updateCountdown, 1000);
+
+    // Client-Side Anti-Leak / Contact Info Detection Guard
+    function inspectClientContent(text) {
+        // 1. Digits sequence check (7-15 digits with common separators)
+        const digitsPattern = /(?:\+?\d[\s\-\.\,\_\/\(\)\[\]]{0,3}){7,15}\d/;
+        if (digitsPattern.test(text.replace(/[₦#\$Nn]\s*(?=\d)/, ''))) {
+            return true;
+        }
+        // 2. Worded numbers
+        const worded = ['zero','one','two','three','four','five','six','seven','eight','nine','oh'];
+        const tokens = (text.toLowerCase().match(/[a-zA-Z]+/g) || []);
+        let streak = 0;
+        for (const t of tokens) {
+            if (worded.includes(t)) {
+                streak++;
+                if (streak >= 7) return true;
+            } else {
+                streak = 0;
+            }
+        }
+        // 3. Social Handles / Keywords
+        const blockedKeywords = [
+            /whatsapp/i, /whats\s*app/i, /whatapp/i, /watsapp/i, /wa\.me/i,
+            /telegram/i, /tele\s*gram/i, /t\.me/i, /\btg\b/i,
+            /instagram/i, /\binsta\b/i, /\big\b/i,
+            /snapchat/i, /\bsnap\b/i, /\bsc\b/i,
+            /call\s+me/i, /reach\s+me/i, /text\s+me/i
+        ];
+        for (const reg of blockedKeywords) {
+            if (reg.test(text)) return true;
+        }
+        return false;
+    }
+
+    function showWarning(msg) {
+        warningBanner.textContent = msg;
+        warningBanner.classList.remove('hidden');
+        setTimeout(() => {
+            warningBanner.classList.add('hidden');
+        }, 5000);
+    }
+
+    // Handle Form Submit
+    form?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (isExpired) return;
+
+        const text = input.value.trim();
+        if (!text) return;
+
+        // Run client-side pre-send leak inspection
+        if (inspectClientContent(text)) {
+            showWarning("⚠️ Sharing external contact numbers or social media handles is prohibited. Keep your conversation safe on LOVENY.");
+            return;
+        }
+
+        input.value = '';
+        appendMessage(text, 'You', true, 'Just now');
+
+        try {
+            const res = await fetch(`/api/hookup/chat/${matchId}/send/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+                body: JSON.stringify({ text }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                showWarning(data.detail || data.message || 'Failed to send message');
+            }
+        } catch (err) {
+            console.error('Send error:', err);
+        }
+    });
+
+    function appendMessage(text, sender, isSelf, time) {
+        const row = document.createElement('div');
+        row.className = `flex flex-col ${isSelf ? 'items-end' : 'items-start'}`;
+
+        const bubble = document.createElement('div');
+        bubble.className = `max-w-[78%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-md ${
+            isSelf
+            ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white rounded-br-none'
+            : 'bg-[#231244] border border-purple-800/40 text-purple-100 rounded-bl-none'
+        }`;
+        bubble.textContent = text;
+
+        const timestamp = document.createElement('span');
+        timestamp.className = 'text-[9px] text-purple-400/60 mt-1 px-1';
+        timestamp.textContent = time;
+
+        row.appendChild(bubble);
+        row.appendChild(timestamp);
+        container.appendChild(row);
+        scrollToBottom();
+    }
+
+    // Polling for incoming messages
+    let lastMsgCount = {{ messages|length }};
+    async function pollMessages() {
+        if (isExpired || document.hidden) return;
+        try {
+            const res = await fetch(`/api/hookup/chat/${matchId}/messages/`);
+            const data = await res.json();
+            if (res.ok && data.messages) {
+                if (data.is_expired) {
+                    isExpired = true;
+                    updateCountdown();
+                    return;
+                }
+                if (data.messages.length > lastMsgCount) {
+                    const newMsgs = data.messages.slice(lastMsgCount);
+                    newMsgs.forEach(m => {
+                        if (!m.is_self) {
+                            appendMessage(m.text, m.sender_name, false, m.created_at);
+                        }
+                    });
+                    lastMsgCount = data.messages.length;
+                }
+            }
+        } catch (_) {}
+    }
+
+    setInterval(pollMessages, 2500);
+})();
+</script>
+{% endblock %}
+

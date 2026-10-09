@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Hookup Discovery · Available Tonight | LOVENY{% endblock %}
+
+{% block body_class %}hide-floating-coin bg-[#0e071a] text-slate-100{% endblock %}
+
+{% block content %}
+<main class="min-h-screen pb-28 pt-4 px-4 max-w-lg mx-auto" role="main" aria-label="Hookup Discovery">
+    <!-- Top Header -->
+    <header class="flex items-center justify-between py-3 mb-4">
+        <div>
+            <div class="flex items-center gap-2">
+                <span class="inline-flex h-2.5 w-2.5 rounded-full bg-amber-400 animate-ping"></span>
+                <h1 class="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-1.5">
+                    <span>⚡ Available Tonight</span>
+                </h1>
+            </div>
+            <p class="text-xs text-purple-300/80 font-medium mt-0.5">Real connections nearby · Dual-fiat escrow protected</p>
+        </div>
+        <a href="{% url 'settings' %}" class="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-white/80 hover:bg-white/20 transition" aria-label="Settings">
+            ⚙️
+        </a>
+    </header>
+
+    <!-- Escrow Protection Banner -->
+    <div class="mb-5 rounded-2xl border border-amber-400/30 bg-gradient-to-r from-purple-950/80 via-purple-900/60 to-amber-950/40 p-3.5 shadow-lg backdrop-blur-md">
+        <div class="flex items-start gap-3">
+            <span class="text-2xl">🛡️</span>
+            <div class="text-xs text-purple-200 leading-relaxed">
+                <strong class="font-bold text-amber-300">Dual-Fiat Escrow Commitment:</strong>
+                When both partners accept and pay the ₦{{ connection_fee|default:1500 }} connection fee, a private 24-hour direct chat is instantly unlocked.
+            </div>
+        </div>
+    </div>
+
+    <!-- SECTION: Active Unlocked 24-Hour Chats -->
+    {% if active_unlocked %}
+    <section class="mb-6" aria-labelledby="active-chats-title">
+        <h2 id="active-chats-title" class="text-xs font-black uppercase tracking-wider text-emerald-400 mb-2.5 flex items-center gap-1.5">
+            <span>🟢 Unlocked 24h Chats</span>
+            <span class="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px]">{{ active_unlocked|length }}</span>
+        </h2>
+        <div class="space-y-2.5">
+            {% for m in active_unlocked %}
+            {% with partner=m.target|default:m.initiator %}
+            <div class="flex items-center justify-between rounded-2xl border border-emerald-500/40 bg-emerald-950/30 p-3 backdrop-blur-md">
+                <div class="flex items-center gap-3">
+                    <div class="h-12 w-12 rounded-xl bg-purple-900 overflow-hidden ring-2 ring-emerald-400/50">
+                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed={{ partner.username }}" alt="{{ partner.username }}" class="h-full w-full object-cover">
+                    </div>
+                    <div>
+                        <div class="text-sm font-bold text-white">{{ partner.first_name|default:partner.username }}</div>
+                        <div class="text-[11px] font-mono text-emerald-300">⚡ 24h Window Active</div>
+                    </div>
+                </div>
+                <a href="{% url 'hookup_chat_room' m.id %}" class="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 px-3.5 py-2 text-xs font-black text-slate-950 shadow-md hover:brightness-110 active:scale-95 transition">
+                    Open Chat →
+                </a>
+            </div>
+            {% endwith %}
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <!-- SECTION: Match Inbox (Pending & Payment Stage) -->
+    {% if pending_incoming or accepted_matches %}
+    <section class="mb-6" aria-labelledby="inbox-title">
+        <h2 id="inbox-title" class="text-xs font-black uppercase tracking-wider text-amber-300 mb-2.5 flex items-center gap-1.5">
+            <span>📫 Match Inbox & Escrow</span>
+        </h2>
+        <div class="space-y-3">
+            <!-- Incoming Requests -->
+            {% for m in pending_incoming %}
+            <div class="rounded-2xl border border-purple-500/30 bg-purple-950/40 p-3.5 backdrop-blur-md" id="match-card-{{ m.id }}">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-3">
+                        <div class="h-11 w-11 rounded-xl bg-purple-900 overflow-hidden">
+                            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed={{ m.initiator.username }}" alt="{{ m.initiator.username }}" class="h-full w-full object-cover">
+                        </div>
+                        <div>
+                            <div class="text-sm font-bold text-white">{{ m.initiator.first_name|default:m.initiator.username }}</div>
+                            <div class="text-[11px] text-purple-300">Sent you a tonight connection request</div>
+                        </div>
+                    </div>
+                    <span class="rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 px-2 py-0.5 text-[10px] font-bold">Pending</span>
+                </div>
+                <div class="flex items-center gap-2 pt-1">
+                    <button type="button" onclick="respondHookup('{{ m.id }}', 'accept')" class="flex-1 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 py-2 text-xs font-bold text-white shadow-md active:scale-95 transition">
+                        Accept Request
+                    </button>
+                    <button type="button" onclick="respondHookup('{{ m.id }}', 'decline')" class="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-medium text-white/70 hover:bg-white/20 active:scale-95 transition">
+                        Decline
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+
+            <!-- Accepted Matches Awaiting Escrow Payment -->
+            {% for m in accepted_matches %}
+            {% with is_initiator=request.user.pk|stringformat:"s" == m.initiator.pk|stringformat:"s" %}
+            {% with has_paid=m.initiator_paid if is_initiator else m.target_paid %}
+            <div class="rounded-2xl border border-amber-400/40 bg-purple-950/60 p-3.5 backdrop-blur-md" id="escrow-card-{{ m.id }}">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-xl">💳</span>
+                        <div>
+                            <div class="text-xs font-bold text-white">Escrow Payment Stage</div>
+                            <div class="text-[10px] text-amber-300">₦{{ m.connection_fee|default:1500 }} Dual-Fiat Fee</div>
+                        </div>
+                    </div>
+                    {% if has_paid %}
+                    <span class="rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold">You Paid ✅</span>
+                    {% else %}
+                    <span class="rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold">Payment Needed</span>
+                    {% endif %}
+                </div>
+                <p class="text-[11px] text-purple-200/80 mb-3">
+                    {% if has_paid %}
+                    Your fee is deposited in escrow! Awaiting your partner's payment to unlock the 24h chat.
+                    {% else %}
+                    Both parties must pay ₦{{ m.connection_fee|default:1500 }} to unlock the 24-hour chat room.
+                    {% endif %}
+                </p>
+                {% if not has_paid %}
+                <div class="space-y-2">
+                    <button type="button" onclick="payHookupFee('{{ m.id }}', 'flutterwave')" class="w-full rounded-xl bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 py-2 text-[11px] font-black text-slate-950 shadow-lg shadow-orange-500/25 active:scale-95 transition">
+                        Pay ₦{{ m.connection_fee|default:1500 }} via Flutterwave
+                    </button>
+                    <button type="button" onclick="payHookupFee('{{ m.id }}', 'paystack')" class="w-full rounded-xl bg-gradient-to-r from-sky-500 to-cyan-400 py-2 text-[11px] font-black text-slate-950 shadow-lg shadow-sky-500/25 active:scale-95 transition">
+                        Pay ₦{{ m.connection_fee|default:1500 }} via Paystack
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+            {% endwith %}
+            {% endwith %}
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <!-- SECTION: Discovery Profiles Grid -->
+    <section aria-labelledby="tonight-grid-title">
+        <h2 id="tonight-grid-title" class="text-xs font-black uppercase tracking-wider text-purple-300 mb-3 flex items-center justify-between">
+            <span>Profiles Nearby</span>
+            <span class="text-[10px] font-semibold text-purple-400">{{ candidates|length }} verified hosts</span>
+        </h2>
+
+        <div class="grid grid-cols-2 gap-3.5">
+            {% for candidate in candidates %}
+            <div class="group relative overflow-hidden rounded-2xl border border-purple-800/40 bg-gradient-to-b from-[#1c0f33] to-[#120722] shadow-xl transition-all duration-300 hover:border-pink-500/50">
+                <!-- Photo Container -->
+                <div class="relative aspect-[3/4] w-full overflow-hidden bg-slate-900">
+                    {% with photo=candidate.photos.first %}
+                    {% if photo and photo.image %}
+                    <img src="{{ photo.image.url }}" alt="{{ candidate.user.username }}" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy">
+                    {% else %}
+                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed={{ candidate.user.username }}" alt="{{ candidate.user.username }}" class="h-full w-full object-cover p-3">
+                    {% endif %}
+                    {% endwith %}
+
+                    <!-- Top Floating Tonight Tag & Report Button -->
+                    <div class="absolute inset-x-0 top-0 flex justify-between p-2">
+                        <div class="rounded-full bg-black/60 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-300 backdrop-blur-md border border-amber-300/30">
+                            ⚡ TONIGHT
+                        </div>
+                        <button onclick="reportUser({{ candidate.user.pk }})" class="h-6 w-6 flex items-center justify-center rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-white/70 hover:text-rose-400 hover:border-rose-400/50 transition z-10" aria-label="Report Profile" title="Report & Block">
+                            <span class="text-[10px]">🚩</span>
+                        </button>
+                    </div>
+
+                    <!-- Bottom Gradient Overlay -->
+                    <div class="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none"></div>
+
+                    <!-- Name & Location Info -->
+                    <div class="absolute inset-x-0 bottom-2.5 px-2.5">
+                        <div class="text-sm font-black text-white leading-tight drop-shadow-md flex items-center gap-1">
+                            {{ candidate.user.first_name|default:candidate.user.username }}
+                            <!-- Verified Badge -->
+                            <svg class="h-3.5 w-3.5 text-blue-400 drop-shadow-sm" viewBox="0 0 24 24" fill="currentColor"><path d="M10.134 1.349C11.236.427 12.764.427 13.866 1.349l1.821 1.523c.36.301.83.45 1.306.417l2.368-.16c1.436-.098 2.686.974 2.84 2.404l.255 2.36c.05.474.248.917.553 1.24l1.621 1.716c.983 1.04.983 2.583 0 3.623l-1.621 1.716c-.305.323-.503.766-.553 1.24l-.255 2.36c-.154 1.43-1.404 2.502-2.84 2.404l-2.368-.16c-.476-.032-.946.116-1.306.417l-1.821 1.523c-1.102.922-2.63.922-3.732 0l-1.821-1.523c-.36-.301-.83-.45-1.306-.417l-2.368.16c-1.436.098-2.686-.974-2.84-2.404l-.255-2.36c-.05-.474-.248-.917-.553-1.24L1.442 13.81c-.983-1.04-.983-2.583 0-3.623l1.621-1.716c.305-.323.503-.766.553-1.24l.255-2.36c.154-1.43 1.404-2.502 2.84-2.404l2.368.16c.476.032.946-.116 1.306-.417l1.821-1.523zm-1.182 14.394l6.06-6.06a1.05 1.05 0 00-1.485-1.485L8.212 13.5l-2.273-2.273a1.05 1.05 0 00-1.485 1.485l3.015 3.015a1.05 1.05 0 001.483 0z"/></svg>
+                            {% if candidate.age %}<span class="text-pink-300 font-bold text-xs">{{ candidate.age }}</span>{% endif %}
+                            <!-- Online Indicator -->
+                            <span class="inline-block h-2 w-2 rounded-full bg-emerald-400 border border-black shadow-[0_0_4px_rgba(52,211,153,0.8)] ml-auto relative top-[-1px]"></span>
+                        </div>
+                        <div class="text-[10px] text-purple-200/90 font-medium truncate flex items-center gap-1 mt-0.5">
+                            <span>📍</span>
+                            <span>{{ candidate.location|default:"Lekki, Lagos" }} · 2km away</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Connect Action Button -->
+                <div class="p-2.5">
+                    <button type="button" onclick="sendHookupRequest({{ candidate.user.pk }}, '{{ candidate.user.first_name|default:candidate.user.username|escapejs }}')" class="w-full rounded-xl bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 py-2 text-[11px] font-black uppercase tracking-wider text-white shadow-md shadow-pink-500/20 active:scale-95 transition hover:brightness-110">
+                        ⚡ Meet Today
+                    </button>
+                </div>
+            </div>
+            {% empty %}
+            <div class="col-span-2 py-12 text-center text-xs text-purple-400">
+                No profiles currently active in your area tonight. Check back soon!
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+</main>
+
+<!-- Action Script -->
+<script src="https://js.paystack.co/v1/inline.js"></script>
+<script src="https://checkout.flutterwave.com/v3.js"></script>
+<script>
+(() => {
+    function csrfToken() {
+        const token = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));
+        return token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
+    }
+
+    window.reportUser = async (targetId) => {
+        const reason = prompt("Report this user? Please enter a reason (spam, harassment, fake, etc):");
+        if (!reason) return;
+        
+        try {
+            const res = await fetch('/api/report/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+                body: JSON.stringify({ target_id: targetId, reason: reason }),
+            });
+            if (res.ok) {
+                alert("User has been reported and blocked. They will no longer appear in your feed.");
+                location.reload();
+            } else {
+                const data = await res.json();
+                alert(data.message || 'Could not report user');
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    window.sendHookupRequest = async (targetId, name) => {
+        try {
+            const res = await fetch('/api/hookup/request/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+                body: JSON.stringify({ target_id: targetId }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert(`⚡ Request sent to ${name}! Check your Match Inbox once they accept.`);
+                location.reload();
+            } else {
+                alert(data.message || 'Could not send request');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Network error. Please try again.');
+        }
+    };
+
+    window.respondHookup = async (matchId, action) => {
+        try {
+            const res = await fetch(`/api/hookup/${matchId}/respond/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+                body: JSON.stringify({ action }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                location.reload();
+            } else {
+                alert(data.message || 'Failed to update request');
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    window.payHookupFee = async (matchId, provider = 'paystack') => {
+        try {
+            const res = await fetch(`/api/hookup/${matchId}/pay/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+            });
+            const initData = await res.json();
+            if (!res.ok) {
+                alert(initData.message || 'Failed to initialize payment');
+                return;
+            }
+
+            if (provider === 'flutterwave') {
+                if (!window.FlutterwaveCheckout || !initData.flutterwave_public_key || initData.flutterwave_public_key.includes("PUT_YOUR_REAL_PUBLIC_KEY_HERE")) {
+                    const confirmDev = confirm(`[Dev Mode] Complete mock ₦${initData.amount} Flutterwave payment for match?`);
+                    if (confirmDev) {
+                        await verifyHookupPayment(matchId, 'MOCK_FW_' + initData.reference, provider);
+                    }
+                    return;
+                }
+
+                FlutterwaveCheckout({
+                    public_key: initData.flutterwave_public_key,
+                    tx_ref: initData.reference,
+                    amount: initData.amount,
+                    currency: 'NGN',
+                    payment_options: 'card, mobilemoney, ussd',
+                    customer: { email: initData.email || 'user@loveny.app' },
+                    customizations: {
+                        title: `LOVENY Escrow`,
+                        description: `Dual-Fiat Connection Fee`,
+                    },
+                    callback: function(data) {
+                        verifyHookupPayment(matchId, data.tx_ref, provider);
+                    },
+                    onclose: function() {
+                        console.log('Payment window closed');
+                    }
+                });
+            } else {
+                if (!window.PaystackPop || !initData.public_key || initData.public_key.includes("PUT_YOUR_REAL_PUBLIC_KEY_HERE") || initData.public_key === "pk_test_dummy") {
+                    const confirmDev = confirm(`[Dev Mode] Complete mock ₦${initData.amount} Paystack payment for match?`);
+                    if (confirmDev) {
+                        await verifyHookupPayment(matchId, initData.reference, provider);
+                    }
+                    return;
+                }
+
+                const handler = PaystackPop.setup({
+                    key: initData.public_key,
+                    email: initData.email,
+                    amount: initData.amount_kobo,
+                    ref: initData.reference,
+                    metadata: initData.metadata,
+                    callback: function(response) {
+                        verifyHookupPayment(matchId, response.reference, provider);
+                    },
+                    onClose: function() {
+                        console.log('Payment window closed');
+                    }
+                });
+                handler.openIframe();
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Failed to initiate escrow checkout.');
+        }
+    };
+
+    async function verifyHookupPayment(matchId, reference, provider) {
+        try {
+            const res = await fetch(`/api/hookup/${matchId}/verify/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+                body: JSON.stringify({ reference, provider }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                if (data.is_unlocked) {
+                    alert('🎉 Both partners paid! Your 24-hour chat room is now unlocked!');
+                    window.location.href = `/hookup/chat/${matchId}/`;
+                } else {
+                    alert('✅ Your connection fee is deposited in escrow! Awaiting partner payment to unlock.');
+                    location.reload();
+                }
+            } else {
+                alert(data.message || 'Payment verification failed');
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+})();
+</script>
+{% endblock %}
+

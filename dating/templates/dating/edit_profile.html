@@ -66,6 +66,10 @@
                 <div class="form-group"><label for="{{ form.name.id_for_label }}">Name</label>{{ form.name }}</div>
                 <div class="form-group"><label for="{{ form.age.id_for_label }}">Age</label>{{ form.age }}</div>
             </div>
+            <div class="form-group">
+                <label for="{{ form.gender.id_for_label }}">Identify As</label>
+                {{ form.gender }}
+            </div>
             <div class="grid grid-cols-1 gap-3">
                 <div class="form-group"><label for="{{ form.location.id_for_label }}">City / Home</label>{{ form.location }}</div>
                 <div class="form-group"><label for="{{ form.job_title.id_for_label }}">Job / Industry</label>{{ form.job_title }}</div>
@@ -108,16 +112,7 @@
                 <div class="flex items-center gap-2">{{ form.min_age_pref }}<span class="text-slate-400">to</span>{{ form.max_age_pref }}</div>
             </div>
             <div class="form-group"><label for="{{ form.max_distance_km.id_for_label }}">Maximum distance (km)</label>{{ form.max_distance_km }}</div>
-            <div class="rounded-2xl border border-rose-100 bg-white p-4">
-                <h3 class="text-sm font-semibold">Location coordinates</h3>
-                <p class="mb-3 mt-1 text-xs leading-relaxed text-slate-500">Used to find nearby people and never shown on your profile.</p>
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="form-group"><label for="{{ form.latitude.id_for_label }}">Latitude (decimal degrees)</label>{{ form.latitude }}</div>
-                    <div class="form-group"><label for="{{ form.longitude.id_for_label }}">Longitude (decimal degrees)</label>{{ form.longitude }}</div>
-                </div>
-                <button type="button" id="gps-button" class="mt-3 w-full rounded-xl border border-pink-200 px-4 py-3 text-sm font-semibold text-pink-700 hover:bg-pink-50">Use current GPS location</button>
-                <p id="gps-status" class="mt-2 text-xs text-slate-500" aria-live="polite"></p>
-            </div>
+
             <div class="rounded-2xl border border-rose-100 bg-white p-4">
                 <label class="flex items-start gap-3 cursor-pointer">
                     <div class="pt-0.5">
@@ -248,6 +243,20 @@
         });
     });
 
+    {% if form.errors %}
+    (function() {
+        const errorFields = [{% for field in form %}{% if field.errors %}'{{ field.name }}',{% endif %}{% endfor %}];
+        const aboutFields = ['name', 'age', 'gender', 'location', 'job_title', 'bio', 'first_date_idea'];
+        const interestFields = ['tags'];
+        const discoveryFields = ['preferred_gender', 'min_age_pref', 'max_age_pref', 'max_distance_km', 'is_dnd'];
+        for (const f of errorFields) {
+            if (aboutFields.includes(f)) { activateTab('about'); break; }
+            if (interestFields.includes(f)) { activateTab('interests'); break; }
+            if (discoveryFields.includes(f)) { activateTab('discovery'); break; }
+        }
+    })();
+    {% endif %}
+
     document.getElementById('interest-search').addEventListener('input', event => {
         const query = event.target.value.trim().toLocaleLowerCase();
         document.querySelectorAll('.interest-chip').forEach(chip => {
@@ -280,24 +289,7 @@
         mediaCounter.textContent = `${CURRENT_COUNT + dt.files.length} / ${MEDIA_LIMIT} Uploaded`;
     }
 
-    const gpsButton = document.getElementById('gps-button');
-    gpsButton.addEventListener('click', () => {
-        const status = document.getElementById('gps-status');
-        if (!navigator.geolocation) {
-            status.textContent = 'Location is not available in this browser.';
-            return;
-        }
-        status.textContent = 'Getting your location…';
-        navigator.geolocation.getCurrentPosition(
-            position => {
-                document.getElementById('id_latitude').value = position.coords.latitude.toFixed(6);
-                document.getElementById('id_longitude').value = position.coords.longitude.toFixed(6);
-                status.textContent = 'Location added. Save changes to apply it.';
-            },
-            () => { status.textContent = 'Could not get your location. Check browser permission and try again.'; },
-            { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
-        );
-    });
+
 
     const deactivateModal = document.getElementById('deactivate-modal');
     document.getElementById('deactivate-open').addEventListener('click', () => {

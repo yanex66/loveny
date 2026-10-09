@@ -1,0 +1,91 @@
+/* Custom Jazzmin Admin Theme for LOVENY */
+
+/* 1. Fix the Brand Logo */
+.brand-link {
+    text-align: center !important;
+    padding: 10px 5px !important;
+    background-color: #1a0b2e !important; /* Deep dark purple background */
+    border-bottom: 1px solid #361f5b !important;
+    height: auto !important;
+    display: block !important;
+}
+
+.brand-link .brand-image {
+    float: none !important;
+    margin: 0 auto !important;
+    max-height: 40px !important;
+    width: auto !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    display: inline-block !important;
+}
+
+.brand-link .brand-text {
+    display: none !important; /* Hide text if the logo has the name */
+}
+
+/* 2. Fix Sticky Footer */
+.wrapper {
+    position: relative !important;
+    min-height: 100vh !important;
+}
+.content-wrapper {
+    min-height: calc(100vh - 57px) !important; /* height of header */
+    padding-bottom: 60px !important; /* Make room for the footer */
+}
+.main-footer {
+    position: absolute !important;
+    bottom: 0 !important;
+    right: 0 !important;
+    left: 250px !important;
+    width: auto !important;
+    z-index: 1032 !important;
+    background: #fff !important;
+    border-top: 1px solid #dee2e6 !important;
+    padding: 1rem !important;
+}
+@media (max-width: 991.98px) {
+    .main-footer {
+        left: 0 !important;
+    }
+}
+
+/* 3. Customize Navbar and Sidebar Colors (Premium Purple & Gold) */
+.main-header.navbar {
+    background-color: #2b1154 !important; /* Rich purple */
+    border-bottom-color: #d4af37 !important; /* Gold border */
+}
+
+.main-header.navbar .nav-link {
+    color: #e0d4f5 !important;
+}
+
+.main-header.navbar .nav-link:hover {
+    color: #d4af37 !important; /* Gold hover */
+}
+
+.main-sidebar {
+    background-color: #1a0b2e !important; /* Deep dark purple */
+}
+
+.main-sidebar .nav-sidebar .nav-item > .nav-link {
+    color: #c4b5fd !important;
+}
+
+.main-sidebar .nav-sidebar .nav-item > .nav-link:hover,
+.main-sidebar .nav-sidebar .nav-item > .nav-link.active {
+    background-color: #3b1d6e !important;
+    color: #d4af37 !important; /* Gold */
+}
+
+/* Buttons */
+.btn-primary {
+    background-color: #d4af37 !important;
+    border-color: #c5a028 !important;
+    color: #111 !important;
+}
+.btn-primary:hover {
+    background-color: #e6c555 !important;
+    color: #000 !important;
+}

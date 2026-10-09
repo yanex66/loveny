@@ -31,14 +31,21 @@
     <div class="mx-auto max-w-md space-y-4">
 
         <!-- Top Header Navigation -->
-        <div class="flex items-center justify-between py-2">
+        <div class="flex items-center justify-between py-2 w-full">
             <h1 class="text-xl font-black tracking-tight text-white/95">My Profile</h1>
-            <a href="{% url 'settings' %}" class="flex h-10 w-10 items-center justify-center rounded-2xl card-glass text-white/80 hover:text-white transition shadow-lg active:scale-95" title="Account Settings">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-            </a>
+            <div class="flex items-center gap-2.5 shrink-0" style="display: flex; align-items: center; gap: 10px;">
+                <button type="button" onclick="lovenyOpenCoinStore()" id="me-header-coin-balance" class="flex items-center gap-1.5 rounded-full border border-amber-300/80 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-300 px-3 py-1.5 text-xs font-black text-slate-950 shadow-md shadow-amber-500/25 transition-all hover:scale-105 active:scale-95" title="Coin Balance">
+                    <span class="text-sm">🪙</span>
+                    <span>{{ user_coin_balance|default:profile.coin_balance|default:0 }}</span>
+                    <span class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-900/20 text-[10px] text-amber-950 leading-none font-bold">+</span>
+                </button>
+                <a href="{% url 'settings' %}" class="flex h-10 w-10 items-center justify-center rounded-2xl card-glass text-white/80 hover:text-white transition shadow-lg active:scale-95" title="Account Settings">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                </a>
+            </div>
         </div>
 
         <!-- 1. Header & Core Identity Card -->
@@ -139,24 +146,23 @@
         </div>
 
         <!-- 3. Daily Tasks / Check-In Card -->
-        <div class="card-glass rounded-3xl p-4 shadow-xl">
+        <div class="card-glass rounded-3xl p-4 shadow-xl cursor-pointer hover:border-pink-500/40 transition" onclick="openDailyCheckinModal()">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-3">
                     <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-tr from-pink-500 to-rose-600 text-xl shadow-lg shadow-pink-500/30">
                         🎁
                     </div>
                     <div>
-                        <h3 class="text-sm font-black text-white">Daily Check-In</h3>
-                        <p class="text-xs text-white/60">Check in today for +5 🪙 bonus</p>
+                        <h3 class="text-sm font-black text-white">7-Day Daily Check-In</h3>
+                        <p class="text-xs text-white/60">Streak: <span class="text-amber-300 font-bold">{{ user_checkin_streak|default:0 }}/7 Days</span> · Win <span class="text-cyan-300 font-bold">{{ reward_calendar_days.6.diamonds|default:20 }} Diamonds 💎</span></p>
                     </div>
                 </div>
 
                 <button type="button" id="daily-checkin-btn"
-                        {% if has_checked_in_today %}disabled{% endif %}
-                        onclick="claimDailyCheckin()"
+                        onclick="event.stopPropagation(); openDailyCheckinModal();"
                         class="rounded-2xl px-4 py-2 text-xs font-black uppercase tracking-wider transition shadow-lg active:scale-95
                                {% if has_checked_in_today %}bg-emerald-600/60 text-emerald-200 cursor-default border border-emerald-500/40{% else %}bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-400 hover:to-pink-500 text-white shadow-pink-500/25{% endif %}">
-                    <span id="checkin-btn-label">{% if has_checked_in_today %}Checked In ✓{% else %}Claim +5 🪙{% endif %}</span>
+                    <span id="checkin-btn-label">{% if has_checked_in_today %}Checked In ✓{% else %}Claim Day {{ user_cycle_day|default:1 }} ⚡{% endif %}</span>
                 </button>
             </div>
         </div>

@@ -26,6 +26,18 @@
     const callGiftDrawer = document.getElementById('call-gift-drawer');
     const toggleGiftsBtn = document.getElementById('toggle-gifts');
 
+    // Elements - Picture-in-Picture (PiP)
+    const callMinimizeBtn = document.getElementById('call-minimize-btn');
+    const callNativePipBtn = document.getElementById('call-native-pip-btn');
+    const pipMiniControls = document.getElementById('pip-mini-controls');
+    const pipTimerDisplay = document.getElementById('pip-timer-display');
+    const pipExpandBtn = document.getElementById('pip-expand-btn');
+    const pipMuteBtn = document.getElementById('pip-mute-btn');
+    const pipEndBtn = document.getElementById('pip-end-btn');
+    let isPipMode = false;
+    let pipDragActive = false;
+    let pipDragged = false;
+
     // Elements - Navbar & Coin Store Modal
     const navCoinBalance = document.getElementById('nav-coin-balance');
     const navDiamondPill = document.getElementById('nav-diamond-pill');
@@ -222,10 +234,23 @@
         try {
             const data = await api(config.dataset.walletUrl);
             if (data.status === 'success') {
-                userCoins = data.coin_balance || 0;
-                userDiamonds = data.earned_diamonds || 0;
+                userCoins = Number(data.coin_balance || 0);
+                userDiamonds = Number(data.earned_diamonds || 0);
                 isSexCallPremium = !!data.is_sex_call_premium;
+                if (typeof data.has_claimed_welcome !== 'undefined') {
+                    config.dataset.hasClaimedWelcome = data.has_claimed_welcome ? 'true' : 'false';
+                }
+                if (typeof data.has_checked_in_today !== 'undefined') {
+                    config.dataset.hasCheckedInToday = data.has_checked_in_today ? 'true' : 'false';
+                }
+                if (typeof data.checkin_streak !== 'undefined') {
+                    config.dataset.checkinStreak = data.checkin_streak;
+                }
+                if (typeof data.cycle_day !== 'undefined') {
+                    config.dataset.cycleDay = data.cycle_day;
+                }
                 updateWalletUI();
+                checkAndShowRewardPopups();
             }
         } catch (err) {
             console.warn('Could not load wallet data.', err);
@@ -237,9 +262,15 @@
         if (storeModalCoins) storeModalCoins.textContent = userCoins;
         if (callHudCoins) callHudCoins.textContent = userCoins;
 
+        const meCoins = document.getElementById('me-coin-balance');
+        if (meCoins) meCoins.textContent = userCoins;
+
         if (navDiamondBalance) navDiamondBalance.textContent = userDiamonds;
         if (storeModalDiamonds) storeModalDiamonds.textContent = userDiamonds;
         if (callHudDiamonds) callHudDiamonds.textContent = userDiamonds;
+
+        const meDiamonds = document.getElementById('me-diamond-balance');
+        if (meDiamonds) meDiamonds.textContent = userDiamonds;
 
         if (navDiamondPill) {
             if (userDiamonds > 0) {
@@ -557,7 +588,9 @@
         if (!callTimerDisplay) return;
         const mins = Math.floor(callDurationSeconds / 60);
         const secs = callDurationSeconds % 60;
-        callTimerDisplay.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        const formattedTime = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        callTimerDisplay.textContent = formattedTime;
+        if (pipTimerDisplay) pipTimerDisplay.textContent = formattedTime;
 
         if (callDurationSeconds < 20) {
             if (callBillingBadge) {
@@ -650,10 +683,35 @@
     }
 
     function showRoom(message = 'Connecting…') {
-        if (roomOverlay) roomOverlay.classList.remove('hidden');
+        if (roomOverlay) {
+            roomOverlay.classList.remove('hidden');
+            exitPipMode();
+        }
         if (feedback) feedback.textContent = message;
         updateWalletUI();
         if (callTimerDisplay) callTimerDisplay.textContent = '00:00';
+        if (pipTimerDisplay) pipTimerDisplay.textContent = '00:00';
+    }
+
+    function enterPipMode() {
+        if (!activeCall || !roomOverlay) return;
+        isPipMode = true;
+        roomOverlay.classList.remove('hidden');
+        roomOverlay.classList.add('call-pip-active');
+        updateCallTimerDisplay();
+    }
+
+    function exitPipMode() {
+        if (!roomOverlay) return;
+        isPipMode = false;
+        roomOverlay.classList.remove('call-pip-active');
+        roomOverlay.style.left = '';
+        roomOverlay.style.top = '';
+        roomOverlay.style.right = '';
+        roomOverlay.style.bottom = '';
+        if (document.pictureInPictureElement) {
+            document.exitPictureInPicture().catch(() => {});
+        }
     }
 
     function stopPolling() {
@@ -679,6 +737,10 @@
         }
         if (remoteVideo) remoteVideo.srcObject = null;
         if (localVideo) localVideo.srcObject = null;
+        if (window.CallPrivacy) {
+            window.CallPrivacy.cleanup();
+        }
+        exitPipMode();
         if (roomOverlay) roomOverlay.classList.add('hidden');
         activeCall = null;
         pendingCandidates = [];
@@ -713,6 +775,9 @@
 
     async function consumeSignal(signal) {
         if (!activeCall) return;
+        if (window.CallPrivacy && typeof window.CallPrivacy.onPeerSignal === 'function') {
+            window.CallPrivacy.onPeerSignal(signal.type, signal.payload);
+        }
         // In-call Gift Signal handling
         if (signal.type === 'gift') {
             if (!isCaller && signal.payload.diamond_award) {
@@ -791,6 +856,10 @@
             video: {facingMode: cameraFacing},
         });
         if (localVideo) localVideo.srcObject = localStream;
+        if (window.CallPrivacy && activeCall) {
+            window.CallPrivacy.init(activeCall.room_id, config.dataset.userEmail || 'Viewer');
+            window.CallPrivacy.startFaceVerification(localStream);
+        }
         peer = new RTCPeerConnection({
             iceServers: [{urls: 'stun:stun.l.google.com:19302'}],
         });
@@ -1117,14 +1186,414 @@
         });
     }
 
+    // --- Picture-in-Picture (PiP) Controls & Dragging ---
+    if (callMinimizeBtn) {
+        callMinimizeBtn.addEventListener('click', enterPipMode);
+    }
+
+    if (pipExpandBtn) {
+        pipExpandBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            exitPipMode();
+        });
+    }
+
+    if (pipMuteBtn) {
+        pipMuteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (muteCallBtn) muteCallBtn.click();
+            if (localStream) {
+                const enabled = localStream.getAudioTracks().some(t => t.enabled);
+                pipMuteBtn.textContent = enabled ? '🎤' : '🔇';
+            }
+        });
+    }
+
+    if (pipEndBtn) {
+        pipEndBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (endCallBtn) endCallBtn.click();
+        });
+    }
+
+    if (callNativePipBtn) {
+        if (!document.pictureInPictureEnabled) {
+            callNativePipBtn.classList.add('hidden');
+        } else {
+            callNativePipBtn.addEventListener('click', async () => {
+                if (remoteVideo && remoteVideo.srcObject) {
+                    try {
+                        if (document.pictureInPictureElement) {
+                            await document.exitPictureInPicture();
+                        } else {
+                            await remoteVideo.requestPictureInPicture();
+                        }
+                    } catch (err) {
+                        console.warn('Native PiP error', err);
+                    }
+                }
+            });
+        }
+    }
+
+    // Draggable PiP Floating Card & Tap-to-Expand
+    if (roomOverlay) {
+        let pipStartX = 0, pipStartY = 0, pipInitialLeft = 0, pipInitialTop = 0;
+
+        roomOverlay.addEventListener('pointerdown', event => {
+            if (!isPipMode) return;
+            // Ignore if clicking interactive buttons inside PiP overlay
+            if (event.target.closest('#pip-mute-btn') || event.target.closest('#pip-end-btn') || event.target.closest('#pip-expand-btn')) {
+                return;
+            }
+            pipDragActive = true;
+            pipDragged = false;
+            pipStartX = event.clientX;
+            pipStartY = event.clientY;
+            const rect = roomOverlay.getBoundingClientRect();
+            pipInitialLeft = rect.left;
+            pipInitialTop = rect.top;
+            try {
+                roomOverlay.setPointerCapture(event.pointerId);
+            } catch (_) {}
+        });
+
+        roomOverlay.addEventListener('pointermove', event => {
+            if (!pipDragActive || !isPipMode) return;
+            const dx = event.clientX - pipStartX;
+            const dy = event.clientY - pipStartY;
+            if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+                pipDragged = true;
+            }
+            const rect = roomOverlay.getBoundingClientRect();
+            const minX = 8;
+            const maxX = window.innerWidth - rect.width - 8;
+            const minY = 8;
+            const maxY = window.innerHeight - rect.height - 80;
+
+            const newLeft = Math.max(minX, Math.min(maxX, pipInitialLeft + dx));
+            const newTop = Math.max(minY, Math.min(maxY, pipInitialTop + dy));
+
+            roomOverlay.style.left = `${newLeft}px`;
+            roomOverlay.style.top = `${newTop}px`;
+            roomOverlay.style.right = 'auto';
+            roomOverlay.style.bottom = 'auto';
+        });
+
+        const stopPipDrag = event => {
+            if (!pipDragActive) return;
+            pipDragActive = false;
+            try {
+                if (event && event.pointerId) roomOverlay.releasePointerCapture(event.pointerId);
+            } catch (_) {}
+
+            // If user just tapped without dragging, maximize back to full screen
+            if (!pipDragged) {
+                if (event.target.closest('#pip-mute-btn') || event.target.closest('#pip-end-btn')) {
+                    return;
+                }
+                exitPipMode();
+            }
+        };
+
+        roomOverlay.addEventListener('pointerup', stopPipDrag);
+        roomOverlay.addEventListener('pointercancel', stopPipDrag);
+    }
+
+    // --- Seamless In-Call Page Navigation with Picture-in-Picture ---
+    function updateBottomNavActive(targetUrl) {
+        try {
+            const url = new URL(targetUrl, window.location.origin);
+            const tabs = document.querySelectorAll('.bottom-tabs .bottom-tab');
+            tabs.forEach(tab => {
+                const tabUrl = new URL(tab.href, window.location.origin);
+                if (tabUrl.pathname === url.pathname) {
+                    tab.classList.add('nav-active');
+                } else {
+                    tab.classList.remove('nav-active');
+                }
+            });
+        } catch (_) {}
+    }
+
+    async function navigateSeamlessly(url, pushState = true) {
+        try {
+            const res = await fetch(url, {
+                headers: {'X-Requested-With': 'XMLHttpRequest'}
+            });
+            if (!res.ok) {
+                window.location.href = url;
+                return;
+            }
+            const html = await res.text();
+            const parser = new DOMParser();
+            const newDoc = parser.parseFromString(html, 'text/html');
+
+            const currentFrame = document.querySelector('.device-frame');
+            const newFrame = newDoc.querySelector('.device-frame');
+            if (currentFrame && newFrame) {
+                currentFrame.innerHTML = newFrame.innerHTML;
+                window.scrollTo({top: 0, behavior: 'smooth'});
+            }
+
+            if (newDoc.title) {
+                document.title = newDoc.title;
+            }
+
+            if (pushState) {
+                window.history.pushState({url}, '', url);
+            }
+
+            updateBottomNavActive(url);
+
+            // Re-execute scripts embedded in the loaded frame so page behaviors work
+            if (currentFrame) {
+                currentFrame.querySelectorAll('script').forEach(oldScript => {
+                    const newScript = document.createElement('script');
+                    Array.from(oldScript.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value));
+                    newScript.textContent = oldScript.textContent;
+                    oldScript.parentNode.replaceChild(newScript, oldScript);
+                });
+            }
+
+            // Re-bind call trigger buttons on new content
+            currentFrame?.querySelectorAll('[data-video-call-target]').forEach(button => {
+                button.addEventListener('click', () => initiateCall(button.dataset.videoCallTarget));
+            });
+
+        } catch (err) {
+            console.warn('Seamless navigation failed, falling back', err);
+            window.location.href = url;
+        }
+    }
+
+    // Intercept navigation links during an active call to switch to PiP
+    document.addEventListener('click', event => {
+        if (!activeCall) return;
+
+        const link = event.target.closest('a');
+        if (!link || !link.href) return;
+
+        if (link.target === '_blank' || link.download) return;
+        const hrefAttr = link.getAttribute('href') || '';
+        if (hrefAttr.startsWith('#') || hrefAttr.startsWith('javascript:')) return;
+
+        try {
+            const url = new URL(link.href, window.location.origin);
+            if (url.origin !== window.location.origin) return;
+
+            // Don't intercept auth actions (logout, delete)
+            if (url.pathname.includes('/delete/') || url.pathname.includes('/logout/')) return;
+
+            event.preventDefault();
+
+            // 1. Enter Picture-in-Picture mode
+            enterPipMode();
+
+            // 2. Seamlessly navigate page without destroying WebRTC
+            navigateSeamlessly(url.href, true);
+        } catch (_) {}
+    });
+
+    window.addEventListener('popstate', () => {
+        if (activeCall) {
+            navigateSeamlessly(window.location.href, false);
+        }
+    });
+
+    // Native PiP fallback on tab hidden
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden' && activeCall && peer && remoteVideo) {
+            if (document.pictureInPictureEnabled && !document.pictureInPictureElement && !remoteVideo.paused) {
+                remoteVideo.requestPictureInPicture().catch(() => {});
+            }
+        }
+    });
+
+    // --- Reward Popups & 7-Day Gamification Logic ---
+    function checkAndShowRewardPopups() {
+        if (!config) return;
+        const hasClaimedWelcome = config.dataset.hasClaimedWelcome === 'true';
+        const hasCheckedInToday = config.dataset.hasCheckedInToday === 'true';
+
+        // 1. If newcomer has not claimed welcome bonus, pop up welcome modal first!
+        if (!hasClaimedWelcome) {
+            setTimeout(() => {
+                openWelcomeBonusModal();
+            }, 600);
+            return;
+        }
+
+        // 2. If already claimed welcome, and hasn't checked in today:
+        if (!hasCheckedInToday) {
+            const dismissed = sessionStorage.getItem('loveny_dismissed_daily_checkin');
+            if (!dismissed) {
+                setTimeout(() => {
+                    openDailyCheckinModal();
+                }, 700);
+            }
+        }
+    }
+
+    function openWelcomeBonusModal() {
+        const modal = document.getElementById('welcome-bonus-modal');
+        if (modal) {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+    }
+
+    function closeWelcomeBonusModal() {
+        const modal = document.getElementById('welcome-bonus-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+    }
+
+    async function claimWelcomeReward() {
+        const btn = document.getElementById('claim-welcome-btn');
+        const btnText = document.getElementById('claim-welcome-btn-text');
+        if (!btn || btn.disabled) return;
+
+        btn.disabled = true;
+        if (btnText) btnText.textContent = 'Claiming...';
+
+        try {
+            const url = config.dataset.claimWelcomeUrl || '/api/wallet/claim-welcome/';
+            const res = await api(url, { method: 'POST' });
+            if (res.status === 'success') {
+                userCoins = Number(res.coin_balance || userCoins);
+                if (typeof res.earned_diamonds !== 'undefined') userDiamonds = Number(res.earned_diamonds || 0);
+                config.dataset.hasClaimedWelcome = 'true';
+                updateWalletUI();
+
+                toast(`🎉 Welcome gift claimed! +${res.coins_awarded} 🪙 added to your wallet!`);
+                closeWelcomeBonusModal();
+
+                // If user hasn't checked in today, prompt 7-day sign-in after a slight delay
+                if (config.dataset.hasCheckedInToday !== 'true') {
+                    setTimeout(() => {
+                        openDailyCheckinModal();
+                    }, 1200);
+                }
+            } else {
+                toast(res.message || 'Could not claim welcome reward.', true);
+                closeWelcomeBonusModal();
+            }
+        } catch (err) {
+            console.error('Error claiming welcome reward:', err);
+            toast('Failed to claim reward. Please try again.', true);
+            btn.disabled = false;
+            if (btnText) btnText.textContent = 'Claim My Free Coins';
+        }
+    }
+
+    function openDailyCheckinModal() {
+        const modal = document.getElementById('daily-checkin-modal');
+        if (modal) {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+    }
+
+    function closeDailyCheckinModal() {
+        const modal = document.getElementById('daily-checkin-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            sessionStorage.setItem('loveny_dismissed_daily_checkin', 'true');
+        }
+    }
+
+    async function claimDailyCheckinReward() {
+        const btn = document.getElementById('modal-checkin-action-btn');
+        const btnLabel = document.getElementById('modal-checkin-btn-label');
+        if (!btn || btn.disabled) return;
+
+        btn.disabled = true;
+        if (btnLabel) btnLabel.textContent = 'Claiming...';
+
+        try {
+            const url = config.dataset.checkinUrl || '/api/wallet/check-in/';
+            const res = await api(url, { method: 'POST' });
+            if (res.status === 'success') {
+                userCoins = Number(res.coin_balance || userCoins);
+                userDiamonds = Number(res.earned_diamonds || 0);
+                config.dataset.hasCheckedInToday = 'true';
+                config.dataset.checkinStreak = res.checkin_streak;
+                updateWalletUI();
+
+                const streakCount = document.getElementById('calendar-streak-count');
+                if (streakCount) streakCount.textContent = res.checkin_streak;
+
+                // Update the day card in the 7-day calendar
+                const dayCard = document.getElementById(`calendar-day-${res.cycle_day}`);
+                if (dayCard) {
+                    dayCard.className = 'calendar-day-card flex flex-col items-center justify-between rounded-2xl border p-2 text-center transition-all border-emerald-500/50 bg-emerald-950/30 text-emerald-200';
+                    const badge = dayCard.querySelector('.calendar-status-badge');
+                    if (badge) {
+                        badge.className = 'calendar-status-badge mt-1 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300';
+                        badge.textContent = '✓ Done';
+                    }
+                }
+
+                if (res.is_grand_prize) {
+                    toast(`💎 GRAND PRIZE CLAIMED! +${res.diamonds_awarded} Diamonds & +${res.coins_awarded} Coins!`);
+                } else {
+                    toast(`⚡ Checked in! +${res.coins_awarded} 🪙 added to your wallet!`);
+                }
+
+                if (btnLabel) btnLabel.textContent = 'Checked In Today · Next Reward Tomorrow';
+                btn.className = 'w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-base font-black transition shadow-lg bg-white/10 text-white/40 cursor-not-allowed border border-white/5';
+
+                // Also update profile Me hub button if currently visible
+                const profileCheckinBtn = document.getElementById('daily-checkin-btn');
+                const profileCheckinLabel = document.getElementById('checkin-btn-label');
+                if (profileCheckinBtn) {
+                    profileCheckinBtn.disabled = true;
+                    profileCheckinBtn.className = 'rounded-2xl px-4 py-2 text-xs font-black uppercase tracking-wider transition shadow-lg bg-emerald-600/60 text-emerald-200 cursor-default border border-emerald-500/40';
+                }
+                if (profileCheckinLabel) {
+                    profileCheckinLabel.textContent = 'Checked In ✓';
+                }
+
+                setTimeout(() => {
+                    closeDailyCheckinModal();
+                }, 1600);
+            } else if (res.status === 'already_claimed') {
+                toast('Already checked in today!', true);
+                closeDailyCheckinModal();
+            } else {
+                toast(res.message || 'Could not complete check-in.', true);
+                btn.disabled = false;
+                if (btnLabel) btnLabel.textContent = 'Try Again';
+            }
+        } catch (err) {
+            console.error('Check-in error:', err);
+            toast('Network error during check-in.', true);
+            btn.disabled = false;
+            if (btnLabel) btnLabel.textContent = 'Try Again';
+        }
+    }
+
     // Initialize on load
     fetchWallet();
     fetchCoinPackages();
     fetchGifts();
+    checkAndShowRewardPopups();
 
     // Export global helpers
     window.lovenyStartVideoCall = initiateCall;
     window.lovenyOpenCoinStore = openCoinStore;
     window.lovenyQuickMatch = quickMatch;
+    window.lovenyEnterPip = enterPipMode;
+    window.lovenyExitPip = exitPipMode;
+    window.openWelcomeBonusModal = openWelcomeBonusModal;
+    window.closeWelcomeBonusModal = closeWelcomeBonusModal;
+    window.claimWelcomeReward = claimWelcomeReward;
+    window.openDailyCheckinModal = openDailyCheckinModal;
+    window.closeDailyCheckinModal = closeDailyCheckinModal;
+    window.claimDailyCheckinReward = claimDailyCheckinReward;
 })();
 
