@@ -649,6 +649,7 @@ def swipe_view(request):
         else f"{reverse('premium_landing')}?product={product_type}"
     )
     return render(request, 'dating/swipe_card.html', {
+        'profile': profile,
         'SWIPE_URL': reverse('swipe_action'),
         'PROFILES_URL': reverse('get_profiles_json'),
         'PREMIUM_URL': premium_url,
