@@ -113,7 +113,7 @@
         
         <div class="flex items-center gap-2">
             <!-- Coin Balance Badge -->
-            <button type="button" onclick="lovenyOpenCoinStore()" class="flex items-center gap-1.5 rounded-full border border-amber-300/80 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-300 px-3 py-1.5 text-xs font-black text-slate-950 shadow-sm transition hover:scale-105 active:scale-95" title="Coin Balance">
+            <button type="button" onclick="lovenyOpenCoinStore()" class="flex items-center gap-1.5 rounded-full border border-amber-300/80 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-300 px-2 py-1 text-[10px] sm:px-3 sm:py-1.5 sm:text-xs font-black text-slate-950 shadow-sm transition hover:scale-105 active:scale-95" title="Coin Balance">
                 <span class="text-sm">??</span>
                 <span id="nav-coin-balance">{{ user_coin_balance|default:profile.coin_balance|default:0 }}</span>
                 <span class="ml-0.5 inline-flex h-3 w-3 items-center justify-center rounded-full bg-amber-900/20 text-[9px] text-amber-950 leading-none font-bold">+</span>

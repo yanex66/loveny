@@ -2155,6 +2155,7 @@ def site_config_api(request):
         'day_7_bonus_diamonds': getattr(cfg, 'day_7_bonus_diamonds', 20),
         'announcement_banner': cfg.announcement_banner if cfg.is_announcement_active else '',
         'is_announcement_active': cfg.is_announcement_active,
+        'mode_switch_fee': cfg.mode_switch_fee,
     })
 
 
