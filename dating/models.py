@@ -2,6 +2,7 @@ import uuid
 import os
 from decimal import Decimal
 from django.db import models
+from django.conf import settings
 from django.contrib.auth import get_user_model 
 from django.utils import timezone
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -707,12 +708,25 @@ class HookupMatch(models.Model):
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    initiator = models.ForeignKey(User, related_name='initiated_hookups', on_delete=models.CASCADE)
-    target = models.ForeignKey(User, related_name='received_hookups', on_delete=models.CASCADE)
+    initiator = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='hookup_requests_sent',
+        on_delete=models.CASCADE,
+    )
+    target = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='hookup_requests_received',
+        on_delete=models.CASCADE,
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
     initiator_paid = models.BooleanField(default=False)
     target_paid = models.BooleanField(default=False)
-    connection_fee = models.PositiveIntegerField(default=1500, help_text="Dual-fiat connection fee in NGN per participant (₦1,500)")
+    connection_fee = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('1500.00'),
+        help_text="Dual-fiat connection fee in NGN per participant (₦1,500)",
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     unlocked_at = models.DateTimeField(null=True, blank=True)
     expires_at = models.DateTimeField(null=True, blank=True)
@@ -734,9 +748,7 @@ class HookupMatch(models.Model):
     def is_active(self):
         if self.status != 'unlocked':
             return False
-        if self.expires_at and self.expires_at <= timezone.now():
-            return False
-        return True
+        return bool(self.expires_at and self.expires_at > timezone.now())
 
     @property
     def time_remaining_seconds(self):
@@ -754,6 +766,7 @@ class HookupMatch(models.Model):
 
 
 class HookupMessage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     match = models.ForeignKey(HookupMatch, related_name='messages', on_delete=models.CASCADE)
     sender = models.ForeignKey(User, related_name='hookup_messages', on_delete=models.CASCADE)
     text = models.TextField()
@@ -840,5 +853,4 @@ class ProfileStateBackup(models.Model):
 # ── Support Chat Widget Models ─────────────────────────────────────────────────
 # Imported here so Django migrations pick them up automatically from the
 # 'dating' app without needing a separate app.
-from .support_models import SupportTicket, SupportMessage  # noqa: E402, F401
-
+from .support_models import SupportKnowledgeBase, SupportMessage, SupportTicket  # noqa: E402, F401

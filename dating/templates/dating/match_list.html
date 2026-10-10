@@ -76,7 +76,7 @@
                         <a href="{% url 'chat_room' match.id %}" class="block w-full py-3.5 rounded-2xl brand-gradient text-center font-black uppercase tracking-wider text-xs text-white shadow-md shadow-pink-600/20 hover:brightness-105 active:scale-[0.99] transition">
                             Open private chat
                         </a>
-                        {% if can_video_call %}
+                        {% if match.can_video_call %}
                         <button type="button" data-video-call-target="{{ match.other_user_id }}" class="w-full py-3 rounded-2xl bg-violet-600 text-center font-bold text-xs uppercase tracking-wider text-white shadow-md shadow-violet-600/20 hover:bg-violet-700 active:scale-[0.99] transition">
                             Start video call
                         </button>

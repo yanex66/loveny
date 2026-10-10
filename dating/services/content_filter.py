@@ -12,10 +12,10 @@ from django.db.models import F
 class ContentFilter:
     # Worded digits mapping (including homophones and casual spellings)
     WORDED_DIGITS = {
-        'zero': '0', 'oh': '0', 'o': '0', 'nil': '0',
-        'one': '1', 'won': '1',
-        'two': '2', 'to': '2', 'too': '2',
-        'three': '3', 'tree': '3',
+        'zero': '0', 'zeero': '0', 'oh': '0', 'o': '0', 'nil': '0',
+        'one': '1', 'won': '1', 'wan': '1',
+        'two': '2', 'to': '2', 'too': '2', 'tu': '2',
+        'three': '3', 'tree': '3', 'tri': '3',
         'four': '4', 'for': '4', 'fore': '4',
         'five': '5',
         'six': '6',
@@ -118,12 +118,12 @@ class ContentFilter:
         Check for 7 to 15 digit telephone sequences, even if separated
         by spaces, hyphens, periods, commas, slashes, or currency symbols.
         """
+        text = unicodedata.normalize('NFKC', text)
         # Currency/price prefix masking: e.g. ₦08012345678 or #08012345678 or $0801...
         cleaned = re.sub(r'[₦#\$Nn]\s*(?=\d)', '', text)
 
-        # Remove allowable non-digit separators between numbers
-        # Match any chunk of digits separated by single/multiple punctuation or spaces
-        pattern = r'(?:\+?\d[\s\-\.\,\_\/\(\)\[\]]{0,3}){7,15}\d'
+        # Remove allowable non-digit separators between numbers (including spaces, dots, dashes, hyphens, or emojis)
+        pattern = r'(?:\+?\d[^a-zA-Z\d]{0,6}){6,15}\d'
         match = re.search(pattern, cleaned)
         if match:
             # Verify extracted sequence actually contains 7-15 digits
@@ -194,14 +194,17 @@ class ContentFilter:
                 return True, f"Detected obfuscated off-platform keyword ({kw_pattern})"
 
         # Check intra-word punctuation: e.g. w.h.a.t.s.a.p.p or w h a t s a p p
-        collapsed = re.sub(r'[\s\.\-\_\,\*]+', '', norm)
+        collapsed = re.sub(r'[^a-z0-9]+', '', norm)
         collapsed_leet = cls.leet_decode(collapsed)
         for basic in ['whatsapp', 'telegram', 'instagram', 'snapchat']:
             if basic in collapsed or basic in collapsed_leet:
                 return True, f"Detected spaced/punctuated keyword ({basic})"
 
         # Check social handles pattern: e.g. @username or ig: username
-        if re.search(r'(?:ig|insta|sc|snap|tg)\s*[:@\-_]\s*[a-zA-Z0-9_\.]{3,}', norm):
+        if (
+            re.search(r'(?:ig|insta|sc|snap|tg)\s*[:@\-_]\s*[a-zA-Z0-9_\.]{3,}', norm)
+            or re.search(r'(?<!\w)@[a-zA-Z0-9_.]{3,}', norm)
+        ):
             return True, "Detected social media handle"
 
         # Check external URLs
@@ -241,59 +244,6 @@ class ContentFilter:
         if blocked:
             return True, reason
 
-        # 5. AI Monitoring (Fallback for obfuscated hints)
-        blocked, reason = cls.check_ai_monitoring(text)
-        if blocked:
-            return True, reason
-
-        return False, ""
-
-    @classmethod
-    def check_ai_monitoring(cls, text: str) -> tuple[bool, str]:
-        """
-        Fallback AI check for tricky messages. Only runs if GEMINI_API_KEY is configured
-        and the text contains suspicious trigger words.
-        """
-        from django.conf import settings
-        
-        api_key = getattr(settings, 'GEMINI_API_KEY', None)
-        if not api_key:
-            return False, ""
-
-        trigger_words = [
-            'spell', 'digit', 'code', 'number', 'add me', 'contact', 'snap', 'ig',
-            'whatsapp', 'call', 'text', 'reach', 'birth', 'year', 'month', 'age'
-        ]
-        
-        # Only invoke AI if the text hints at sharing info
-        if not any(word in text.lower() for word in trigger_words):
-            return False, ""
-
-        try:
-            from google import genai
-            client = genai.Client(api_key=api_key)
-            
-            prompt = (
-                "You are a strict content filter for a dating app. "
-                "Analyze this chat message (which may be part of a conversation history). "
-                "Does this text contain a hidden or obfuscated attempt to share contact information "
-                "(like phone numbers, social media handles, email addresses) or bypass safety filters? "
-                f"Message to analyze: '{text}'\n\n"
-                "Reply strictly with YES if it is an attempt to share contact info, or NO if it is innocent conversation."
-            )
-            
-            response = client.models.generate_content(
-                model='gemini-1.5-flash',
-                contents=prompt,
-            )
-            
-            if response.text and "YES" in response.text.strip().upper():
-                return True, "AI detected obfuscated contact sharing attempt"
-                
-        except Exception as e:
-            # Silently fail and allow message if AI service is down or rate limited
-            pass
-            
         return False, ""
 
     @classmethod
@@ -308,19 +258,13 @@ class ContentFilter:
         is_blocked, reason = cls.inspect(text)
         if is_blocked:
             if user and hasattr(user, 'profile') and user.profile:
-                # Increment off_platform_attempts counter
+                # Increment off_platform_attempts counter for moderation review and suspension
                 user.profile.off_platform_attempts = F('off_platform_attempts') + 1
                 user.profile.save(update_fields=['off_platform_attempts'])
-                
-                # Deactivate user account immediately
-                user.is_active = False
-                user.save(update_fields=['is_active'])
 
             warning_message = (
-                "⚠️ Sharing external contact information, phone numbers, or social handles "
-                "is strictly prohibited. Your account has been flagged and deactivated for violating our safety policies."
+                "Sharing phone numbers, social handles, or contact info is prohibited. Keep all communication within the app."
             )
             return False, warning_message
 
         return True, None
-

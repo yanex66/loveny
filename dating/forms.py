@@ -145,6 +145,32 @@ class ProfileForm(forms.ModelForm):
     min_age_pref = forms.IntegerField(min_value=18, max_value=120, required=False, initial=18)
     max_age_pref = forms.IntegerField(min_value=18, max_value=120, required=False, initial=50)
     max_distance_km = forms.IntegerField(min_value=1, max_value=500, required=False, initial=100)
+    latitude = forms.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        min_value=-90,
+        max_value=90,
+        required=False,
+        widget=forms.NumberInput(attrs={
+            'min': '-90',
+            'max': '90',
+            'step': '0.000001',
+            'class': 'form-input',
+        }),
+    )
+    longitude = forms.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        min_value=-180,
+        max_value=180,
+        required=False,
+        widget=forms.NumberInput(attrs={
+            'min': '-180',
+            'max': '180',
+            'step': '0.000001',
+            'class': 'form-input',
+        }),
+    )
     
     location = forms.ChoiceField(
         choices=LOCATION_CHOICES,
@@ -185,6 +211,8 @@ class ProfileForm(forms.ModelForm):
             'max_age_pref',
             'location', 
             'max_distance_km',
+            'latitude',
+            'longitude',
             'job_title', 
             'bio', 
             'first_date_idea', 
@@ -273,7 +301,7 @@ class ProfileCreationForm(ProfileForm):
         self.fields['name'].required = False
         optional_fields = [
             'min_age_pref', 'max_age_pref', 'max_distance_km',
-            'location', 'job_title',
+            'latitude', 'longitude', 'location', 'job_title',
             'bio', 'first_date_idea', 'tags', 'is_dnd', 'more_photos', 'photo'
         ]
         for field_name in optional_fields:
@@ -291,31 +319,13 @@ class ProfileCreationForm(ProfileForm):
 class SettingsForm(forms.ModelForm):
     class Meta:
         model = Profile
-        fields = [
-            'relationship_mode',
-            'is_dnd',
-            'incognito_mode',
-        ]
+        fields = ['is_dnd']
         widgets = {
             'is_dnd': forms.CheckboxInput(attrs={'class': 'form-checkbox h-5 w-5 text-pink-600 rounded focus:ring-pink-500 bg-slate-800 border-slate-700'}),
-            'incognito_mode': forms.CheckboxInput(attrs={'class': 'form-checkbox h-5 w-5 text-purple-600 rounded focus:ring-purple-500 bg-slate-800 border-slate-700'}),
         }
         labels = {
-            'relationship_mode': 'Connection mode',
             'is_dnd': 'Do Not Disturb (DND)',
-            'incognito_mode': 'Incognito Mode (Hide me)',
         }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if 'relationship_mode' in self.fields:
-            self.fields['relationship_mode'].required = False
-
-    def clean_relationship_mode(self):
-        val = self.cleaned_data.get('relationship_mode')
-        if not val and self.instance and self.instance.relationship_mode:
-            return self.instance.relationship_mode
-        return val or 'DATING'
 
 
 class SafePasswordResetForm(PasswordResetForm):
@@ -338,4 +348,3 @@ class SafePasswordResetForm(PasswordResetForm):
             email_message.attach_alternative(html_email, "text/html")
 
         email_message.send()
-

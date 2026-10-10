@@ -17,13 +17,11 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from .models import SupportTicket, SupportMessage
+from .services.support_bot import process_support_inquiry
 
 logger = logging.getLogger(__name__)
 
-AUTO_REPLY_TEXT = (
-    "Thanks for reaching out! 💬 We have received your message. "
-    "Our support team is reviewing it and will get back to you within 1 hour."
-)
+ACTIVE_TICKET_STATUSES = ['open', 'in_progress', 'needs_admin']
 
 
 def _send_admin_email_async(ticket, message_body):
@@ -97,13 +95,11 @@ def support_send_api(request):
     # Find an existing open/in-progress ticket for this user, or create one
     ticket = (
         SupportTicket.objects
-        .filter(user=request.user, status__in=['open', 'in_progress'])
+        .filter(user=request.user, status__in=ACTIVE_TICKET_STATUSES)
         .order_by('-created_at')
         .first()
     )
-    is_new_ticket = ticket is None
-
-    if is_new_ticket:
+    if ticket is None:
         ticket = SupportTicket.objects.create(
             user=request.user,
             status='open',
@@ -126,19 +122,17 @@ def support_send_api(request):
 
     response_messages = [_serialize_message(user_msg)]
 
-    # Generate the auto-reply only on the very first message in the ticket
-    auto_msg = None
-    if ticket.messages.count() == 1:  # only the message we just created
-        auto_msg = SupportMessage.objects.create(
-            ticket=ticket,
-            sender=None,
-            is_from_support=True,
-            is_auto_reply=True,
-            message=AUTO_REPLY_TEXT,
-            is_read_by_admin=True,
-            is_read_by_user=False,
-        )
-        response_messages.append(_serialize_message(auto_msg))
+    bot_answer = process_support_inquiry(ticket, user_message_text)
+    auto_msg = SupportMessage.objects.create(
+        ticket=ticket,
+        sender=None,
+        is_from_support=True,
+        is_auto_reply=True,
+        message=bot_answer,
+        is_read_by_admin=True,
+        is_read_by_user=False,
+    )
+    response_messages.append(_serialize_message(auto_msg))
 
     # Notify admin via email (non-blocking)
     t = threading.Thread(
@@ -151,6 +145,7 @@ def support_send_api(request):
     return JsonResponse({
         'status': 'success',
         'ticket_id': str(ticket.id),
+        'ticket_status': ticket.status,
         'messages': response_messages,
     })
 
@@ -165,7 +160,7 @@ def support_messages_api(request):
     """
     ticket = (
         SupportTicket.objects
-        .filter(user=request.user, status__in=['open', 'in_progress'])
+        .filter(user=request.user, status__in=ACTIVE_TICKET_STATUSES)
         .order_by('-created_at')
         .first()
     )
@@ -197,7 +192,7 @@ def support_mark_read_api(request):
     """
     ticket = (
         SupportTicket.objects
-        .filter(user=request.user, status__in=['open', 'in_progress'])
+        .filter(user=request.user, status__in=ACTIVE_TICKET_STATUSES)
         .order_by('-created_at')
         .first()
     )

@@ -36,8 +36,11 @@ from .models import (
     SiteConfiguration,
     SubscriptionPlan,
     Swipe,
+    SupportKnowledgeBase,
+    SupportTicket,
 )
 from .services.content_filter import ContentFilter
+from .services.support_bot import process_support_inquiry, FALLBACK_RESPONSE
 from .views import _provider_payment, get_profile_batch
 
 
@@ -227,10 +230,8 @@ class DatingPlatformTests(TestCase):
             ['relationship_mode'].value(),
             'SEX_CALL',
         )
-        self.assertIn(
-            ('SEX_CALL', 'Sex Call'),
-            SettingsForm(instance=self.alice_profile).fields['relationship_mode'].choices,
-        )
+        settings_form = SettingsForm(instance=self.alice_profile)
+        self.assertEqual(set(settings_form.fields), {'is_dnd'})
 
         self.alice_profile.relationship_mode = 'SEX_CALL'
         self.alice_profile.save()
@@ -616,18 +617,14 @@ class DatingPlatformTests(TestCase):
         )
         self.assertEqual(self.client.get(reverse('chat_room', args=[match.pk])).status_code, 200)
 
-    def test_support_page_offers_whatsapp_as_the_only_support_channel(self):
+    def test_support_page_uses_in_app_chat_without_external_contact_links(self):
         response = self.client.get(reverse('contact'))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(
-            response,
-            'https://wa.me/2349130273282?text=Hello%20Loveny%20Support,%20I%20need%20help%20with%20my%20account',
-        )
-        self.assertContains(response, 'target="_blank" rel="noopener noreferrer"')
-        self.assertContains(response, 'Chat on WhatsApp')
+        self.assertContains(response, 'Sign in to contact support')
         self.assertContains(response, 'Having trouble with your account or payment? Our support team in Lagos is ready to assist.')
-        self.assertNotContains(response, 'Email Support')
+        self.assertNotContains(response, 'wa.me')
         self.assertNotContains(response, 'mailto:')
+        self.assertNotContains(response, 'WhatsApp')
 
         newcomer = User.objects.create_user(
             username='newcomer',
@@ -635,6 +632,10 @@ class DatingPlatformTests(TestCase):
             password='test-password-123',
         )
         self.client.force_login(newcomer)
+        response = self.client.get(reverse('contact'))
+        self.assertContains(response, 'Open in-app support chat')
+        self.assertNotContains(response, 'wa.me')
+        self.assertNotContains(response, 'WhatsApp')
         response = self.client.get(reverse('create_profile'))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Connection Style')
@@ -1664,15 +1665,19 @@ class DatingPlatformTests(TestCase):
             status='accepted',
         )
 
-        # Alice (caller) can access call room
+        # Accepted calls stay gated until the call is connected.
         self.client.force_login(self.alice)
+        res_alice = self.client.get(reverse('call_room_page', args=[call.room_id]))
+        self.assertEqual(res_alice.status_code, 403)
+        call.status = 'connected'
+        call.save(update_fields=['status'])
         res_alice = self.client.get(reverse('call_room_page', args=[call.room_id]))
         self.assertEqual(res_alice.status_code, 200)
         self.assertContains(res_alice, 'floating-chat-container')
         self.assertContains(res_alice, 'local-video')
         self.assertContains(res_alice, 'remote-video')
 
-        # Bob (receiver) can access call room
+        # Bob (receiver) can access the connected call room.
         self.client.force_login(self.bob)
         res_bob = self.client.get(reverse('call_room_page', args=[call.room_id]))
         self.assertEqual(res_bob.status_code, 200)
@@ -1960,27 +1965,27 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(send_res.json()['message']['message_type'], 'image')
 
     def test_content_filter_detection_and_blocking(self):
-        # 1. Digits detection
-        blocked, _ = ContentFilter.inspect("Call me on 08012345678")
-        self.assertTrue(blocked)
-        blocked, _ = ContentFilter.inspect("Reach me: +234 801 234 5678")
-        self.assertTrue(blocked)
-        blocked, _ = ContentFilter.inspect("Price ₦08012345678")
-        self.assertTrue(blocked)
+        blocked_messages = [
+            "Call me on 08012345678",
+            "Reach me: +234 801 234 5678",
+            "Price ₦08012345678",
+            "Number: 0 8 0 3 - 1 2 3 - 4 5 6 7",
+            "080.3123.4567",
+            "Bank account 1234567890",
+            "wh@ts@pp me later",
+            "w.h.a.t.s.a.p.p",
+            "t.e.l.e.g.r.a.m me",
+            "wa.me/2348012345678",
+            "@privatehandle",
+            "zero eight zero one two three four five six seven",
+            "zeero ate won tu tri for five six seven",
+            "I, II, III, IV, V, VI, VII",
+        ]
+        for message in blocked_messages:
+            with self.subTest(message=message):
+                blocked, _ = ContentFilter.inspect(message)
+                self.assertTrue(blocked)
 
-        # 2. Leet-speak and obfuscation
-        blocked, _ = ContentFilter.inspect("wh@ts@pp me later")
-        self.assertTrue(blocked)
-        blocked, _ = ContentFilter.inspect("w.h.a.t.s.a.p.p")
-        self.assertTrue(blocked)
-        blocked, _ = ContentFilter.inspect("t.e.l.e.g.r.a.m me")
-        self.assertTrue(blocked)
-
-        # 3. Worded numbers
-        blocked, _ = ContentFilter.inspect("zero eight zero one two three four five six seven")
-        self.assertTrue(blocked)
-
-        # 4. Clean conversation
         blocked, _ = ContentFilter.inspect("Hey, it is so nice to meet you on LOVENY!")
         self.assertFalse(blocked)
 
@@ -2011,16 +2016,22 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, 'Active Mode:')
         self.assertContains(res, 'Do Not Disturb (DND)')
+        self.assertEqual(list(SettingsForm(instance=self.alice.profile).fields), ['is_dnd'])
         # Ensure select dropdown for relationship mode is removed
         self.assertNotContains(res, '<select name="relationship_mode"')
 
         # Test toggling DND via settings post
+        self.alice.profile.relationship_mode = 'HOOKUP'
+        self.alice.profile.incognito_mode = True
+        self.alice.profile.save(update_fields=['relationship_mode', 'incognito_mode'])
         post_res = self.client.post(reverse('settings'), {
             'is_dnd': 'on',
         }, follow=True)
         self.assertEqual(post_res.status_code, 200)
         self.alice.profile.refresh_from_db()
         self.assertTrue(self.alice.profile.is_dnd)
+        self.assertEqual(self.alice.profile.relationship_mode, 'HOOKUP')
+        self.assertTrue(self.alice.profile.incognito_mode)
 
     def test_call_signal_privacy_and_mutual_face_verification(self):
         call = CallSession.objects.create(
@@ -2043,6 +2054,12 @@ class DatingPlatformTests(TestCase):
             {'type': 'face_verified', 'payload': {'verified': True}}
         )
         self.assertEqual(alice_face_res.status_code, 201)
+
+        forged_unlock = self.post_json(
+            reverse('call_signal_send_api', args=[call.room_id]),
+            {'type': 'feeds_unlocked', 'payload': {'unlocked': True}},
+        )
+        self.assertEqual(forged_unlock.status_code, 400)
 
         # feeds_unlocked should not yet exist (Bob hasn't verified yet)
         self.assertFalse(call.signals.filter(signal_type='feeds_unlocked').exists())
@@ -2087,11 +2104,13 @@ class DatingPlatformTests(TestCase):
                 'event': 'charge.success',
                 'data': {
                     'reference': f'HOOKUP_{match.id}_ALICE',
+                    'status': 'success',
                     'amount': 150000,
+                    'currency': 'NGN',
                     'customer': {'email': self.alice.email},
                     'metadata': {
                         'match_id': str(match.id),
-                        'user_id': self.alice.id,
+                        'payer_id': self.alice.id,
                         'product': 'HOOKUP_MATCH',
                     }
                 }
@@ -2119,11 +2138,13 @@ class DatingPlatformTests(TestCase):
                 'event': 'charge.success',
                 'data': {
                     'reference': f'HOOKUP_{match.id}_BOB',
+                    'status': 'success',
                     'amount': 150000,
+                    'currency': 'NGN',
                     'customer': {'email': self.bob.email},
                     'metadata': {
                         'match_id': str(match.id),
-                        'user_id': self.bob.id,
+                        'payer_id': self.bob.id,
                         'product': 'HOOKUP_MATCH',
                     }
                 }
@@ -2167,7 +2188,52 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(leak_msg_res.status_code, 400)
         self.assertEqual(leak_msg_res.json()['message'], 'prohibited_content')
 
+    def test_hookup_payment_api_requires_a_verified_paystack_transaction(self):
+        match = HookupMatch.objects.create(
+            initiator=self.alice,
+            target=self.bob,
+            status='accepted',
+        )
+        self.client.force_login(self.alice)
+        with patch('dating.views._verify_paystack_reference', return_value=({
+            'status': True,
+            'data': {
+                'status': 'failed',
+                'reference': 'forged-reference',
+                'amount': 150000,
+                'currency': 'NGN',
+                'metadata': {
+                    'match_id': str(match.pk),
+                    'payer_id': self.alice.pk,
+                    'product': 'HOOKUP_MATCH',
+                },
+            },
+        }, None, None)):
+            response = self.post_json(
+                reverse('hookup_verify_payment_api', args=[match.pk]),
+                {'reference': 'forged-reference'},
+            )
+        self.assertEqual(response.status_code, 400)
+        match.refresh_from_db()
+        self.assertFalse(match.initiator_paid)
+        self.assertFalse(PaymentTransaction.objects.filter(reference='forged-reference').exists())
 
+    def test_support_bot_cache_and_resilient_fallback(self):
+        ticket = SupportTicket.objects.create(user=self.alice)
+        with patch('dating.services.support_bot._generate_answer', return_value='Use the in-app settings page.') as generate:
+            first_answer = process_support_inquiry(ticket, '  How do I change settings? ')
+            second_answer = process_support_inquiry(ticket, 'how do i change settings?')
+        self.assertEqual(first_answer, 'Use the in-app settings page.')
+        self.assertEqual(second_answer, first_answer)
+        generate.assert_called_once()
+        cached = SupportKnowledgeBase.objects.get()
+        cached.refresh_from_db()
+        self.assertFalse(cached.is_verified_by_admin)
+        self.assertEqual(cached.hit_count, 2)
 
-
-
+        fallback_ticket = SupportTicket.objects.create(user=self.bob)
+        with override_settings(GEMINI_API_KEY=''), self.assertLogs('dating.services.support_bot', level='WARNING'):
+            response = process_support_inquiry(fallback_ticket, 'Where is my payment?')
+        fallback_ticket.refresh_from_db()
+        self.assertEqual(response, FALLBACK_RESPONSE)
+        self.assertEqual(fallback_ticket.status, 'needs_admin')

@@ -98,8 +98,9 @@
 (() => {
     const matchId = '{{ match.id }}';
     const currentUserId = {{ request.user.pk }};
-    let remainingSeconds = {{ time_remaining_seconds|default:0 }};
+    const expiresAt = new Date('{{ match.expires_at|date:"c" }}').getTime();
     let isExpired = {% if is_expired %}true{% else %}false{% endif %};
+    let timerInterval = null;
 
     const container = document.getElementById('messages-container');
     const form = document.getElementById('chat-form');
@@ -122,6 +123,7 @@
 
     // Live Countdown Timer
     function updateCountdown() {
+        const remainingSeconds = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
         if (remainingSeconds <= 0 || isExpired) {
             isExpired = true;
             countdownEl.textContent = 'EXPIRED (00:00:00)';
@@ -130,6 +132,7 @@
             input.placeholder = '24-Hour Hookup Window Expired';
             sendBtn.disabled = true;
             expiredBanner.classList.remove('hidden');
+            if (timerInterval) clearInterval(timerInterval);
             return;
         }
 
@@ -138,11 +141,10 @@
         const secs = remainingSeconds % 60;
 
         countdownEl.textContent = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-        remainingSeconds--;
     }
 
     updateCountdown();
-    const timerInterval = setInterval(updateCountdown, 1000);
+    timerInterval = setInterval(updateCountdown, 1000);
 
     // Client-Side Anti-Leak / Contact Info Detection Guard
     function inspectClientContent(text) {
@@ -272,4 +274,3 @@
 })();
 </script>
 {% endblock %}
-

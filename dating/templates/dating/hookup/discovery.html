@@ -117,16 +117,13 @@
                     {% if m.has_paid %}
                     Your fee is deposited in escrow! Awaiting your partner's payment to unlock the 24h chat.
                     {% else %}
-                    Both parties must pay ₦{{ m.connection_fee|default:1500 }} to unlock the 24-hour chat room.
+                    Both parties must pay the ₦{{ m.connection_fee|floatformat:"0" }} connection fee to unlock 24-hour direct chat.
                     {% endif %}
                 </p>
                 {% if not m.has_paid %}
                 <div class="space-y-2">
-                    <button type="button" onclick="payHookupFee('{{ m.id }}', 'flutterwave')" class="w-full rounded-xl bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 py-2 text-[11px] font-black text-slate-950 shadow-lg shadow-orange-500/25 active:scale-95 transition">
-                        Pay ₦{{ m.connection_fee|default:1500 }} via Flutterwave
-                    </button>
-                    <button type="button" onclick="payHookupFee('{{ m.id }}', 'paystack')" class="w-full rounded-xl bg-gradient-to-r from-sky-500 to-cyan-400 py-2 text-[11px] font-black text-slate-950 shadow-lg shadow-sky-500/25 active:scale-95 transition">
-                        Pay ₦{{ m.connection_fee|default:1500 }} via Paystack
+                    <button type="button" onclick="payHookupFee('{{ m.id }}')" class="w-full rounded-xl bg-gradient-to-r from-sky-500 to-cyan-400 py-2 text-[11px] font-black text-slate-950 shadow-lg shadow-sky-500/25 active:scale-95 transition">
+                        Pay ₦{{ m.connection_fee|floatformat:"0" }} via Paystack
                     </button>
                 </div>
                 {% endif %}
@@ -207,6 +204,10 @@
 <script src="https://checkout.flutterwave.com/v3.js"></script>
 <script>
 (() => {
+    const acceptedMatchIds = [
+        {% for match in accepted_matches %}'{{ match.id }}'{% if not forloop.last %},{% endif %}{% endfor %}
+    ];
+
     function csrfToken() {
         const token = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));
         return token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
@@ -281,7 +282,19 @@
         }
     };
 
-    window.payHookupFee = async (matchId, provider = 'paystack') => {
+    acceptedMatchIds.forEach(matchId => {
+        const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const socket = new WebSocket(`${scheme}//${window.location.host}/ws/hookup/${matchId}/`);
+        socket.addEventListener('message', event => {
+            const message = JSON.parse(event.data);
+            if (message.type === 'match_unlocked' && message.match_id === matchId) {
+                window.location.assign(message.chat_url);
+            }
+        });
+        socket.addEventListener('error', () => socket.close());
+    });
+
+    window.payHookupFee = async (matchId) => {
         try {
             const res = await fetch(`/api/hookup/${matchId}/pay/`, {
                 method: 'POST',
@@ -296,64 +309,33 @@
                 return;
             }
 
-            if (provider === 'flutterwave') {
-                if (!window.FlutterwaveCheckout || !initData.flutterwave_public_key || initData.flutterwave_public_key.includes("PUT_YOUR_REAL_PUBLIC_KEY_HERE")) {
-                    const confirmDev = confirm(`[Dev Mode] Complete mock ₦${initData.amount} Flutterwave payment for match?`);
-                    if (confirmDev) {
-                        await verifyHookupPayment(matchId, 'MOCK_FW_' + initData.reference, provider);
-                    }
-                    return;
-                }
-
-                FlutterwaveCheckout({
-                    public_key: initData.flutterwave_public_key,
-                    tx_ref: initData.reference,
-                    amount: initData.amount,
-                    currency: 'NGN',
-                    payment_options: 'card, mobilemoney, ussd',
-                    customer: { email: initData.email || 'user@loveny.app' },
-                    customizations: {
-                        title: `LOVENY Escrow`,
-                        description: `Dual-Fiat Connection Fee`,
-                    },
-                    callback: function(data) {
-                        verifyHookupPayment(matchId, data.tx_ref, provider);
-                    },
-                    onclose: function() {
-                        console.log('Payment window closed');
-                    }
-                });
-            } else {
-                if (!window.PaystackPop || !initData.public_key || initData.public_key.includes("PUT_YOUR_REAL_PUBLIC_KEY_HERE") || initData.public_key === "pk_test_dummy") {
-                    const confirmDev = confirm(`[Dev Mode] Complete mock ₦${initData.amount} Paystack payment for match?`);
-                    if (confirmDev) {
-                        await verifyHookupPayment(matchId, initData.reference, provider);
-                    }
-                    return;
-                }
-
-                const handler = PaystackPop.setup({
-                    key: initData.public_key,
-                    email: initData.email,
-                    amount: initData.amount_kobo,
-                    ref: initData.reference,
-                    metadata: initData.metadata,
-                    callback: function(response) {
-                        verifyHookupPayment(matchId, response.reference, provider);
-                    },
-                    onClose: function() {
-                        console.log('Payment window closed');
-                    }
-                });
-                handler.openIframe();
+            if (
+                !window.PaystackPop ||
+                !initData.public_key ||
+                initData.public_key.includes('PUT_YOUR_REAL_PUBLIC_KEY_HERE') ||
+                initData.public_key === 'pk_test_dummy'
+            ) {
+                alert('Paystack checkout is not configured. Please contact support.');
+                return;
             }
+
+            const handler = PaystackPop.setup({
+                key: initData.public_key,
+                email: initData.email,
+                amount: initData.amount_kobo,
+                ref: initData.reference,
+                metadata: initData.metadata,
+                callback: response => verifyHookupPayment(matchId, response.reference),
+                onClose: () => {},
+            });
+            handler.openIframe();
         } catch (err) {
             console.error(err);
             alert('Failed to initiate escrow checkout.');
         }
     };
 
-    async function verifyHookupPayment(matchId, reference, provider) {
+    async function verifyHookupPayment(matchId, reference) {
         try {
             const res = await fetch(`/api/hookup/${matchId}/verify/`, {
                 method: 'POST',
@@ -361,7 +343,7 @@
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken(),
                 },
-                body: JSON.stringify({ reference, provider }),
+                body: JSON.stringify({ reference }),
             });
             const data = await res.json();
             if (res.ok) {
@@ -382,4 +364,3 @@
 })();
 </script>
 {% endblock %}
-

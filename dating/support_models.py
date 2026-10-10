@@ -12,6 +12,7 @@ class SupportTicket(models.Model):
     STATUS_CHOICES = [
         ('open', 'Open'),
         ('in_progress', 'In Progress'),
+        ('needs_admin', 'Needs Admin'),
         ('resolved', 'Resolved'),
         ('closed', 'Closed'),
     ]
@@ -76,3 +77,30 @@ class SupportMessage(models.Model):
             self.sender.username if self.sender else 'System'
         )
         return f'[{self.ticket.id!s:.8}] {sender_label}: {self.message[:60]}'
+
+
+class SupportKnowledgeBase(models.Model):
+    CATEGORY_CHOICES = [
+        ('general', 'General'),
+        ('billing', 'Billing/Paystack'),
+        ('hookup', 'Hookup Mode'),
+        ('verification', 'Face Verification/Privacy'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    normalized_query = models.CharField(max_length=255, db_index=True)
+    question_sample = models.TextField()
+    answer = models.TextField()
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='general')
+    hit_count = models.PositiveIntegerField(default=1)
+    is_verified_by_admin = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        verbose_name = 'Support Knowledge Base Entry'
+        verbose_name_plural = 'Support Knowledge Base'
+
+    def __str__(self):
+        return self.normalized_query

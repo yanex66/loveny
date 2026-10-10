@@ -144,12 +144,16 @@
 <script>
 (() => {
     const roomId = '{{ room_id }}';
-    const receiverId = '{{ other_user.pk }}';
-    const currentUsername = '{{ request.user.username }}';
-
-    if (window.CallPrivacy) {
-        CallPrivacy.init(roomId, currentUsername);
-    }
+    const currentUserId = {{ request.user.pk }};
+    const currentUsername = '{{ request.user.username|escapejs }}';
+    const isCaller = {{ is_caller|yesno:"true,false" }};
+    const localVideo = document.getElementById('local-video');
+    const remoteVideo = document.getElementById('remote-video');
+    let peer = null;
+    let lastSignalId = 0;
+    let signalTimer = null;
+    let localStream = null;
+    let pendingCandidates = [];
 
     // Room DOM Elements
     const chatContainer = document.getElementById('floating-chat-container');
@@ -164,6 +168,111 @@
     function csrfToken() {
         const token = document.cookie.split('; ').find(item => item.startsWith('csrftoken='));
         return token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
+    }
+
+    async function sendSignal(type, payload) {
+        const response = await fetch(`/api/calls/${roomId}/signals/send/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken(),
+            },
+            body: JSON.stringify({type, payload}),
+        });
+        if (!response.ok) throw new Error('Call signaling was rejected.');
+    }
+
+    async function initializeMedia() {
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
+            localVideo.srcObject = localStream;
+            if (window.CallPrivacy) {
+                CallPrivacy.init(roomId, String(currentUserId));
+                CallPrivacy.startFaceVerification(localStream);
+            }
+
+            peer = new RTCPeerConnection({
+                iceServers: [{urls: 'stun:stun.l.google.com:19302'}],
+            });
+            const senders = new Map();
+            ['audio', 'video'].forEach(kind => {
+                senders.set(kind, peer.addTransceiver(kind, {direction: 'sendrecv'}).sender);
+            });
+            if (window.CallPrivacy) {
+                CallPrivacy.onFeedsUnlocked = async () => {
+                    for (const track of localStream.getTracks()) {
+                        const sender = senders.get(track.kind);
+                        if (sender) await sender.replaceTrack(track);
+                    }
+                };
+            }
+            peer.onicecandidate = event => {
+                if (event.candidate) {
+                    sendSignal('candidate', event.candidate.toJSON()).catch(console.error);
+                }
+            };
+            peer.ontrack = event => {
+                const stream = event.streams[0] || new MediaStream([event.track]);
+                window.CallPrivacy?.setRemoteStream(stream);
+            };
+            peer.onconnectionstatechange = () => {
+                if (peer.connectionState === 'failed') {
+                    console.error('The video call connection failed.');
+                }
+            };
+
+            if (isCaller) {
+                await peer.setLocalDescription(await peer.createOffer());
+                await sendSignal('offer', peer.localDescription.toJSON());
+            }
+            signalTimer = window.setInterval(pollSignals, 1000);
+            pollSignals();
+        } catch (error) {
+            console.error('Could not initialize the secure video call.', error);
+            const status = document.getElementById('handshake-status');
+            if (status) status.textContent = 'Camera or microphone access is required to continue.';
+        }
+    }
+
+    async function pollSignals() {
+        if (!peer || document.hidden) return;
+        try {
+            const response = await fetch(`/api/calls/${roomId}/signals/?after_id=${lastSignalId}`);
+            if (!response.ok) throw new Error('Could not retrieve call signals.');
+            const data = await response.json();
+            for (const signal of data.signals) {
+                lastSignalId = Math.max(lastSignalId, signal.id);
+                if (window.CallPrivacy) {
+                    CallPrivacy.onPeerSignal(signal.type, signal.payload);
+                }
+                if (signal.type === 'offer' && !peer.remoteDescription && !isCaller) {
+                    await peer.setRemoteDescription(new RTCSessionDescription(signal.payload));
+                    await flushCandidates();
+                    await peer.setLocalDescription(await peer.createAnswer());
+                    await sendSignal('answer', peer.localDescription.toJSON());
+                } else if (signal.type === 'answer' && isCaller && !peer.remoteDescription) {
+                    await peer.setRemoteDescription(new RTCSessionDescription(signal.payload));
+                    await flushCandidates();
+                } else if (signal.type === 'candidate') {
+                    const candidate = new RTCIceCandidate(signal.payload);
+                    if (peer.remoteDescription) await peer.addIceCandidate(candidate);
+                    else pendingCandidates.push(candidate);
+                } else if (signal.type === 'chat') {
+                    appendChatMessage(signal.payload.username || 'Partner', signal.payload.text || '');
+                }
+            }
+        } catch (error) {
+            console.error('Call signaling poll failed.', error);
+        }
+    }
+
+    async function flushCandidates() {
+        if (!peer?.remoteDescription) return;
+        const candidates = pendingCandidates;
+        pendingCandidates = [];
+        for (const candidate of candidates) {
+            await peer.addIceCandidate(candidate);
+        }
     }
 
     // Toggle Gift Drawer
@@ -202,7 +311,12 @@
         if (!chatStream) return;
         const bubble = document.createElement('div');
         bubble.className = 'rounded-2xl bg-black/50 backdrop-blur-md border border-white/10 px-3 py-1.5 text-xs text-white shadow-lg animate-fade-in';
-        bubble.innerHTML = `<strong class="text-pink-300 mr-1">${user}:</strong><span>${msg}</span>`;
+        const sender = document.createElement('strong');
+        sender.className = 'text-pink-300 mr-1';
+        sender.textContent = `${user}:`;
+        const content = document.createElement('span');
+        content.textContent = msg;
+        bubble.append(sender, content);
         chatStream.appendChild(bubble);
         chatStream.scrollTop = chatStream.scrollHeight;
     }
@@ -247,13 +361,19 @@
     // End call
     endBtn?.addEventListener('click', async () => {
         try {
+            if (signalTimer) clearInterval(signalTimer);
             await fetch(`/api/calls/${roomId}/end/`, {
                 method: 'POST',
                 headers: { 'X-CSRFToken': csrfToken() },
             });
         } catch (_) {}
+        peer?.close();
+        localStream?.getTracks().forEach(track => track.stop());
+        window.CallPrivacy?.cleanup();
         window.location.href = '{% url "sex_call_hub" %}';
     });
+
+    initializeMedia();
 })();
 </script>
 {% endblock %}

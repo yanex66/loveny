@@ -252,6 +252,7 @@
          data-checkin-streak="{{ user_checkin_streak|default:0 }}"
          data-cycle-day="{{ user_cycle_day|default:1 }}"
          data-welcome-coins="{{ user_welcome_coins|default:30 }}"
+         data-user-id="{{ user.pk }}"
          data-user-email="{{ user.email }}"
          class="hidden"></div>
 
@@ -809,5 +810,4 @@
     {% include "partials/support_widget.html" %}
 </body>
 </html>
-
 

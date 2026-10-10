@@ -5,8 +5,11 @@ import logging
 import math
 import random
 import smtplib
+import uuid
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import Http404, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.contrib.auth.decorators import login_required
@@ -48,6 +51,7 @@ from .models import (
     UserReport,
 )
 from .services.content_filter import ContentFilter
+from .services.call_signals import record_call_signal
 from .forms import (
     LoginForm,
     SignUpForm,
@@ -359,7 +363,6 @@ def profile_detail(request):
         'following_count': following_count,
         'followers_count': followers_count,
         'has_checked_in_today': has_checked_in_today,
-        'customer_service_whatsapp_url': 'https://wa.me/2349130273282?text=Hello%20Loveny%20Support,%20I%20need%20help%20with%20my%20account',
     })
 
 @login_required
@@ -768,6 +771,7 @@ def swipe_action(request):
 @login_required
 def match_list(request):
     viewer_profile = Profile.objects.filter(user=request.user).first()
+    call_rate = SiteConfiguration.get_solo().call_rate_per_minute or 20
     matches = Match.objects.filter(
         Q(user1=request.user) | Q(user2=request.user),
         expires_at__gt=timezone.now(),
@@ -799,11 +803,22 @@ def match_list(request):
             'expires_in': max(0, (m.expires_at - timezone.now()).days),
             'has_direct_interest': m.has_direct_interest,
             'mode': m.mode,
+            'can_video_call': bool(
+                (
+                    m.mode == 'SEX_CALL'
+                    or viewer_profile.relationship_mode == 'SEX_CALL'
+                )
+                and viewer_profile
+                and (
+                    request.user.is_superuser
+                    or viewer_profile.is_sex_call_premium
+                    or viewer_profile.coin_balance >= call_rate
+                )
+            ),
             'is_online': bool(profile.is_host_ready or (profile.last_active and (timezone.now() - profile.last_active).total_seconds() < 1800)),
         })
     return render(request, 'dating/match_list.html', {
         'matches': data,
-        'can_video_call': _can_use_sex_call(viewer_profile),
     })
 
 @login_required
@@ -899,8 +914,12 @@ def messages_inbox(request):
 def likes_list(request):
     """Shows profiles who liked the current user (Secret Admirers)."""
     profile = Profile.objects.filter(user=request.user).first()
-    
-    swiped_me = Swipe.objects.filter(swiped=request.user, is_like=True).values_list('swiper_id', flat=True)
+    if not profile:
+        return redirect('create_profile')
+    if not profile.is_premium('DATING'):
+        return redirect('messages_inbox')
+
+    swiped_me = Swipe.objects.filter(swiped=request.user, type='LIKE').values_list('swiper_id', flat=True)
     i_swiped = Swipe.objects.filter(swiper=request.user).values_list('swiped_id', flat=True)
     blocked_by_me = UserBlock.objects.filter(blocker=request.user).values_list('blocked_id', flat=True)
     
@@ -1445,6 +1464,8 @@ def call_initiate_api(request):
     if match:
         if match.expires_at and match.expires_at <= timezone.now():
             return JsonResponse({'status': 'error', 'message': 'active_sex_call_match_required'}, status=403)
+        if match.mode != 'SEX_CALL' and not (caller_is_sex_call or receiver_is_sex_call):
+            return JsonResponse({'status': 'error', 'message': 'active_sex_call_match_required'}, status=403)
     else:
         if not (caller_is_sex_call or receiver_is_sex_call):
             return JsonResponse({'status': 'error', 'message': 'active_sex_call_match_required'}, status=403)
@@ -1509,7 +1530,14 @@ def call_respond_api(request, room_id):
             return JsonResponse({'status': 'error', 'message': 'call_missed_or_timeout'}, status=409)
         if action == 'accept':
             caller_profile = Profile.objects.select_for_update().filter(user=call.caller).first()
-            if not _can_use_sex_call(caller_profile):
+            call_rate = call.rate_per_minute or SiteConfiguration.get_solo().call_rate_per_minute or 20
+            if (
+                not caller_profile
+                or (
+                    not call.caller.is_superuser
+                    and caller_profile.coin_balance < call_rate
+                )
+            ):
                 call.status = 'declined'
                 call.ended_at = timezone.now()
                 call.save(update_fields=['status', 'ended_at'])
@@ -1692,7 +1720,7 @@ def call_signal_send_api(request, room_id):
     payload = data.get('payload')
     allowed_signals = (
         'offer', 'answer', 'candidate', 'gift', 'chat', 'follow',
-        'face_verified', 'privacy_blur_engaged', 'privacy_blur_lifted', 'feeds_unlocked',
+        'face_verified', 'privacy_blur_engaged', 'privacy_blur_lifted',
     )
     if signal_type not in allowed_signals or not isinstance(payload, dict):
         return JsonResponse({'status': 'error', 'message': 'invalid_signal'}, status=400)
@@ -1709,27 +1737,35 @@ def call_signal_send_api(request, room_id):
         request.user.pk != call.receiver_id or call.status not in ('connected', 'ringing')
     ):
         return JsonResponse({'status': 'error', 'message': 'receiver_must_answer_active_call'}, status=403)
-    signal = CallSignal.objects.create(
-        call=call,
-        sender=request.user,
-        signal_type=signal_type,
-        payload=payload,
-    )
-
-    # Mutual pre-call face verification trigger
-    if signal_type == 'face_verified':
-        peer_id = call.receiver_id if request.user.pk == call.caller_id else call.caller_id
-        peer_verified = CallSignal.objects.filter(
+    events = []
+    if signal_type in ('face_verified', 'privacy_blur_engaged', 'privacy_blur_lifted'):
+        signal, events = record_call_signal(
+            call.room_id,
+            request.user,
+            signal_type,
+            payload,
+        )
+        if signal is None:
+            return JsonResponse({'status': 'error', 'message': 'call_not_active'}, status=409)
+    else:
+        signal = CallSignal.objects.create(
             call=call,
-            sender_id=peer_id,
-            signal_type='face_verified',
-        ).exists()
-        if peer_verified:
-            CallSignal.objects.create(
-                call=call,
-                sender=request.user,
-                signal_type='feeds_unlocked',
-                payload={'unlocked': True, 'timestamp': timezone.now().isoformat()},
+            sender=request.user,
+            signal_type=signal_type,
+            payload=payload,
+        )
+
+    channel_layer = get_channel_layer()
+    if channel_layer:
+        for event in events:
+            async_to_sync(channel_layer.group_send)(
+                f'call_{call.room_id.hex}',
+                {
+                    'type': 'call.event',
+                    'recipient_id': event['recipient_id'],
+                    'signal_type': event['type'],
+                    'payload': event['payload'],
+                },
             )
 
     return JsonResponse({'status': 'success', 'id': signal.pk}, status=201)
@@ -3396,6 +3432,8 @@ def call_room_page(request, room_id):
     call = get_object_or_404(CallSession, room_id=room_id)
     if request.user not in (call.caller, call.receiver):
         return HttpResponseForbidden("You are not a participant in this call.")
+    if call.status not in ('connected', 'active'):
+        return HttpResponseForbidden("This video call is not active.")
 
     other_user = call.receiver if request.user == call.caller else call.caller
     other_profile = Profile.objects.filter(user=other_user).first()
@@ -3431,75 +3469,130 @@ def call_room_page(request, room_id):
 @csrf_exempt
 @require_POST
 def paystack_webhook_api(request):
-    """
-    Paystack Webhook Listener for real-time payment confirmation.
-    Validates HMAC SHA512 signature against PAYSTACK_SECRET_KEY.
-    Unlocks HookupMatch when both participants pay their dual-fiat connection fee.
-    """
     secret = getattr(settings, 'PAYSTACK_SECRET_KEY', '')
-    signature = request.headers.get('x-paystack-signature') or request.META.get('HTTP_X_PAYSTACK_SIGNATURE', '')
+    if not secret or 'PUT_YOUR_REAL_SECRET_KEY_HERE' in secret:
+        logger.error('Paystack webhook received without a configured secret key.')
+        return HttpResponse(status=503)
 
-    if secret:
-        computed_hash = hmac.new(secret.encode('utf-8'), request.body, hashlib.sha512).hexdigest()
-        if not hmac.compare_digest(computed_hash, signature):
-            return HttpResponse(status=400)
+    signature = request.headers.get('x-paystack-signature', '')
+    expected_signature = hmac.new(
+        secret.encode('utf-8'),
+        request.body,
+        hashlib.sha512,
+    ).hexdigest()
+    if not signature or not hmac.compare_digest(expected_signature, signature):
+        return HttpResponse(status=400)
 
     try:
         event_data = json.loads(request.body)
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return HttpResponseBadRequest("Invalid JSON")
+        return HttpResponseBadRequest('Invalid JSON')
+    if not isinstance(event_data, dict) or event_data.get('event') != 'charge.success':
+        return HttpResponse(status=200)
 
-    event = event_data.get('event')
-    data = event_data.get('data', {})
+    data = event_data.get('data')
+    if not isinstance(data, dict) or data.get('status') != 'success':
+        return HttpResponseBadRequest('Invalid payment data')
+    metadata = data.get('metadata')
+    if not isinstance(metadata, dict) or not metadata.get('match_id'):
+        return HttpResponse(status=200)
+    if metadata.get('product') != 'HOOKUP_MATCH':
+        return HttpResponseBadRequest('Invalid Hookup payment product')
 
-    if event == 'charge.success':
-        reference = data.get('reference', '')
-        amount_kobo = data.get('amount', 0)
-        metadata = data.get('metadata') or {}
-        customer_email = data.get('customer', {}).get('email', '')
+    match_id = metadata.get('match_id')
+    payer_id = metadata.get('payer_id', metadata.get('user_id'))
+    reference = data.get('reference')
+    amount_kobo = data.get('amount')
+    currency = data.get('currency')
+    if not payer_id or not isinstance(reference, str) or type(amount_kobo) is not int:
+        return HttpResponseBadRequest('Missing payment details')
 
-        # Check for Hookup Match payment
-        match_id = metadata.get('match_id')
-        user_id = metadata.get('user_id')
-
-        if match_id:
-            hookup_match = HookupMatch.objects.filter(pk=match_id).first()
-            if hookup_match:
-                paying_user = None
-                if user_id:
-                    paying_user = User.objects.filter(pk=user_id).first()
-                if not paying_user and customer_email:
-                    paying_user = User.objects.filter(email__iexact=customer_email).first()
-
-                if paying_user:
-                    with transaction.atomic():
-                        PaymentTransaction.objects.get_or_create(
-                            reference=reference,
-                            defaults={
-                                'user': paying_user,
-                                'provider': 'paystack',
-                                'product': 'HOOKUP_MATCH',
-                                'plan_type': 'hookup_connection_fee',
-                                'amount_kobo': amount_kobo,
-                                'currency': 'NGN',
-                            }
-                        )
-
-                        if paying_user.pk == hookup_match.initiator_id:
-                            hookup_match.initiator_paid = True
-                        elif paying_user.pk == hookup_match.target_id:
-                            hookup_match.target_paid = True
-
-                        if hookup_match.is_fully_paid():
-                            hookup_match.status = 'unlocked'
-                            hookup_match.unlocked_at = timezone.now()
-                            hookup_match.expires_at = timezone.now() + timedelta(hours=24)
-                        else:
-                            if hookup_match.status == 'pending':
-                                hookup_match.status = 'accepted'
-                        hookup_match.save()
-
+    match = _record_hookup_payment(
+        match_id=match_id,
+        payer_id=payer_id,
+        reference=reference,
+        amount_kobo=amount_kobo,
+        currency=currency,
+    )
+    if not match:
+        return HttpResponseBadRequest('Payment does not match the Hookup request')
+    if match.status == 'unlocked':
+        _broadcast_hookup_unlocked(match)
     return HttpResponse(status=200)
+
+
+def _record_hookup_payment(*, match_id, payer_id, reference, amount_kobo, currency):
+    try:
+        match_id = uuid.UUID(str(match_id))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+    with transaction.atomic():
+        match = HookupMatch.objects.select_for_update().filter(pk=match_id).first()
+        if (
+            not match
+            or match.status not in ('accepted', 'unlocked')
+            or currency != 'NGN'
+            or amount_kobo != int(match.connection_fee * 100)
+        ):
+            return None
+
+        try:
+            payer_id = int(payer_id)
+        except (TypeError, ValueError):
+            return None
+        if payer_id not in (match.initiator_id, match.target_id):
+            return None
+
+        payer_field = 'initiator_paid' if payer_id == match.initiator_id else 'target_paid'
+        payment, created = PaymentTransaction.objects.get_or_create(
+            reference=reference,
+            defaults={
+                'user_id': payer_id,
+                'provider': 'paystack',
+                'product': 'HOOKUP_MATCH',
+                'plan_type': 'hookup_connection_fee',
+                'amount_kobo': amount_kobo,
+                'currency': currency,
+            },
+        )
+        if not created and (
+            payment.user_id != payer_id
+            or payment.product != 'HOOKUP_MATCH'
+            or payment.amount_kobo != amount_kobo
+            or payment.currency != currency
+            or payment.provider != 'paystack'
+        ):
+            return None
+
+        if not getattr(match, payer_field):
+            setattr(match, payer_field, True)
+        if match.is_fully_paid() and match.status != 'unlocked':
+            match.status = 'unlocked'
+            match.unlocked_at = timezone.now()
+            match.expires_at = match.unlocked_at + timedelta(hours=24)
+            match.save(update_fields=[
+                payer_field,
+                'status',
+                'unlocked_at',
+                'expires_at',
+            ])
+        else:
+            match.save(update_fields=[payer_field])
+        return match
+
+
+def _broadcast_hookup_unlocked(match):
+    channel_layer = get_channel_layer()
+    if channel_layer:
+        async_to_sync(channel_layer.group_send)(
+            f'hookup_{match.pk.hex}',
+            {
+                'type': 'hookup.unlocked',
+                'match_id': str(match.pk),
+                'chat_url': reverse('hookup_chat_room', args=[match.pk]),
+            },
+        )
 
 
 @login_required
@@ -3652,8 +3745,10 @@ def hookup_respond_api(request, match_id):
         return JsonResponse({'status': 'error', 'message': 'invalid_action'}, status=400)
 
     match = get_object_or_404(HookupMatch, pk=match_id)
-    if request.user not in (match.initiator, match.target):
+    if request.user.pk != match.target_id:
         return HttpResponseForbidden("Not authorized")
+    if match.status != 'pending':
+        return JsonResponse({'status': 'error', 'message': 'request_not_pending'}, status=409)
 
     if action == 'accept':
         match.status = 'accepted'
@@ -3674,26 +3769,52 @@ def hookup_initialize_payment_api(request, match_id):
     match = get_object_or_404(HookupMatch, pk=match_id)
     if request.user not in (match.initiator, match.target):
         return HttpResponseForbidden("Not authorized")
+    if match.status != 'accepted':
+        return JsonResponse({'status': 'error', 'message': 'request_not_accepted'}, status=409)
+    if (
+        request.user.pk == match.initiator_id and match.initiator_paid
+    ) or (
+        request.user.pk == match.target_id and match.target_paid
+    ):
+        return JsonResponse({'status': 'error', 'message': 'fee_already_paid'}, status=409)
 
-    fee = match.connection_fee or SiteConfiguration.get_solo().hookup_connection_fee
-    amount_kobo = fee * 100
-    ref = f"HOOKUP_{match.id}_{request.user.id}_{int(timezone.now().timestamp())}"
+    fee = match.connection_fee
+    amount_kobo = int(fee * 100)
+    ref = f'HOOKUP_{match.id}_{request.user.id}_{uuid.uuid4().hex}'
 
     return JsonResponse({
         'status': 'success',
         'match_id': str(match.id),
-        'amount': fee,
+        'amount': str(fee),
         'amount_kobo': amount_kobo,
         'reference': ref,
         'email': request.user.email or f"{request.user.username}@loveny.com",
         'public_key': getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''),
-        'flutterwave_public_key': getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', ''),
         'metadata': {
             'match_id': str(match.id),
-            'user_id': request.user.id,
+            'payer_id': request.user.id,
             'product': 'HOOKUP_MATCH',
         }
     })
+
+
+def _verify_paystack_reference(reference):
+    secret = getattr(settings, 'PAYSTACK_SECRET_KEY', '')
+    if not secret or 'PUT_YOUR_REAL_SECRET_KEY_HERE' in secret:
+        return None, 'Payment verification is not configured.', 503
+    verify_request = Request(
+        f'https://api.paystack.co/transaction/verify/{quote(reference)}',
+        headers={'Authorization': f'Bearer {secret}'},
+    )
+    try:
+        with urlopen(verify_request, timeout=10) as response:
+            return json.loads(response.read().decode('utf-8')), None, None
+    except HTTPError as exc:
+        logger.warning('Paystack verification returned HTTP %s.', exc.code)
+        return None, 'Paystack could not verify this payment.', 502
+    except (URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        logger.warning('Paystack verification failed: %s', exc)
+        return None, 'Paystack verification is temporarily unavailable.', 503
 
 
 @login_required
@@ -3702,42 +3823,63 @@ def hookup_verify_payment_api(request, match_id):
     match = get_object_or_404(HookupMatch, pk=match_id)
     if request.user not in (match.initiator, match.target):
         return HttpResponseForbidden("Not authorized")
+    if match.status != 'accepted':
+        return JsonResponse({'status': 'error', 'message': 'request_not_accepted'}, status=409)
 
     try:
         data = json.loads(request.body)
     except (json.JSONDecodeError, UnicodeDecodeError):
-        data = {}
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
 
     reference = str(data.get('reference', '')).strip()
-    provider = str(data.get('provider', 'paystack')).strip()
     if not reference:
         return JsonResponse({'status': 'error', 'message': 'reference_required'}, status=400)
 
-    with transaction.atomic():
-        PaymentTransaction.objects.get_or_create(
-            reference=reference,
-            defaults={
-                'user': request.user,
-                'provider': provider,
-                'product': 'HOOKUP_MATCH',
-                'plan_type': 'hookup_connection_fee',
-                'amount_kobo': (match.connection_fee or SiteConfiguration.get_solo().hookup_connection_fee) * 100,
-                'currency': 'NGN',
-            }
+    verified, verification_error, error_status = _verify_paystack_reference(reference)
+    if not verified:
+        return JsonResponse(
+            {'status': 'error', 'message': verification_error},
+            status=error_status,
         )
+    payment_data = (
+        verified.get('data')
+        if isinstance(verified, dict) and verified.get('status') is True
+        else None
+    )
+    metadata = payment_data.get('metadata') if isinstance(payment_data, dict) else None
+    if not isinstance(metadata, dict):
+        metadata = {}
+    try:
+        payer_id = int(metadata.get('payer_id', metadata.get('user_id', 0)))
+    except (TypeError, ValueError):
+        payer_id = 0
 
-        if request.user.pk == match.initiator_id:
-            match.initiator_paid = True
-        elif request.user.pk == match.target_id:
-            match.target_paid = True
+    if (
+        not isinstance(payment_data, dict)
+        or payment_data.get('status') != 'success'
+        or payment_data.get('reference') != reference
+        or metadata.get('match_id') != str(match.pk)
+        or metadata.get('product') != 'HOOKUP_MATCH'
+        or payer_id != request.user.pk
+        or payment_data.get('currency') != 'NGN'
+        or type(payment_data.get('amount')) is not int
+        or payment_data['amount'] != int(match.connection_fee * 100)
+    ):
+        return JsonResponse({'status': 'error', 'message': 'payment_not_verified'}, status=400)
 
-        if match.is_fully_paid():
-            match.status = 'unlocked'
-            match.unlocked_at = timezone.now()
-            match.expires_at = timezone.now() + timedelta(hours=24)
-        else:
-            match.status = 'accepted'
-        match.save()
+    match = _record_hookup_payment(
+        match_id=match.pk,
+        payer_id=payer_id,
+        reference=reference,
+        amount_kobo=payment_data['amount'],
+        currency=payment_data['currency'],
+    )
+    if not match:
+        return JsonResponse({'status': 'error', 'message': 'payment_not_verified'}, status=400)
+    if match.status == 'unlocked':
+        _broadcast_hookup_unlocked(match)
 
     return JsonResponse({
         'status': 'success',
@@ -3757,7 +3899,9 @@ def hookup_chat_room_view(request, match_id):
         return HttpResponseForbidden("You are not a participant in this hookup connection.")
 
     match.check_and_update_expiry()
-    is_expired = match.status == 'expired' or (match.expires_at and match.expires_at <= timezone.now())
+    if not match.is_active:
+        return HttpResponseForbidden("This Hookup chat is not active.")
+    is_expired = False
 
     other_user = match.target if request.user == match.initiator else match.initiator
     other_profile = Profile.objects.filter(user=other_user).first()
@@ -3795,6 +3939,8 @@ def hookup_messages_api(request, match_id):
         return HttpResponseForbidden("Not authorized")
 
     match.check_and_update_expiry()
+    if not match.is_active:
+        return JsonResponse({'status': 'error', 'message': 'window_expired'}, status=403)
     messages = match.messages.select_related('sender').order_by('created_at')
 
     return JsonResponse({
@@ -4057,4 +4203,3 @@ def switch_profile_mode_api(request):
     request.session['active_connection_mode'] = target_mode
     
     return JsonResponse({'status': 'success'})
-

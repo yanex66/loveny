@@ -559,6 +559,7 @@
 
     // --- Call Telemetry, Timers & Heartbeats ---
     function startCallTimer() {
+        if (window.CallPrivacy && !window.CallPrivacy.handshakeComplete) return;
         stopRingtone();
         stopCallTimer();
         callDurationSeconds = 0;
@@ -857,20 +858,39 @@
         });
         if (localVideo) localVideo.srcObject = localStream;
         if (window.CallPrivacy && activeCall) {
-            window.CallPrivacy.init(activeCall.room_id, config.dataset.userEmail || 'Viewer');
+            window.CallPrivacy.init(activeCall.room_id, config.dataset.userId);
             window.CallPrivacy.startFaceVerification(localStream);
         }
         peer = new RTCPeerConnection({
             iceServers: [{urls: 'stun:stun.l.google.com:19302'}],
         });
-        localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+        const senders = new Map();
+        ['audio', 'video'].forEach(kind => {
+            senders.set(kind, peer.addTransceiver(kind, {direction: 'sendrecv'}).sender);
+        });
+        if (window.CallPrivacy) {
+            window.CallPrivacy.onFeedsUnlocked = async () => {
+                for (const track of localStream.getTracks()) {
+                    const sender = senders.get(track.kind);
+                    if (sender) await sender.replaceTrack(track);
+                }
+                if (peer && peer.connectionState === 'connected') startCallTimer();
+            };
+        }
         peer.onicecandidate = event => {
             if (event.candidate) sendSignal('candidate', event.candidate.toJSON());
         };
         peer.ontrack = event => {
             if (remoteVideo) {
-                remoteVideo.srcObject = event.streams[0] || new MediaStream([event.track]);
-                remoteVideo.play().catch(() => {});
+                const stream = event.streams[0] || new MediaStream([event.track]);
+                if (window.CallPrivacy && activeCall) {
+                    window.CallPrivacy.setRemoteStream(stream);
+                } else {
+                    remoteVideo.srcObject = stream;
+                    remoteVideo.play().catch(error => {
+                        console.warn('Remote video playback requires interaction.', error);
+                    });
+                }
             }
             if (feedback) feedback.textContent = 'Call connected';
             startCallTimer();
@@ -1596,4 +1616,3 @@
     window.closeDailyCheckinModal = closeDailyCheckinModal;
     window.claimDailyCheckinReward = claimDailyCheckinReward;
 })();
-

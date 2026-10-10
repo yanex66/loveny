@@ -5,7 +5,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 
-from .models import SupportTicket, SupportMessage
+from .models import SupportKnowledgeBase, SupportTicket, SupportMessage
 
 
 # ── Inline ─────────────────────────────────────────────────────────────────────
@@ -96,6 +96,7 @@ class SupportTicketAdmin(admin.ModelAdmin):
         colors = {
             'open': '#e53e3e',
             'in_progress': '#dd6b20',
+            'needs_admin': '#b83280',
             'resolved': '#276749',
             'closed': '#718096',
         }
@@ -165,3 +166,18 @@ class SupportMessageAdmin(admin.ModelAdmin):
             return '🛡️ Support'
         return obj.sender.username if obj.sender else '—'
     sender_label.short_description = 'From'
+
+
+@admin.register(SupportKnowledgeBase)
+class SupportKnowledgeBaseAdmin(admin.ModelAdmin):
+    list_display = (
+        'normalized_query',
+        'category',
+        'hit_count',
+        'is_verified_by_admin',
+        'updated_at',
+    )
+    list_filter = ('category', 'is_verified_by_admin', 'updated_at')
+    search_fields = ('normalized_query', 'question_sample', 'answer')
+    readonly_fields = ('id', 'hit_count', 'created_at', 'updated_at')
+    ordering = ('-updated_at',)
