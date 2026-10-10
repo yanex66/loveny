@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import support_views
 
 urlpatterns = [
     path('', views.index, name='index'),
@@ -81,4 +82,9 @@ urlpatterns = [
     path('api/notifications/global/', views.global_notifications_api, name='global_notifications_api'),
     path('api/report/', views.report_user_api, name='report_user_api'),
     path('payments/paystack/webhook/', views.paystack_webhook_api, name='paystack_webhook'),
-]
+
+    # ── Support Chat Widget ────────────────────────────────────────────────────
+    path('api/support/send/', support_views.support_send_api, name='support_send_api'),
+    path('api/support/messages/', support_views.support_messages_api, name='support_messages_api'),
+    path('api/support/mark-read/', support_views.support_mark_read_api, name='support_mark_read_api'),
+]

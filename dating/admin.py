@@ -360,3 +360,9 @@ class UserReportAdmin(admin.ModelAdmin):
     list_filter = ('is_resolved', 'reason', 'created_at')
     search_fields = ('reporter__username', 'reported__username', 'details')
     readonly_fields = ('created_at',)
+
+
+# ── Support Chat Widget Admin ──────────────────────────────────────────────────
+# Import to trigger registration of SupportTicket and SupportMessage in admin.
+from . import support_admin  # noqa: E402, F401
+

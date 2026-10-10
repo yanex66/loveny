@@ -302,6 +302,8 @@ DEFAULT_FROM_EMAIL = os.environ.get(
     'DEFAULT_FROM_EMAIL',
     'LOVENY Support <help.hoxobil@gmail.com>',
 )
+# Notifications for new support tickets will be sent to this address.
+ADMIN_NOTIFICATION_EMAIL = os.environ.get('ADMIN_NOTIFICATION_EMAIL', EMAIL_HOST_USER)
 
 JAZZMIN_SETTINGS = {
     'site_title': 'LOVENY Admin',

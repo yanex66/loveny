@@ -1,0 +1,478 @@
+{% load static %}
+{% if user.is_authenticated %}
+<!-- ============================================================
+     LOVENY In-App Support Chat Widget — WhatsApp-Styled
+     No phone numbers. No external wa.me or tel: links.
+     ============================================================ -->
+<style>
+  /* ── Widget root ─────────────────────────────────── */
+  #support-widget-root {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  /* ── Trigger button ──────────────────────────────── */
+  #support-trigger-btn {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: #25D366;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 20px rgba(37, 211, 102, 0.5);
+    animation: support-pulse 2.5s infinite;
+    transition: transform 0.2s, box-shadow 0.2s;
+    position: relative;
+  }
+  #support-trigger-btn:hover { transform: scale(1.08); box-shadow: 0 6px 28px rgba(37,211,102,0.65); }
+  #support-trigger-btn svg { width: 30px; height: 30px; fill: #fff; }
+  @keyframes support-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(37,211,102,0.55); }
+    70%  { box-shadow: 0 0 0 14px rgba(37,211,102,0); }
+    100% { box-shadow: 0 0 0 0 rgba(37,211,102,0); }
+  }
+
+  /* Unread notification dot */
+  #support-unread-dot {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ef4444;
+    border: 2px solid #fff;
+    display: none;
+    animation: support-dot-bounce 1s ease infinite;
+  }
+  @keyframes support-dot-bounce {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.25); }
+  }
+
+  /* ── Chat window ─────────────────────────────────── */
+  #support-chat-window {
+    position: absolute;
+    bottom: 68px;
+    right: 0;
+    width: 340px;
+    max-width: calc(100vw - 28px);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.25);
+    background: #fff;
+    display: none;
+    flex-direction: column;
+    transform-origin: bottom right;
+    animation: support-window-in 0.22s ease;
+  }
+  @keyframes support-window-in {
+    from { opacity: 0; transform: scale(0.9) translateY(10px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  /* Header */
+  #support-chat-header {
+    background: #075E54;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .support-avatar {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #25D366;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .support-avatar svg { width: 22px; height: 22px; fill: #fff; }
+  .support-online-dot {
+    position: absolute;
+    bottom: 1px;
+    right: 1px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #25D366;
+    border: 2px solid #075E54;
+  }
+  .support-header-text { flex: 1; min-width: 0; }
+  .support-header-text h4 { color: #fff; font-size: 14px; font-weight: 700; margin: 0; line-height: 1.2; }
+  .support-header-text p  { color: #b2dfdb; font-size: 11px; margin: 0; line-height: 1.3; }
+  #support-close-btn {
+    background: none;
+    border: none;
+    color: #b2dfdb;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: color 0.15s;
+  }
+  #support-close-btn:hover { color: #fff; }
+
+  /* Body / chat stream */
+  #support-chat-body {
+    height: 300px;
+    max-height: 40vh;
+    overflow-y: auto;
+    padding: 12px 10px;
+    background: #ECE5DD;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4c9ba' fill-opacity='0.3'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  /* Bubbles */
+  .support-bubble {
+    max-width: 82%;
+    padding: 7px 10px 4px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.45;
+    word-break: break-word;
+    position: relative;
+  }
+  .support-bubble.from-support {
+    background: #fff;
+    color: #111;
+    align-self: flex-start;
+    border-top-left-radius: 2px;
+  }
+  .support-bubble.from-user {
+    background: #DCF8C6;
+    color: #111;
+    align-self: flex-end;
+    border-top-right-radius: 2px;
+  }
+  .support-bubble-time {
+    display: block;
+    font-size: 10px;
+    color: #8696a0;
+    text-align: right;
+    margin-top: 2px;
+  }
+  .support-bubble.from-user .support-bubble-time::after {
+    content: ' ✓✓';
+    color: #53bdeb;
+  }
+
+  /* Empty / loading state */
+  .support-empty-state {
+    text-align: center;
+    color: #8696a0;
+    font-size: 12px;
+    margin: auto;
+    padding: 20px;
+  }
+
+  /* Footer */
+  #support-chat-footer {
+    padding: 8px 10px;
+    background: #f0f0f0;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+  #support-msg-input {
+    flex: 1;
+    min-height: 38px;
+    max-height: 100px;
+    resize: none;
+    border: none;
+    border-radius: 20px;
+    padding: 9px 14px;
+    font-size: 13px;
+    background: #fff;
+    outline: none;
+    line-height: 1.4;
+    overflow-y: auto;
+  }
+  #support-send-btn {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    border-radius: 50%;
+    background: #25D366;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, transform 0.15s;
+  }
+  #support-send-btn:hover { background: #1ebe5e; transform: scale(1.08); }
+  #support-send-btn svg { width: 18px; height: 18px; fill: #fff; }
+  #support-send-btn:disabled { background: #b2dfdb; cursor: not-allowed; transform: none; }
+
+  /* Mobile keyboard safety */
+  @media (max-width: 480px) {
+    #support-chat-window {
+      bottom: 72px;
+      right: 0;
+      width: calc(100vw - 20px);
+      max-height: calc(100svh - 100px);
+    }
+    #support-chat-body {
+      height: 220px;
+      max-height: calc(100svh - 240px);
+    }
+  }
+</style>
+
+<div id="support-widget-root">
+  <!-- Floating trigger -->
+  <button id="support-trigger-btn" aria-label="Open support chat" title="Chat with Support">
+    <!-- WhatsApp chat bubble icon -->
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.38 1.26 4.79L2 22l5.46-1.43c1.37.75 2.94 1.18 4.58 1.18 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.84 9.84 0 0 0 12.04 2zm0 18.15c-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.25-8.23 2.2 0 4.27.86 5.82 2.42A8.19 8.19 0 0 1 20.3 12c0 4.54-3.7 8.15-8.26 8.15zm4.52-6.13c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.17.24-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-2-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.24-.02-.38.11-.5.11-.11.25-.28.37-.42.13-.14.17-.24.25-.4.08-.17.04-.31-.02-.43-.06-.12-.56-1.35-.77-1.85-.2-.48-.41-.42-.56-.43h-.48c-.17 0-.43.06-.66.31-.22.24-.86.85-.86 2.07 0 1.22.88 2.4 1 2.57.13.17 1.73 2.64 4.19 3.7.59.25 1.05.4 1.41.51.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.23-.16-.48-.28z"/>
+    </svg>
+    <span id="support-unread-dot"></span>
+  </button>
+
+  <!-- Chat window -->
+  <div id="support-chat-window" role="dialog" aria-modal="true" aria-label="Platform Support Chat">
+    <!-- Header -->
+    <div id="support-chat-header">
+      <div class="support-avatar" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+        <span class="support-online-dot"></span>
+      </div>
+      <div class="support-header-text">
+        <h4>Platform Support</h4>
+        <p>Typically replies within 1 hour &bull; Online</p>
+      </div>
+      <button id="support-close-btn" aria-label="Close support chat">&times;</button>
+    </div>
+
+    <!-- Chat body -->
+    <div id="support-chat-body" aria-live="polite">
+      <div class="support-empty-state" id="support-empty-msg">
+        <p>&#128075; Hi <strong>{{ request.user.username }}</strong>!</p>
+        <p>Send us a message and we'll get back to you within 1 hour.</p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div id="support-chat-footer">
+      <textarea
+        id="support-msg-input"
+        placeholder="Type a message..."
+        rows="1"
+        maxlength="2000"
+        aria-label="Type your support message"
+      ></textarea>
+      <button id="support-send-btn" aria-label="Send message">
+        <!-- Paper-airplane icon -->
+        <svg viewBox="0 0 24 24"><path d="M2 21 23 12 2 3v7l15 2-15 2z"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  const API_SEND     = '/api/support/send/';
+  const API_MESSAGES = '/api/support/messages/';
+  const API_MARK_READ = '/api/support/mark-read/';
+  const POLL_INTERVAL = 8000; // ms
+
+  const triggerBtn  = document.getElementById('support-trigger-btn');
+  const chatWindow  = document.getElementById('support-chat-window');
+  const closeBtn    = document.getElementById('support-close-btn');
+  const chatBody    = document.getElementById('support-chat-body');
+  const emptyMsg    = document.getElementById('support-empty-msg');
+  const msgInput    = document.getElementById('support-msg-input');
+  const sendBtn     = document.getElementById('support-send-btn');
+  const unreadDot   = document.getElementById('support-unread-dot');
+
+  let isOpen = false;
+  let pollTimer = null;
+  let knownMessageIds = new Set();
+
+  function getCsrfToken() {
+    const meta = document.querySelector('meta[name="csrftoken"]');
+    if (meta) return meta.content;
+    const cookie = document.cookie.split('; ').find(r => r.startsWith('csrftoken='));
+    return cookie ? cookie.split('=')[1] : '';
+  }
+
+  // ── Rendering ──────────────────────────────────────
+  function formatTime(isoStr) {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function renderBubble(msg) {
+    const div = document.createElement('div');
+    div.className = `support-bubble ${msg.is_from_support ? 'from-support' : 'from-user'}`;
+    div.dataset.msgId = msg.id;
+    const escaped = msg.message.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+    div.innerHTML = `${escaped}<span class="support-bubble-time">${formatTime(msg.created_at_iso || msg.created_at)}</span>`;
+    return div;
+  }
+
+  function appendMessages(messages) {
+    if (!messages || !messages.length) return;
+    let added = false;
+    messages.forEach(msg => {
+      if (knownMessageIds.has(msg.id)) return;
+      knownMessageIds.add(msg.id);
+      if (emptyMsg && emptyMsg.parentNode) emptyMsg.remove();
+      chatBody.appendChild(renderBubble(msg));
+      added = true;
+    });
+    if (added) scrollToBottom();
+  }
+
+  function scrollToBottom() {
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
+
+  function setUnreadDot(show) {
+    unreadDot.style.display = show ? 'block' : 'none';
+  }
+
+  // ── API Calls ──────────────────────────────────────
+  async function loadMessages() {
+    try {
+      const res = await fetch(API_MESSAGES, { credentials: 'same-origin' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.status === 'success') {
+        appendMessages(data.messages);
+        if (!isOpen) setUnreadDot(data.has_unread);
+      }
+    } catch (e) { /* network error — silent */ }
+  }
+
+  async function sendMessage(text) {
+    const currentPage = window.location.pathname;
+    sendBtn.disabled = true;
+    try {
+      const res = await fetch(API_SEND, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrfToken(),
+        },
+        body: JSON.stringify({ message: text, current_page: currentPage }),
+      });
+      if (!res.ok) throw new Error('Server error');
+      const data = await res.json();
+      if (data.status === 'success') {
+        appendMessages(data.messages);
+      }
+    } catch (e) {
+      const errBubble = document.createElement('div');
+      errBubble.className = 'support-bubble from-support';
+      errBubble.style.color = '#e53e3e';
+      errBubble.textContent = 'Message failed. Please try again.';
+      chatBody.appendChild(errBubble);
+      scrollToBottom();
+    } finally {
+      sendBtn.disabled = false;
+    }
+  }
+
+  async function markRead() {
+    try {
+      await fetch(API_MARK_READ, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-CSRFToken': getCsrfToken() },
+      });
+      setUnreadDot(false);
+    } catch (e) {}
+  }
+
+  // ── Toggle ─────────────────────────────────────────
+  function openChat() {
+    isOpen = true;
+    chatWindow.style.display = 'flex';
+    loadMessages();
+    markRead();
+    msgInput.focus();
+    startPolling();
+  }
+
+  function closeChat() {
+    isOpen = false;
+    chatWindow.style.display = 'none';
+    stopPolling();
+  }
+
+  function toggleChat() {
+    if (isOpen) closeChat(); else openChat();
+  }
+
+  // ── Polling ────────────────────────────────────────
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(() => {
+      if (isOpen) { loadMessages(); markRead(); }
+    }, POLL_INTERVAL);
+  }
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  // ── Event handlers ─────────────────────────────────
+  triggerBtn.addEventListener('click', toggleChat);
+  closeBtn.addEventListener('click', closeChat);
+
+  sendBtn.addEventListener('click', function() {
+    const text = msgInput.value.trim();
+    if (!text) return;
+    msgInput.value = '';
+    msgInput.style.height = 'auto';
+    sendMessage(text);
+  });
+
+  msgInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendBtn.click();
+    }
+  });
+
+  // Auto-resize textarea
+  msgInput.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+  });
+
+  // iOS Safari: prevent page scroll when chat body is scrolled
+  chatBody.addEventListener('touchmove', function(e) { e.stopPropagation(); }, { passive: true });
+
+  // Close on backdrop click (outside widget)
+  document.addEventListener('click', function(e) {
+    if (isOpen && !document.getElementById('support-widget-root').contains(e.target)) {
+      closeChat();
+    }
+  });
+
+  // Initial silent badge poll (no window open)
+  setTimeout(loadMessages, 3000);
+  setInterval(() => { if (!isOpen) loadMessages(); }, 30000);
+})();
+</script>
+{% endif %}

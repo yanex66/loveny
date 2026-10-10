@@ -835,3 +835,10 @@ class ProfileStateBackup(models.Model):
         
     def __str__(self):
         return f"Backup for {self.user.username} in {self.mode} mode"
+
+
+# ── Support Chat Widget Models ─────────────────────────────────────────────────
+# Imported here so Django migrations pick them up automatically from the
+# 'dating' app without needing a separate app.
+from .support_models import SupportTicket, SupportMessage  # noqa: E402, F401
+
