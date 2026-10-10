@@ -63,7 +63,7 @@
                                  class="h-20 w-20 rounded-full object-cover ring-2 ring-purple-400/80 avatar-glow transition group-hover:scale-105">
                         {% else %}
                             <div class="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-tr from-purple-700 to-pink-600 text-3xl font-black ring-2 ring-purple-400/80 avatar-glow">
-                                {{ profile.user.username|slice:":1"|upper }}
+                                {{ profile.user.first_name|default:profile.user.username|slice:":1"|upper }}
                             </div>
                         {% endif %}
                         <span class="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-purple-600 text-[11px] text-white border-2 border-[#130924] shadow" title="Edit Photo">
