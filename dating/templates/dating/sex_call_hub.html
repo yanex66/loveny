@@ -81,7 +81,7 @@
             <div class="flex items-center gap-2">
                 <!-- Coin Balance Pill (Triggers Coin Shop) -->
                 <a href="{% url 'coin_shop' %}" id="hub-coins-btn" class="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-400/40 px-3 py-1.5 text-xs font-black text-amber-300 hover:bg-amber-500/30 active:scale-95 transition shadow-lg shadow-amber-500/10" title="Buy Coins">
-                    <span class="text-sm">🪙</span>
+                    <span class="text-sm">&#x1FA99;</span>
                     <span id="hub-coins-val">{{ user_coin_balance }}</span>
                     <span class="ml-0.5 rounded-full bg-amber-400 text-slate-950 px-1 text-[10px] leading-tight font-extrabold">+</span>
                 </a>
@@ -127,7 +127,7 @@
                 <span class="text-base group-hover:rotate-12 transition-transform">🪐</span>
                 <span class="hidden sm:inline">Random Match</span>
                 <span class="sm:hidden">Match</span>
-                <span class="text-[10px] opacity-75 font-normal">({{ call_rate_per_minute }}🪙)</span>
+                <span class="text-[10px] opacity-75 font-normal">({{ call_rate_per_minute }}&#x1FA99;)</span>
             </button>
         </div>
 
@@ -213,7 +213,7 @@
             <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-500/20 text-2xl border border-cyan-400/40">💎</div>
             <div>
                 <h3 class="text-base font-black text-cyan-300 uppercase">Exchange Diamonds</h3>
-                <p class="text-[10px] text-white/60">Convert gifts into Coins (Rate: 100 💎 = {{ diamond_to_coin_percentage|default:70 }} 🪙)</p>
+                <p class="text-[10px] text-white/60">Convert gifts into Coins (Rate: 100 💎 = {{ diamond_to_coin_percentage|default:70 }} &#x1FA99;)</p>
             </div>
         </div>
 
@@ -238,7 +238,7 @@
             </div>
 
             <div class="mt-2 text-right text-[11px] text-white/70">
-                You'll receive: <span id="preview-coins-received" class="font-black text-amber-300">0</span> 🪙
+                You'll receive: <span id="preview-coins-received" class="font-black text-amber-300">0</span> &#x1FA99;
             </div>
 
             <button type="submit" class="mt-4 w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-3 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-cyan-500/30 active:scale-95 transition">
@@ -334,7 +334,7 @@
                             ${h.username}, <span class="text-pink-400 font-bold">${h.age}</span>
                         </h3>
                         <p class="text-[10px] font-semibold text-white/70 truncate flex items-center gap-1">
-                            <span>🪙 ${h.rate_per_minute}/min</span>
+                            <span>&#x1FA99; ${h.rate_per_minute}/min</span>
                             <span>·</span>
                             <span>${h.location}</span>
                         </p>

@@ -23,7 +23,7 @@
             <!-- Right: Coin Balance Badge & Settings Gear Container -->
             <div class="flex items-center gap-2.5 shrink-0" style="display: flex; align-items: center; gap: 10px;">
                 <button type="button" onclick="lovenyOpenCoinStore()" id="settings-header-coin-balance" class="flex items-center gap-1.5 rounded-full border border-amber-300/80 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-300 px-3 py-1.5 text-xs font-black text-slate-950 shadow-md shadow-amber-500/25 transition-all hover:scale-105 active:scale-95" title="Coin Balance">
-                    <span class="text-sm">🪙</span>
+                    <span class="text-sm">&#x1FA99;</span>
                     <span>{{ user_coin_balance|default:profile.coin_balance|default:0 }}</span>
                     <span class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-900/20 text-[10px] text-amber-950 leading-none font-bold">+</span>
                 </button>
@@ -61,8 +61,8 @@
                             </div>
                             
                             <div class="space-y-2">
-                                <p class="text-xs text-slate-600 font-medium">?? <strong>Note: Switching to a different mode costs ?{{ site_config.mode_switch_fee|default:200 }}!</strong> Your current profile data and photos will be safely saved, and you'll get a fresh profile for the new mode. Please choose your mode carefully before switching.</p>
-                                <p class="text-[10px] text-pink-600 font-bold uppercase">Switch Fee: ?{{ site_config.mode_switch_fee|default:200 }}</p>
+                                <p class="text-xs text-slate-600 font-medium">&#x1FA99; <strong>Note: Switching to a different mode costs &#x1FA99;{{ site_config.mode_switch_fee|default:200 }}!</strong> Your current profile data and photos will be safely saved, and you'll get a fresh profile for the new mode. Please choose your mode carefully before switching.</p>
+                                <p class="text-[10px] text-pink-600 font-bold uppercase">Switch Fee: &#x1FA99;{{ site_config.mode_switch_fee|default:200 }}</p>
                                 
                                 <select id="mode-switch-select" class="w-full mt-2 p-2 rounded-xl border border-pink-200 text-sm font-bold text-slate-700">
                                     <option value="" disabled selected>Select new mode...</option>

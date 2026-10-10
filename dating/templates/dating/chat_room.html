@@ -96,7 +96,7 @@
             <div class="flex items-center gap-2">
                 <!-- Live Coin Pill -->
                 <div class="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-950/40 px-2.5 py-1 text-xs font-black text-amber-300 shadow-inner">
-                    <span>🪙</span>
+                    <span>&#x1FA99;</span>
                     <span id="header-coin-balance">{{ user_coin_balance }}</span>
                     <button id="btn-open-topup" type="button" class="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[10px] font-black text-slate-950 hover:bg-amber-300 transition" title="Top Up Coins">
                         +
@@ -142,7 +142,7 @@
             </div>
             <div class="flex items-center gap-1 text-[11px] font-black text-amber-300">
                 <span>📹</span>
-                <span>{{ call_rate_per_minute|default:20 }} 🪙/min</span>
+                <span>{{ call_rate_per_minute|default:20 }} &#x1FA99;/min</span>
             </div>
         </div>
 
@@ -196,7 +196,7 @@
                     <span class="text-xs text-purple-300">(Host earns 70% 💎)</span>
                 </div>
                 <div class="flex items-center gap-3">
-                    <span class="text-xs text-amber-300">Coins: <b id="drawer-coin-val">{{ user_coin_balance }}</b>🪙</span>
+                    <span class="text-xs text-amber-300">Coins: <b id="drawer-coin-val">{{ user_coin_balance }}</b>&#x1FA99;</span>
                     <button id="close-gift-drawer" type="button" class="text-xs text-slate-400 hover:text-white px-2 font-bold">✕</button>
                 </div>
             </div>
@@ -208,7 +208,7 @@
                     <span class="text-3xl transition group-hover:scale-125">{{ gift.icon }}</span>
                     <span class="mt-1 text-xs font-bold text-white">{{ gift.name }}</span>
                     <span class="mt-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-black text-amber-300">
-                        {{ gift.coins }} 🪙
+                        {{ gift.coins }} &#x1FA99;
                     </span>
                 </button>
                 {% endfor %}
@@ -257,13 +257,13 @@
                 </div>
 
                 {% if can_video_call %}
-                <!-- Direct Video Call Button (📹 20🪙/min) -->
+                <!-- Direct Video Call Button (📹 20&#x1FA99;/min) -->
                 <button type="button"
                         onclick="startDirectVideoCall({{ other_user.id }}, '{{ other_user.username }}')"
                         class="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 hover:from-rose-400 hover:to-pink-400 px-3.5 py-1.5 text-xs font-black text-white shadow-lg shadow-rose-500/25 active:scale-95 transition"
                         title="Start Instant Video Call">
                     <span class="text-base">📹</span>
-                    <span>Video Call ({{ call_rate_per_minute|default:20 }}🪙/m)</span>
+                    <span>Video Call ({{ call_rate_per_minute|default:20 }}&#x1FA99;/m)</span>
                 </button>
                 {% endif %}
             </div>
@@ -276,7 +276,7 @@
         <div class="w-full max-w-lg rounded-3xl border border-white/15 bg-[#18132d] p-6 shadow-2xl transition duration-300 scale-95" id="topup-modal-content">
             <div class="flex items-center justify-between border-b border-white/10 pb-4">
                 <div class="flex items-center gap-2.5">
-                    <span class="text-2xl">🪙</span>
+                    <span class="text-2xl">&#x1FA99;</span>
                     <div>
                         <h2 class="text-lg font-black text-white">Refill Your Coins</h2>
                         <p class="text-xs text-slate-400">Never run out during spicy private calls &amp; gifts</p>
@@ -415,7 +415,7 @@
                     <div class="min-w-0">
                         <div class="flex items-center gap-1.5">
                             <span class="rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-300">Special Gift</span>
-                            <span class="text-xs font-black text-amber-400">🪙 ${coins} Coins</span>
+                            <span class="text-xs font-black text-amber-400">&#x1FA99; ${coins} Coins</span>
                         </div>
                         <h4 class="mt-0.5 font-black text-white text-sm sm:text-base">${icon} ${name}</h4>
                         <p class="text-[11px] text-pink-200/80">
@@ -898,7 +898,7 @@
                         ${p.badge ? `<span class="absolute -top-2.5 right-3 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-2 py-0.5 text-[9px] font-black uppercase text-white shadow">${p.badge}</span>` : ''}
                         <div>
                             <div class="flex items-center gap-1.5 text-amber-300">
-                                <span class="text-xl">🪙</span>
+                                <span class="text-xl">&#x1FA99;</span>
                                 <span class="text-lg font-black">${p.total_coins} Coins</span>
                             </div>
                             <p class="text-xs text-slate-400 mt-1">${p.name}</p>
