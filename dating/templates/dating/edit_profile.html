@@ -87,7 +87,7 @@
                 <span id="tag-count" class="rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-700"></span>
             </div>
             <input type="search" id="interest-search" aria-label="Search interests" placeholder="Search interests" class="w-full rounded-xl border border-rose-100 px-4 py-3 text-base">
-            <div class="tag-grid flex flex-wrap gap-2">
+            <div class="tag-grid grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {% for checkbox in form.tags %}
                 <label class="interest-chip cursor-pointer">
                     {{ checkbox.tag }}
@@ -101,10 +101,9 @@
             <div><h2 class="text-base font-semibold">Discovery &amp; privacy</h2><p class="mt-1 text-xs text-slate-500">Choose who you see and how your profile appears.</p></div>
             <div class="form-group">
                 <label>Seeking</label>{{ form.preferred_gender }}
-                <div id="seeking-pills" class="grid grid-cols-3 gap-2" role="group" aria-label="Seeking gender">
+                <div id="seeking-pills" class="grid grid-cols-2 gap-2" role="group" aria-label="Seeking gender">
                     <button type="button" data-gender="M" class="gender-pill">Male</button>
                     <button type="button" data-gender="F" class="gender-pill">Female</button>
-                    <button type="button" data-gender="O" class="gender-pill">Other</button>
                 </div>
             </div>
             <div class="form-group">
@@ -202,7 +201,8 @@
     input:focus, textarea:focus, select:focus { border-color: #ec4899 !important; box-shadow: 0 0 0 3px rgb(236 72 153 / 12%); }
     .edit-tab { color: #64748b; white-space: nowrap; }
     .edit-tab.is-active { color: #fff; background: linear-gradient(110deg, #ec4899, #8b5cf6); box-shadow: 0 4px 12px rgb(236 72 153 / 20%); }
-    .interest-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 9999px; background: #fff; color: #475569; font-size: 13px; transition: .15s ease; }
+    .tag-grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
+    .interest-chip { position: relative; display: inline-flex; width: 100%; align-items: center; justify-content: center; gap: 6px; min-height: 42px; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 9999px; background: #fff; color: #475569; font-size: 12px; text-align: center; transition: .15s ease; }
     .interest-chip input { position: absolute; width: 1px; height: 1px; opacity: 0; }
     .interest-chip:has(input:checked) { color: #fff; border-color: transparent; background: linear-gradient(110deg, #ec4899, #8b5cf6); }
     .interest-chip:has(input:disabled:not(:checked)) { opacity: .42; }

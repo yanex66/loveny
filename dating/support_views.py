@@ -17,7 +17,11 @@ from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_http_methods
 
 from .models import SupportTicket, SupportMessage
-from .services.support_bot import process_support_inquiry
+from .services.support_bot import (
+    ESCALATION_RESPONSE,
+    FALLBACK_RESPONSE,
+    process_support_inquiry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +127,7 @@ def support_send_api(request):
         .order_by('-created_at')
         .first()
     )
+    ticket_was_created = ticket is None
     if ticket is None:
         ticket = SupportTicket.objects.create(
             user=request.user,
@@ -146,25 +151,36 @@ def support_send_api(request):
 
     response_messages = [_serialize_message(user_msg)]
 
-    bot_answer = process_support_inquiry(ticket, user_message_text)
-    auto_msg = SupportMessage.objects.create(
-        ticket=ticket,
-        sender=None,
-        is_from_support=True,
+    previous_auto_reply = ticket.messages.filter(
         is_auto_reply=True,
-        message=bot_answer,
-        is_read_by_admin=True,
-        is_read_by_user=False,
-    )
-    response_messages.append(_serialize_message(auto_msg))
+    ).order_by('-created_at').first()
+    was_needs_admin = ticket.status == 'needs_admin'
+    bot_answer = process_support_inquiry(ticket, user_message_text)
+    if bot_answer and not (
+        bot_answer in {FALLBACK_RESPONSE, ESCALATION_RESPONSE}
+        and previous_auto_reply
+        and previous_auto_reply.message == bot_answer
+    ):
+        auto_msg = SupportMessage.objects.create(
+            ticket=ticket,
+            sender=None,
+            is_from_support=True,
+            is_auto_reply=True,
+            message=bot_answer,
+            is_read_by_admin=True,
+            is_read_by_user=False,
+        )
+        response_messages.append(_serialize_message(auto_msg))
 
-    # Notify admin via email (non-blocking)
-    t = threading.Thread(
-        target=_send_admin_email_async,
-        args=(ticket, user_message_text),
-        daemon=True,
-    )
-    t.start()
+    if ticket.status == 'needs_admin' and (
+        ticket_was_created or not was_needs_admin
+    ):
+        t = threading.Thread(
+            target=_send_admin_email_async,
+            args=(ticket, user_message_text),
+            daemon=True,
+        )
+        t.start()
 
     return JsonResponse({
         'status': 'success',

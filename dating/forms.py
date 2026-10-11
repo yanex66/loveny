@@ -283,7 +283,7 @@ class ProfileForm(forms.ModelForm):
         val = self.cleaned_data.get('gender')
         if not val and self.instance and self.instance.gender:
             return self.instance.gender
-        return val or 'O'
+        return val or 'M'
 
     def clean_preferred_gender(self):
         val = self.cleaned_data.get('preferred_gender')
@@ -298,6 +298,7 @@ class ProfileCreationForm(ProfileForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['gender'].required = True
         self.fields['name'].required = False
         optional_fields = [
             'min_age_pref', 'max_age_pref', 'max_distance_km',

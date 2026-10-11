@@ -250,6 +250,11 @@ def _profile_payload(profile):
         'is_video': photo.is_video if photo else False,
         'tags': [tag.name for tag in profile.tags.all()[:3]],
         'relationship_mode': profile.relationship_mode,
+        'gender': (
+            profile.get_gender_display()
+            if profile.gender in {'M', 'F'}
+            else ''
+        ),
         'is_verified': profile.is_verified,
         'is_vip': profile.is_vip,
         'is_online': profile.is_host_ready or (profile.last_active and (timezone.now() - profile.last_active).total_seconds() < 1800),
@@ -699,6 +704,11 @@ def match_list(request):
             'name': other.first_name or other.username,
             'avatar': payload['image_url'],
             'age': profile.age,
+            'gender': (
+                profile.get_gender_display()
+                if profile.gender in {'M', 'F'}
+                else ''
+            ),
             'location': profile.location or 'Nearby',
             'first_date_idea': profile.first_date_idea,
             'expires_in': max(0, (m.expires_at - timezone.now()).days),
@@ -3231,7 +3241,7 @@ def sex_call_hub(request):
     if not profile:
         profile, _ = Profile.objects.get_or_create(
             user=request.user,
-            defaults={'relationship_mode': 'SEX_CALL', 'is_host_ready': True, 'age': 22, 'gender': 'O', 'location': 'Lagos, Nigeria'}
+            defaults={'relationship_mode': 'SEX_CALL', 'is_host_ready': True, 'age': 22, 'gender': 'M', 'location': 'Lagos, Nigeria'}
         )
 
     profile.last_active = timezone.now()

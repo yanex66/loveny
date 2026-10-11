@@ -15,7 +15,6 @@ User = get_user_model()
 GENDER_CHOICES = (
     ('M', 'Male'),
     ('F', 'Female'),
-    ('O', 'Other'),
 )
 
 SWIPE_CHOICES = (
@@ -50,7 +49,7 @@ class Profile(models.Model):
         blank=True, 
         validators=[MinValueValidator(18)]
     )
-    gender = models.CharField(max_length=1, choices=GENDER_CHOICES, default='O')
+    gender = models.CharField(max_length=1, choices=GENDER_CHOICES, default='M')
     preferred_gender = models.CharField(max_length=1, choices=GENDER_CHOICES, default='F', help_text="Gender preference for profiles to see.")
     relationship_mode = models.CharField(max_length=12, choices=RELATIONSHIP_MODE_CHOICES, default='DATING')
 

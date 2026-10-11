@@ -178,6 +178,38 @@ class DatingPlatformTests(TestCase):
         self.assertNotIn('premium_expiry', form.fields)
         self.assertNotIn('whatsapp_number', form.fields)
 
+    def test_gender_options_are_limited_to_male_and_female(self):
+        gender_choices = dict(Profile._meta.get_field('gender').choices)
+        preferred_gender_choices = dict(
+            Profile._meta.get_field('preferred_gender').choices
+        )
+
+        self.assertEqual(gender_choices, {'M': 'Male', 'F': 'Female'})
+        self.assertEqual(preferred_gender_choices, gender_choices)
+        self.assertEqual(Profile._meta.get_field('gender').default, 'M')
+
+        form = ProfileCreationForm()
+        self.assertTrue(form.fields['gender'].required)
+        self.assertEqual(
+            form.fields['gender'].choices,
+            [('M', 'Male'), ('F', 'Female')],
+        )
+        self.assertEqual(
+            form.fields['preferred_gender'].choices,
+            [('M', 'Male'), ('F', 'Female')],
+        )
+
+    def test_gender_is_included_on_discovery_and_public_profiles(self):
+        self.client.force_login(self.alice)
+
+        feed = self.client.get(reverse('get_profiles_json')).json()['profiles']
+        self.assertEqual(feed[0]['gender'], 'Male')
+
+        public_profile = self.client.get(
+            reverse('public_profile', args=[self.bob.pk])
+        )
+        self.assertContains(public_profile, 'Male')
+
     def test_admin_profile_mode_sections_only_show_their_own_profiles(self):
         _, hookup_profile = self.make_profile('admin_hookup', mode='HOOKUP')
         _, sex_call_profile = self.make_profile('admin_sex_call', mode='SEX_CALL')
@@ -940,6 +972,37 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(invalid_message.status_code, 400)
         self.assertEqual(invalid_message.json()['status'], 'error')
 
+    def test_support_greeting_does_not_claim_a_complaint_is_under_review(self):
+        self.client.force_login(self.alice)
+        with (
+            patch('dating.services.support_bot._generate_answer') as generate_answer,
+            patch('dating.support_views.threading.Thread.start') as start_thread,
+            override_settings(GEMINI_API_KEY=''),
+        ):
+            first_response = self.post_json(
+                reverse('support_send_api'),
+                {'message': 'hello', 'current_page': '/app/'},
+            )
+            self.assertEqual(first_response.status_code, 200)
+            self.assertEqual(len(first_response.json()['messages']), 2)
+            auto_reply = first_response.json()['messages'][1]['message']
+            self.assertIn('automated support assistant', auto_reply)
+            self.assertNotIn('reviewing', auto_reply.lower())
+            self.assertNotIn('complaint', auto_reply.lower())
+
+            next_response = self.post_json(
+                reverse('support_send_api'),
+                {'message': 'ok', 'current_page': '/app/'},
+            )
+            self.assertEqual(next_response.status_code, 200)
+            self.assertEqual(len(next_response.json()['messages']), 1)
+            start_thread.assert_not_called()
+            generate_answer.assert_not_called()
+
+        ticket = SupportTicket.objects.get(user=self.alice)
+        self.assertEqual(ticket.status, 'open')
+        self.assertEqual(ticket.messages.filter(is_auto_reply=True).count(), 1)
+
     def test_create_profile_submission_defaults_preferences_and_mode(self):
         new_user = User.objects.create_user(
             username='user27',
@@ -950,7 +1013,7 @@ class DatingPlatformTests(TestCase):
         # Post form payload without min_age_pref, max_age_pref, max_distance_km
         post_data = {
             'age': 27,
-            'gender': 'O',
+            'gender': 'M',
             'preferred_gender': 'F',
             'relationship_mode': 'SEX_CALL',
             'bio': 'dce',
@@ -959,7 +1022,7 @@ class DatingPlatformTests(TestCase):
         self.assertRedirects(response, reverse('sex_call_hub'))
         profile = Profile.objects.get(user=new_user)
         self.assertEqual(profile.age, 27)
-        self.assertEqual(profile.gender, 'O')
+        self.assertEqual(profile.gender, 'M')
         self.assertEqual(profile.preferred_gender, 'F')
         self.assertEqual(profile.relationship_mode, 'SEX_CALL')
         self.assertEqual(profile.min_age_pref, 18)
@@ -2572,4 +2635,14 @@ class DatingPlatformTests(TestCase):
             response = process_support_inquiry(fallback_ticket, 'Where is my payment?')
         fallback_ticket.refresh_from_db()
         self.assertEqual(response, FALLBACK_RESPONSE)
-        self.assertEqual(fallback_ticket.status, 'needs_admin')
+        self.assertEqual(fallback_ticket.status, 'open')
+
+        escalated_ticket = SupportTicket.objects.create(user=self.bob)
+        with override_settings(GEMINI_API_KEY=''), self.assertLogs('dating.services.support_bot', level='WARNING'):
+            response = process_support_inquiry(
+                escalated_ticket,
+                'I need to speak to a human about my account being broken.',
+            )
+        escalated_ticket.refresh_from_db()
+        self.assertEqual(escalated_ticket.status, 'needs_admin')
+        self.assertIn('flagged your request for a support agent', response)

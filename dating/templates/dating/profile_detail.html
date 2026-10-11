@@ -98,6 +98,10 @@
                         </span>
                         <span>•</span>
                         <span>{{ profile.get_relationship_mode_display|default:"Sex Call" }}</span>
+                        {% if profile.gender == 'M' or profile.gender == 'F' %}
+                        <span>•</span>
+                        <span>{{ profile.get_gender_display }}</span>
+                        {% endif %}
                     </div>
                 </div>
             </div>

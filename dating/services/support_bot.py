@@ -15,8 +15,15 @@ from dating.models import SupportKnowledgeBase
 logger = logging.getLogger(__name__)
 
 FALLBACK_RESPONSE = (
-    "Thanks for reaching out! We have received your message. Our human support team "
-    "is reviewing it and will get back to you within 1 hour."
+    "I’m LOVENY’s automated support assistant. I couldn’t find an instant answer to "
+    "that message. Please share what you need help with, and I’ll do my best to guide you."
+)
+ESCALATION_RESPONSE = (
+    "I couldn’t resolve this automatically, so I’ve flagged your request for a support "
+    "agent. Please add any details that could help them."
+)
+GREETING_RESPONSE = (
+    "Hi! I’m LOVENY’s automated support assistant. What can I help you with?"
 )
 
 SUPPORT_INSTRUCTIONS = (
@@ -49,18 +56,30 @@ def _category_for(question):
 
 def _needs_admin(question):
     return bool(re.search(
-        r'\b(refund(?:ed|s)?|ban(?:ned)?|suspend(?:ed|sion)?|suspension|bugs?|error|crash|broken)\b',
+        r'\b(refund(?:ed|s)?|ban(?:ned)?|suspend(?:ed|sion)?|suspension|bugs?|error|crash|broken|human|agent|person)\b|speak to support',
         question,
         re.IGNORECASE,
     ))
 
 
-def _fallback(ticket, reason):
+def _small_talk_response(question):
+    normalized = re.sub(r'[^\w\s]', '', normalize_query(question))
+    if re.fullmatch(
+        r'(hi|hello|hey|good morning|good afternoon|good evening)',
+        normalized,
+    ):
+        return GREETING_RESPONSE
+    if re.fullmatch(r'(ok|okay|thanks|thank you|cool|got it)', normalized):
+        return ''
+    return None
+
+
+def _fallback(ticket, reason, *, escalate):
     logger.warning('Support bot falling back for ticket %s: %s', ticket.pk, reason)
-    if ticket.status != 'needs_admin':
+    if escalate and ticket.status != 'needs_admin':
         ticket.status = 'needs_admin'
         ticket.save(update_fields=['status', 'updated_at'])
-    return FALLBACK_RESPONSE
+    return ESCALATION_RESPONSE if escalate else FALLBACK_RESPONSE
 
 
 def _generate_answer(question):
@@ -93,6 +112,10 @@ def _generate_answer(question):
 
 
 def process_support_inquiry(ticket, question):
+    small_talk_response = _small_talk_response(question)
+    if small_talk_response is not None:
+        return small_talk_response
+
     normalized_query = normalize_query(question)
     cached = SupportKnowledgeBase.objects.filter(
         normalized_query=normalized_query,
@@ -105,14 +128,22 @@ def process_support_inquiry(ticket, question):
         if '[ESCALATE_ADMIN]' in cached.answer and ticket.status != 'needs_admin':
             ticket.status = 'needs_admin'
             ticket.save(update_fields=['status', 'updated_at'])
-        return cached.answer
+        return cached.answer.replace('[ESCALATE_ADMIN]', '').strip()
 
     try:
         answer = _generate_answer(question)
     except HTTPError as exc:
-        return _fallback(ticket, f'Gemini HTTP {exc.code}')
+        return _fallback(
+            ticket,
+            f'Gemini HTTP {exc.code}',
+            escalate=_needs_admin(question),
+        )
     except (URLError, TimeoutError, OSError) as exc:
-        return _fallback(ticket, f'Gemini connection error ({type(exc).__name__})')
+        return _fallback(
+            ticket,
+            f'Gemini connection error ({type(exc).__name__})',
+            escalate=_needs_admin(question),
+        )
     except (
         json.JSONDecodeError,
         UnicodeDecodeError,
@@ -121,10 +152,18 @@ def process_support_inquiry(ticket, question):
         IndexError,
         TypeError,
     ) as exc:
-        return _fallback(ticket, f'Gemini response error ({type(exc).__name__})')
+        return _fallback(
+            ticket,
+            f'Gemini response error ({type(exc).__name__})',
+            escalate=_needs_admin(question),
+        )
 
     if not answer:
-        return _fallback(ticket, 'Gemini returned an empty response')
+        return _fallback(
+            ticket,
+            'Gemini returned an empty response',
+            escalate=_needs_admin(question),
+        )
     if _needs_admin(question) and '[ESCALATE_ADMIN]' not in answer:
         answer = f'{answer.rstrip()} [ESCALATE_ADMIN]'
 
@@ -138,4 +177,4 @@ def process_support_inquiry(ticket, question):
     if '[ESCALATE_ADMIN]' in answer and ticket.status != 'needs_admin':
         ticket.status = 'needs_admin'
         ticket.save(update_fields=['status', 'updated_at'])
-    return answer
+    return answer.replace('[ESCALATE_ADMIN]', '').strip()

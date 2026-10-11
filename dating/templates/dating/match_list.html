@@ -43,6 +43,7 @@
                                     </h2>
                                     <div class="flex items-center gap-2 mt-1">
                                         <span class="text-pink-600 font-bold text-sm">{{ match.age|default:'18+' }}</span>
+                                        {% if match.gender %}<span class="text-slate-500 text-xs">• {{ match.gender }}</span>{% endif %}
                                         <span class="text-slate-400 text-xs">• {{ match.location|default:'Nearby' }}</span>
                                     </div>
                                 </div>

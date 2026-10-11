@@ -276,6 +276,9 @@
         const vipBadge = profile.is_vip
             ? '<span class="ml-1 rounded-full bg-yellow-400 px-2 py-1 text-[9px] font-black uppercase text-black">VIP</span>'
             : '';
+        const genderBadge = profile.gender
+            ? `<span class="rounded-full border border-white/20 bg-black/40 px-2 py-1 text-[10px] font-semibold text-white/90">${escapeHTML(profile.gender)}</span>`
+            : '';
         newCard.innerHTML = `
             ${mediaHtml}
             <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
@@ -284,7 +287,7 @@
                 <h2 class="break-words text-2xl font-black text-white leading-tight mb-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] italic uppercase sm:text-3xl">
                     ${escapeHTML(profile.username)} <span class="text-pink-500 not-italic text-3xl font-bold ml-1">${escapeHTML(profile.age)}</span>
                 </h2>
-                ${verifiedBadge}${vipBadge}
+                <div class="mb-2 flex flex-wrap items-center gap-1">${genderBadge}${verifiedBadge}${vipBadge}</div>
                 ${profile.job_title ? `<p class="text-gray-300 text-xs font-bold uppercase tracking-widest mb-3 opacity-80">${escapeHTML(profile.job_title)}</p>` : ''}
                 <div class="flex flex-wrap gap-1 mb-4">${tagsHtml}</div>
                 <p class="text-sm text-gray-200 line-clamp-2 mb-4 font-medium leading-relaxed opacity-90 border-l-2 border-yellow-400 pl-3">${escapeHTML(profile.bio)}</p>
