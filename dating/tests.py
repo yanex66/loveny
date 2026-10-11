@@ -11,6 +11,7 @@ from unittest.mock import patch
 from django import forms
 from django.apps import apps
 from django.conf import settings
+from django.contrib import admin
 from django.db import connection
 from django.db.models import Q
 from django.contrib.auth.models import User
@@ -46,6 +47,9 @@ from .models import (
     SupportKnowledgeBase,
     SupportTicket,
 )
+from .mode_admin.dating_profiles.models import DatingProfile
+from .mode_admin.hookup_profiles.models import HookupProfile
+from .mode_admin.sex_call_profiles.models import SexCallProfile
 from .services.content_filter import ContentFilter
 from .services.support_bot import process_support_inquiry, FALLBACK_RESPONSE
 from .views import _provider_payment, get_profile_batch
@@ -173,6 +177,54 @@ class DatingPlatformTests(TestCase):
         self.assertNotIn('premium_tier', form.fields)
         self.assertNotIn('premium_expiry', form.fields)
         self.assertNotIn('whatsapp_number', form.fields)
+
+    def test_admin_profile_mode_sections_only_show_their_own_profiles(self):
+        _, hookup_profile = self.make_profile('admin_hookup', mode='HOOKUP')
+        _, sex_call_profile = self.make_profile('admin_sex_call', mode='SEX_CALL')
+        admin_user = User.objects.create_superuser(
+            username='mode-admin',
+            email='mode-admin@example.com',
+            password='admin-password-123',
+        )
+        self.client.force_login(admin_user)
+
+        index_response = self.client.get(reverse('admin:index'))
+        self.assertEqual(index_response.status_code, 200)
+        app_labels = {
+            app_entry['app_label']
+            for app_entry in index_response.context['app_list']
+        }
+        mode_app_labels = {
+            'dating_profiles',
+            'hookup_profiles',
+            'sex_call_profiles',
+        }
+        self.assertTrue(mode_app_labels.issubset(app_labels))
+
+        for model, expected_profile, excluded_usernames in (
+            (DatingProfile, self.alice_profile, {'admin_hookup', 'admin_sex_call'}),
+            (HookupProfile, hookup_profile, {'alice', 'admin_sex_call'}),
+            (SexCallProfile, sex_call_profile, {'alice', 'admin_hookup'}),
+        ):
+            with self.subTest(mode=model._meta.verbose_name):
+                response = self.client.get(
+                    reverse(f'admin:{model._meta.app_label}_{model._meta.model_name}_changelist')
+                )
+
+                self.assertEqual(response.status_code, 200)
+                usernames = {
+                    profile.user.username
+                    for profile in response.context['cl'].result_list
+                }
+                self.assertIn(expected_profile.user.username, usernames)
+                self.assertTrue(excluded_usernames.isdisjoint(usernames))
+                self.assertIn(
+                    'relationship_mode',
+                    admin.site._registry[model].get_exclude(
+                        response.wsgi_request,
+                        expected_profile,
+                    ),
+                )
 
     def test_discovery_excludes_self_acted_profiles_and_other_modes(self):
         self.client.force_login(self.alice)

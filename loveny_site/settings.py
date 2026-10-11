@@ -124,6 +124,9 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'reversion',
     'dating',
+    'dating.mode_admin.dating_profiles.apps.DatingProfilesAdminConfig',
+    'dating.mode_admin.hookup_profiles.apps.HookupProfilesAdminConfig',
+    'dating.mode_admin.sex_call_profiles.apps.SexCallProfilesAdminConfig',
 ]
 
 ASGI_APPLICATION = 'loveny_site.asgi.application'
@@ -344,6 +347,9 @@ JAZZMIN_SETTINGS = {
     'order_with_respect_to': [
         'dating.SiteConfiguration',
         'auth.User',
+        'dating_profiles.DatingProfile',
+        'hookup_profiles.HookupProfile',
+        'sex_call_profiles.SexCallProfile',
         'dating.Profile',
         'dating.ProfilePhoto',
         'dating.Match',
@@ -368,6 +374,9 @@ JAZZMIN_SETTINGS = {
         'auth.User': 'fas fa-users-cog',
         'auth.Group': 'fas fa-users',
         'dating.SiteConfiguration': 'fas fa-cogs',
+        'dating_profiles.DatingProfile': 'fas fa-heart',
+        'hookup_profiles.HookupProfile': 'fas fa-fire',
+        'sex_call_profiles.SexCallProfile': 'fas fa-video',
         'dating.Profile': 'fas fa-user-circle',
         'dating.ProfilePhoto': 'fas fa-image',
         'dating.Match': 'fas fa-heart',
