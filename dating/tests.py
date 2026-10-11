@@ -7,12 +7,13 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django import forms
+from django.conf import settings
 from django.db.models import Q
 from django.contrib.auth.models import User
 from django.core import mail
 from django.core.management import call_command, CommandError
 from django.core.files.storage import default_storage
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -697,12 +698,66 @@ class DatingPlatformTests(TestCase):
         self.client.force_login(newcomer)
         response = self.client.get(reverse('contact'))
         self.assertContains(response, 'Open in-app support chat')
+        self.assertContains(response, 'support-chat-window')
         self.assertNotContains(response, 'wa.me')
         self.assertNotContains(response, 'WhatsApp')
         response = self.client.get(reverse('create_profile'))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Connection Style')
         self.assertContains(response, 'Sex Call')
+
+    def test_support_apis_return_json_for_unauthenticated_visitors(self):
+        homepage = self.client.get(reverse('index'))
+        self.assertEqual(homepage.status_code, 200)
+        anonymous_client = Client(enforce_csrf_checks=True)
+
+        endpoints = (
+            ('support_messages_api', 'get'),
+            ('support_mark_read_api', 'post'),
+            ('support_send_api', 'post'),
+        )
+
+        for endpoint, method in endpoints:
+            with self.subTest(endpoint=endpoint):
+                url = reverse(endpoint)
+                response = (
+                    anonymous_client.get(url)
+                    if method == 'get'
+                    else anonymous_client.post(
+                        url,
+                        json.dumps({'message': 'I need help'}),
+                        content_type='application/json',
+                    )
+                )
+                self.assertEqual(response.status_code, 401)
+                self.assertTrue(response.headers['Content-Type'].startswith('application/json'))
+                self.assertEqual(
+                    response.json(),
+                    {'status': 'unauthenticated', 'messages': []},
+                )
+
+    def test_jazzmin_uses_supported_default_theme_setting(self):
+        self.assertEqual(settings.JAZZMIN_UI_TWEAKS['default_theme_mode'], 'auto')
+        self.assertNotIn('dark_mode_theme', settings.JAZZMIN_UI_TWEAKS)
+
+    def test_support_apis_continue_to_work_for_authenticated_users(self):
+        self.client.force_login(self.alice)
+
+        messages_response = self.client.get(reverse('support_messages_api'))
+        self.assertEqual(messages_response.status_code, 200)
+        self.assertEqual(messages_response.json()['status'], 'success')
+
+        read_response = self.client.post(reverse('support_mark_read_api'))
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(read_response.json()['status'], 'success')
+
+        invalid_message = self.client.post(
+            reverse('support_send_api'),
+            data='{',
+            content_type='application/json',
+        )
+        self.assertEqual(invalid_message.status_code, 400)
+        self.assertEqual(invalid_message.json()['status'], 'error')
 
     def test_create_profile_submission_defaults_preferences_and_mode(self):
         new_user = User.objects.create_user(

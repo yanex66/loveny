@@ -8,12 +8,12 @@ Endpoints:
 import json
 import logging
 import threading
+from functools import wraps
 from django.conf import settings
-from django.contrib.auth.decorators import login_required
 from django.core.mail import send_mail
 from django.http import JsonResponse
 from django.urls import reverse
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_http_methods
 
 from .models import SupportTicket, SupportMessage
@@ -22,6 +22,24 @@ from .services.support_bot import process_support_inquiry
 logger = logging.getLogger(__name__)
 
 ACTIVE_TICKET_STATUSES = ['open', 'in_progress', 'needs_admin']
+
+
+def _unauthenticated_response():
+    return JsonResponse(
+        {'status': 'unauthenticated', 'messages': []},
+        status=401,
+    )
+
+
+def authenticated_support_api(view):
+    @csrf_exempt
+    @wraps(view)
+    def wrapped_view(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return _unauthenticated_response()
+        return csrf_protect(view)(request, *args, **kwargs)
+
+    return wrapped_view
 
 
 def _send_admin_email_async(ticket, message_body):
@@ -72,8 +90,8 @@ def _serialize_message(msg):
     }
 
 
-@login_required
 @require_http_methods(["POST"])
+@authenticated_support_api
 def support_send_api(request):
     """
     POST /api/support/send/
@@ -83,11 +101,18 @@ def support_send_api(request):
     """
     try:
         data = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
         return JsonResponse({'status': 'error', 'message': 'Invalid JSON.'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'status': 'error', 'message': 'Invalid request.'}, status=400)
 
-    user_message_text = (data.get('message') or '').strip()
-    current_page = (data.get('current_page') or '').strip()[:255]
+    message = data.get('message')
+    current_page = data.get('current_page', '')
+    if not isinstance(message, str) or not isinstance(current_page, str):
+        return JsonResponse({'status': 'error', 'message': 'Invalid request.'}, status=400)
+
+    user_message_text = message.strip()
+    current_page = current_page.strip()[:255]
 
     if not user_message_text:
         return JsonResponse({'status': 'error', 'message': 'Message cannot be empty.'}, status=400)
@@ -150,8 +175,8 @@ def support_send_api(request):
     })
 
 
-@login_required
 @require_http_methods(["GET"])
+@authenticated_support_api
 def support_messages_api(request):
     """
     GET /api/support/messages/
@@ -183,8 +208,8 @@ def support_messages_api(request):
     })
 
 
-@login_required
 @require_http_methods(["POST"])
+@authenticated_support_api
 def support_mark_read_api(request):
     """
     POST /api/support/mark-read/

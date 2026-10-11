@@ -314,6 +314,7 @@
 
   let isOpen = false;
   let pollTimer = null;
+  let pollingPaused = false;
   let knownMessageIds = new Set();
 
   function getCsrfToken() {
@@ -360,17 +361,35 @@
     unreadDot.style.display = show ? 'block' : 'none';
   }
 
+  function pausePolling() {
+    pollingPaused = true;
+    stopPolling();
+  }
+
+  function isJsonResponse(res) {
+    return (res.headers.get('content-type') || '').includes('application/json');
+  }
+
   // ── API Calls ──────────────────────────────────────
   async function loadMessages() {
     try {
       const res = await fetch(API_MESSAGES, { credentials: 'same-origin' });
-      if (!res.ok) return;
+      if (!res.ok || !isJsonResponse(res)) {
+        pausePolling();
+        return;
+      }
       const data = await res.json();
+      if (data.status === 'unauthenticated') {
+        pausePolling();
+        return;
+      }
       if (data.status === 'success') {
         appendMessages(data.messages);
         if (!isOpen) setUnreadDot(data.has_unread);
       }
-    } catch (e) { /* network error — silent */ }
+    } catch (e) {
+      pausePolling();
+    }
   }
 
   async function sendMessage(text) {
@@ -386,8 +405,15 @@
         },
         body: JSON.stringify({ message: text, current_page: currentPage }),
       });
-      if (!res.ok) throw new Error('Server error');
+      if (!res.ok || !isJsonResponse(res)) {
+        pausePolling();
+        throw new Error('Server error');
+      }
       const data = await res.json();
+      if (data.status === 'unauthenticated') {
+        pausePolling();
+        throw new Error('Sign in to contact support.');
+      }
       if (data.status === 'success') {
         appendMessages(data.messages);
       }
@@ -395,7 +421,9 @@
       const errBubble = document.createElement('div');
       errBubble.className = 'support-bubble from-support';
       errBubble.style.color = '#e53e3e';
-      errBubble.textContent = 'Message failed. Please try again.';
+      errBubble.textContent = e.message === 'Sign in to contact support.'
+        ? e.message
+        : 'Message failed. Please try again.';
       chatBody.appendChild(errBubble);
       scrollToBottom();
     } finally {
@@ -405,13 +433,24 @@
 
   async function markRead() {
     try {
-      await fetch(API_MARK_READ, {
+      const res = await fetch(API_MARK_READ, {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'X-CSRFToken': getCsrfToken() },
       });
+      if (!res.ok || !isJsonResponse(res)) {
+        pausePolling();
+        return;
+      }
+      const data = await res.json();
+      if (data.status === 'unauthenticated') {
+        pausePolling();
+        return;
+      }
       setUnreadDot(false);
-    } catch (e) {}
+    } catch (e) {
+      pausePolling();
+    }
   }
 
   // ── Toggle ─────────────────────────────────────────
@@ -438,7 +477,7 @@
 
   // ── Polling ────────────────────────────────────────
   function startPolling() {
-    if (pollTimer) return;
+    if (pollTimer || pollingPaused) return;
     pollTimer = setInterval(() => {
       if (isOpen) { loadMessages(); markRead(); }
     }, POLL_INTERVAL);
