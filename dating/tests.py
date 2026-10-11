@@ -82,6 +82,51 @@ class DatingPlatformTests(TestCase):
         )
         self.bob, self.bob_profile = self.make_profile('bob')
 
+    def test_admin_login_replaces_frontend_session_and_rejects_regular_credentials(self):
+        self.client.force_login(self.alice)
+
+        login_page = self.client.get('/admin/', follow=True)
+        self.assertEqual(login_page.status_code, 200)
+        self.assertContains(login_page, 'name="username"')
+        self.assertNotContains(login_page, 'You are authenticated as')
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+        self.client.force_login(self.alice)
+        login_response = self.client.post('/admin/login/', {
+            'username': self.alice.username,
+            'password': 'test-password-123',
+            'next': '/admin/',
+        })
+        self.assertEqual(login_response.status_code, 200)
+        self.assertContains(
+            login_response,
+            'Please enter a correct administrative username and password.',
+        )
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_admin_credentials_log_in_from_an_existing_frontend_session(self):
+        admin_user = User.objects.create_user(
+            username='dedicated-admin',
+            password='admin-password-123',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_login(self.alice)
+
+        response = self.client.post('/admin/login/', {
+            'username': admin_user.username,
+            'password': 'admin-password-123',
+            'next': '/admin/',
+        })
+
+        self.assertRedirects(response, '/admin/', fetch_redirect_response=False)
+        admin_page = self.client.get('/admin/')
+        self.assertEqual(admin_page.status_code, 200)
+        self.assertEqual(
+            str(self.client.session['_auth_user_id']),
+            str(admin_user.pk),
+        )
+
     def post_json(self, url, data):
         return self.client.post(url, json.dumps(data), content_type='application/json')
 
