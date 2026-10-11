@@ -55,6 +55,7 @@ from .models import (
     UserReport,
 )
 from .services.content_filter import ContentFilter
+from .utils import detect_contact_leak
 from .services.call_signals import record_call_signal
 from .forms import (
     LoginForm,
@@ -3113,20 +3114,23 @@ def conversation_send_api(request, conversation_id):
     if not text or len(text) > MAX_MESSAGE_LENGTH:
         return JsonResponse({'status': 'error', 'message': 'invalid_message'}, status=400)
 
-    # Automated Contact-Info Leak Filter: Prevent chunking across recent messages
-    recent_qs = conversation.messages.filter(
+    # Off-Platform Contact-Leak Detection (sliding-window: last 10 msgs / 10 min)
+    is_leak, detected_pattern = detect_contact_leak(
+        text,
         sender=request.user,
-        created_at__gte=timezone.now() - timedelta(minutes=3),
-    ).order_by('-created_at')[:20]
-    recent_texts = [m.text for m in reversed(recent_qs) if m.text]
-    combined_text = " ".join(recent_texts) + " " + text
-
-    is_allowed, warning_error = ContentFilter.inspect_and_record(request.user, combined_text)
-    if not is_allowed:
+        conversation=conversation,
+    )
+    if is_leak:
+        profile = request.user.profile
+        profile.off_platform_attempts = (profile.off_platform_attempts or 0) + 1
+        profile.save(update_fields=['off_platform_attempts'])
+        logger.warning(
+            'Off-platform contact leak blocked: user=%s conversation=%s pattern=%s',
+            request.user.pk, conversation.pk, detected_pattern,
+        )
         return JsonResponse({
             'status': 'error',
-            'message': 'prohibited_content',
-            'detail': warning_error,
+            'message': 'Sharing contact details off-platform is strictly prohibited.',
         }, status=400)
 
     recent_messages = conversation.messages.filter(
@@ -4221,20 +4225,24 @@ def hookup_send_message_api(request, match_id):
     if not text or len(text) > 500:
         return JsonResponse({'status': 'error', 'message': 'invalid_message'}, status=400)
 
-    # Automated Contact-Info Leak Filter: Prevent chunking across recent messages
-    recent_qs = match.messages.filter(
+    # Off-Platform Contact-Leak Detection (sliding-window: last 10 msgs / 10 min)
+    other_user = match.target if request.user == match.initiator else match.initiator
+    is_leak, detected_pattern = detect_contact_leak(
+        text,
         sender=request.user,
-        created_at__gte=timezone.now() - timedelta(minutes=3),
-    ).order_by('-created_at')[:20]
-    recent_texts = [m.text for m in reversed(recent_qs) if m.text]
-    combined_text = " ".join(recent_texts) + " " + text
-
-    is_allowed, warning_error = ContentFilter.inspect_and_record(request.user, combined_text)
-    if not is_allowed:
+        recipient=other_user,
+    )
+    if is_leak:
+        profile = request.user.profile
+        profile.off_platform_attempts = (profile.off_platform_attempts or 0) + 1
+        profile.save(update_fields=['off_platform_attempts'])
+        logger.warning(
+            'Off-platform contact leak blocked (hookup): user=%s match=%s pattern=%s',
+            request.user.pk, match.pk, detected_pattern,
+        )
         return JsonResponse({
             'status': 'error',
-            'message': 'prohibited_content',
-            'detail': warning_error,
+            'message': 'Sharing contact details off-platform is strictly prohibited.',
         }, status=400)
 
     msg = HookupMessage.objects.create(
