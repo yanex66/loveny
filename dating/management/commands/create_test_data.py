@@ -143,6 +143,7 @@ class Command(BaseCommand):
                     'whatsapp_number': f'+1999{index:07d}',
                     'first_date_idea': 'Coffee and good conversation.',
                     'last_active': timezone.now() - timedelta(minutes=rng.randint(0, 60 * 24 * 14)),
+                    'is_test_profile': True,
                 },
             )
             if profile_created:
@@ -154,12 +155,14 @@ class Command(BaseCommand):
                 profile.relationship_mode = modes[(index - 1) % len(modes)]
                 profile.last_active = timezone.now()
                 profile.show_in_discovery = True
+                profile.is_test_profile = True
                 profile.save(update_fields=[
                     'gender',
                     'preferred_gender',
                     'relationship_mode',
                     'last_active',
                     'show_in_discovery',
+                    'is_test_profile',
                 ])
 
             if not profile.photos.exists():

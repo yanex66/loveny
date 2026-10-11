@@ -85,7 +85,6 @@ class ProfileAdmin(VersionAdmin): # Inherit from VersionAdmin
     list_filter = (
         'relationship_mode', 'is_host_ready', 'is_verified', 'is_vip', 'gender',
     )
-    readonly_fields = ('is_test_profile',)
     filter_horizontal = ('tags',) # Nicer interface for ManyToMany field
     inlines = [ProfilePhotoInline] # Include photo management inline
 
@@ -365,4 +364,3 @@ class UserReportAdmin(admin.ModelAdmin):
 # ── Support Chat Widget Admin ──────────────────────────────────────────────────
 # Import to trigger registration of SupportTicket and SupportMessage in admin.
 from . import support_admin  # noqa: E402, F401
-

@@ -4,15 +4,19 @@ import tempfile
 from io import StringIO
 from datetime import timedelta
 from decimal import Decimal
+from importlib import import_module
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django import forms
+from django.apps import apps
 from django.conf import settings
+from django.db import connection
 from django.db.models import Q
 from django.contrib.auth.models import User
 from django.core import mail
-from django.core.management import call_command, CommandError
-from django.core.files.storage import default_storage
+from django.core.management import call_command
+from django.core.files.base import ContentFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -38,6 +42,7 @@ from .models import (
     SiteConfiguration,
     SubscriptionPlan,
     Swipe,
+    Tag,
     SupportKnowledgeBase,
     SupportTicket,
 )
@@ -182,12 +187,12 @@ class DatingPlatformTests(TestCase):
         )
         self.assertNotIn(hookup_profile, get_profile_batch(self.alice))
 
-    def test_test_profiles_are_hidden_from_members_and_staff_preview_is_explicit(self):
+    def test_test_profiles_are_hidden_from_members_and_staff(self):
         self.bob_profile.is_test_profile = True
         self.bob_profile.is_verified = False
-        self.bob_profile.save(update_fields=['is_test_profile', 'is_verified'])
-        self.bob.is_active = False
+        self.bob.is_active = True
         self.bob.save(update_fields=['is_active'])
+        self.bob_profile.save(update_fields=['is_test_profile', 'is_verified'])
 
         self.client.force_login(self.alice)
         response = self.client.get(reverse('get_profiles_json'))
@@ -202,256 +207,141 @@ class DatingPlatformTests(TestCase):
         staff.is_staff = True
         staff.save(update_fields=['is_staff'])
         self.client.force_login(staff)
-        session = self.client.session
-        session['staff_test_profile_preview'] = True
-        session.save()
 
-        response = self.client.get(reverse('get_profiles_json'))
-        self.assertEqual(len(response.json()['profiles']), 1)
-        self.assertEqual(response.json()['profiles'][0]['id'], self.bob.pk)
-        self.assertTrue(response.json()['profiles'][0]['is_test_profile'])
-        self.assertFalse(response.json()['profiles'][0]['is_verified'])
-
-    def test_seed_200_users_creates_disabled_staff_only_profiles_and_avatars(self):
-        with self.assertRaises(CommandError):
-            call_command('seed_200_users', stdout=StringIO())
-
-        User.objects.create_superuser(
-            username='seed-admin',
-            email='seed-admin@example.com',
-            password='safe-admin-password',
+        response = self.client.get(
+            reverse('get_profiles_json'),
+            {'test_profiles': 'on', 'preview_test_profiles': 'on'},
         )
-        with tempfile.TemporaryDirectory() as media_root:
-            with override_settings(MEDIA_ROOT=media_root):
-                output = StringIO()
-                call_command('seed_200_users', staff_only=True, stdout=output)
+        self.assertFalse(any(
+            profile['id'] == self.bob.pk
+            for profile in response.json()['profiles']
+        ))
 
-                profiles = Profile.objects.filter(is_test_profile=True)
-                self.assertEqual(profiles.count(), 200)
-                self.assertEqual(
-                    profiles.filter(relationship_mode='DATING').count(),
-                    80,
-                )
-                self.assertEqual(
-                    profiles.filter(relationship_mode='HOOKUP').count(),
-                    60,
-                )
-                self.assertEqual(
-                    profiles.filter(relationship_mode='SEX_CALL').count(),
-                    60,
-                )
-                first_user = User.objects.get(username='test_user_1001')
-                self.assertFalse(first_user.is_active)
-                self.assertFalse(first_user.has_usable_password())
-                first_profile = first_user.profile
-                self.assertFalse(first_profile.is_verified)
-                self.assertTrue(first_profile.show_in_discovery)
-                self.assertTrue(first_profile.photos.filter(is_main=True).exists())
-                photos = ProfilePhoto.objects.filter(profile__in=profiles)
-                self.assertGreaterEqual(photos.count(), 400)
-                self.assertLessEqual(photos.count(), 800)
-                for p in profiles[:10]:
-                    self.assertGreaterEqual(p.photos.count(), 2)
-                    self.assertLessEqual(p.photos.count(), 4)
-                image_names = set(photos.values_list('image', flat=True))
-                self.assertGreater(len(image_names), 10)
-                self.assertTrue(all(default_storage.exists(name) for name in list(image_names)[:20]))
-                self.assertIn('Total isolated test profiles: 200', output.getvalue())
-
-    def test_seed_qa_profiles_creates_labelled_active_profiles_repeat_safely(self):
-        User.objects.create_superuser(
-            username='qa-seed-admin',
-            email='qa-seed-admin@example.com',
-            password='safe-admin-password',
-        )
-
-        with tempfile.TemporaryDirectory() as media_root:
-            with override_settings(
-                ENABLE_QA_TEST_PROFILES=True,
-                MEDIA_ROOT=media_root,
-            ):
-                output = StringIO()
-                with self.assertRaises(CommandError):
-                    call_command('seed_qa_profiles', stdout=StringIO())
-
-                call_command(
-                    'seed_qa_profiles',
-                    confirm_qa_data=True,
-                    stdout=output,
-                )
-                profiles = Profile.objects.filter(
-                    user__username__startswith='qa_demo_',
-                    is_test_profile=True,
-                )
-                self.assertEqual(profiles.count(), 50)
-                self.assertEqual(
-                    profiles.filter(relationship_mode='DATING').count(),
-                    17,
-                )
-                self.assertEqual(
-                    profiles.filter(relationship_mode='HOOKUP').count(),
-                    17,
-                )
-                self.assertEqual(
-                    profiles.filter(relationship_mode='SEX_CALL').count(),
-                    16,
-                )
-                self.assertEqual(
-                    profiles.filter(
-                        age__gte=20,
-                        age__lte=34,
-                        min_age_pref=18,
-                        max_age_pref__gte=40,
-                        max_age_pref__lte=60,
-                        max_distance_km__gte=50,
-                        max_distance_km__lte=100,
-                        response_rate__gte=85,
-                        response_rate__lte=99,
-                        show_in_discovery=True,
-                        allow_messages=True,
-                        is_host_ready=True,
-                        is_verified=True,
-                    ).count(),
-                    50,
-                )
-                self.assertEqual(
-                    profiles.filter(user__is_active=True).count(),
-                    50,
-                )
-                self.assertTrue(all(
-                    profile.user.first_name.startswith('[TEST]')
-                    and profile.bio.startswith('[TEST PROFILE]')
-                    and 3 <= profile.tags.count() <= 5
-                    and not profile.user.has_usable_password()
-                    for profile in profiles.select_related('user').prefetch_related('tags')
-                ))
-                self.assertEqual(profiles.filter(is_vip=True).count(), 5)
-                self.assertIn('Configured 50 labelled QA profiles', output.getvalue())
-
-                call_command(
-                    'seed_qa_profiles',
-                    confirm_qa_data=True,
-                    stdout=StringIO(),
-                )
-                self.assertEqual(profiles.count(), 50)
-
-    def test_qa_profiles_are_in_public_discovery_only_when_enabled(self):
+    def test_qa_accounts_and_flagged_profiles_are_excluded_from_public_feeds(self):
         qa_user, qa_profile = self.make_profile(
-            'qa_demo_0001',
-            gender='M',
-            preferred_gender='F',
+            'qa_demo_legacy',
+            gender='F',
+            preferred_gender='M',
             mode='DATING',
         )
-        qa_user.first_name = '[TEST] Demo User 0001'
-        qa_user.save(update_fields=['first_name'])
-        qa_profile.is_test_profile = True
-        qa_profile.is_verified = True
-        qa_profile.is_host_ready = True
-        qa_profile.show_in_discovery = True
-        qa_profile.last_active = timezone.now() - timedelta(days=60)
-        qa_profile.save()
-        qa_sex_user, qa_sex_profile = self.make_profile(
-            'qa_demo_0002',
-            gender='M',
-            preferred_gender='F',
-            mode='SEX_CALL',
-        )
-        qa_sex_user.first_name = '[TEST] Demo User 0002'
-        qa_sex_user.save(update_fields=['first_name'])
-        qa_sex_profile.is_test_profile = True
-        qa_sex_profile.is_verified = True
-        qa_sex_profile.is_host_ready = True
-        qa_sex_profile.show_in_discovery = True
-        qa_sex_profile.save()
-        qa_hookup_user, qa_hookup_profile = self.make_profile(
-            'qa_demo_0003',
-            gender='M',
-            preferred_gender='F',
-            mode='HOOKUP',
-        )
-        qa_hookup_profile.is_test_profile = True
-        qa_hookup_profile.is_verified = True
-        qa_hookup_profile.is_host_ready = True
-        qa_hookup_profile.show_in_discovery = True
-        qa_hookup_profile.save()
-
-        with override_settings(ENABLE_QA_TEST_PROFILES=False):
-            self.assertNotIn(
-                qa_profile,
-                get_profile_batch(self.alice, limit=50),
-            )
-            self.alice_profile.relationship_mode = 'SEX_CALL'
-            self.alice_profile.save(update_fields=['relationship_mode'])
-            self.client.force_login(self.alice)
-            sex_hosts = self.client.get(reverse('sex_call_hosts_api')).json()['hosts']
-            online_hosts = self.client.get(reverse('online_hosts_api')).json()['hosts']
-            self.assertFalse(any(host['id'] == qa_sex_user.pk for host in sex_hosts))
-            self.assertFalse(any(host['user_id'] == qa_sex_user.pk for host in online_hosts))
-
-        with override_settings(ENABLE_QA_TEST_PROFILES=True):
-            self.alice_profile.relationship_mode = 'DATING'
-            self.alice_profile.save(update_fields=['relationship_mode'])
-            self.assertIn(
-                qa_profile,
-                get_profile_batch(self.alice, limit=50),
-            )
-            self.alice_profile.relationship_mode = 'SEX_CALL'
-            self.alice_profile.save(update_fields=['relationship_mode'])
-            sex_hosts = self.client.get(reverse('sex_call_hosts_api')).json()['hosts']
-            online_hosts = self.client.get(reverse('online_hosts_api')).json()['hosts']
-            self.assertTrue(any(host['id'] == qa_sex_user.pk for host in sex_hosts))
-            self.assertTrue(any(host['user_id'] == qa_sex_user.pk for host in online_hosts))
-
-            self.alice_profile.relationship_mode = 'HOOKUP'
-            self.alice_profile.save(update_fields=['relationship_mode'])
-            hookup_page = self.client.get(reverse('hookup_discovery'))
-            self.assertEqual(hookup_page.status_code, 200)
-            self.assertContains(hookup_page, '[TEST] Demo User')
-
-    def test_qa_profiles_bypass_hookup_distance_and_swipe_filters_and_show_without_match(self):
-        self.alice_profile.relationship_mode = 'HOOKUP'
-        self.alice_profile.latitude = 0
-        self.alice_profile.longitude = 0
-        self.alice_profile.max_distance_km = 1
-        self.alice_profile.save()
-        qa_user, qa_profile = self.make_profile(
-            'qa_demo_faraway',
-            age=34,
-            gender='O',
+        test_user, test_profile = self.make_profile(
+            'test_user_legacy',
+            gender='F',
             preferred_gender='M',
-            mode='HOOKUP',
-            latitude=6.4698,
-            longitude=3.5852,
+            mode='DATING',
         )
-        qa_user.first_name = '[TEST] Demo User Faraway'
-        qa_user.save(update_fields=['first_name'])
-        qa_profile.is_test_profile = True
-        qa_profile.is_verified = True
-        qa_profile.is_host_ready = True
-        qa_profile.show_in_discovery = True
-        qa_profile.save()
-        Swipe.objects.create(
-            swiper=self.alice,
-            swiped=qa_user,
-            type='PASS',
-            mode='HOOKUP',
+        flagged_user, flagged_profile = self.make_profile(
+            'flagged-legacy-test',
+            gender='F',
+            preferred_gender='M',
+            mode='DATING',
         )
+        qa_profile.is_test_profile = False
+        test_profile.is_test_profile = False
+        flagged_profile.is_test_profile = True
+        for profile in (qa_profile, test_profile, flagged_profile):
+            profile.save()
 
         self.client.force_login(self.alice)
-        with override_settings(ENABLE_QA_TEST_PROFILES=True):
-            self.assertIn(
-                qa_profile,
-                get_profile_batch(self.alice, limit=50),
-            )
-            response = self.client.get(reverse('match_list'))
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.context['matches'], [])
-            self.assertEqual(
-                [profile['user_id'] for profile in response.context['qa_profiles']],
-                [qa_user.pk],
-            )
-            self.assertContains(response, '[TEST] Demo User Faraway')
-            self.assertContains(response, 'does not create a mutual match')
+        excluded_user_ids = {qa_user.pk, test_user.pk, flagged_user.pk}
+        self.assertFalse(any(
+            profile.user_id in excluded_user_ids
+            for profile in get_profile_batch(self.alice, limit=50)
+        ))
+        response = self.client.get(reverse('get_profiles_json'))
+        self.assertFalse(any(
+            profile['id'] in excluded_user_ids
+            for profile in response.json()['profiles']
+        ))
+
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.save(update_fields=['relationship_mode'])
+        for user, profile in (
+            (qa_user, qa_profile),
+            (test_user, test_profile),
+            (flagged_user, flagged_profile),
+        ):
+            profile.relationship_mode = 'SEX_CALL'
+            profile.is_host_ready = True
+            profile.save(update_fields=['relationship_mode', 'is_host_ready'])
+
+        sex_call_hosts = self.client.get(reverse('sex_call_hosts_api')).json()['hosts']
+        online_hosts = self.client.get(reverse('online_hosts_api')).json()['hosts']
+        self.assertFalse(any(
+            host['id'] in excluded_user_ids for host in sex_call_hosts
+        ))
+        self.assertFalse(any(
+            host['user_id'] in excluded_user_ids for host in online_hosts
+        ))
+
+        self.alice_profile.relationship_mode = 'HOOKUP'
+        self.alice_profile.save(update_fields=['relationship_mode'])
+        hookup_response = self.client.get(reverse('hookup_discovery'))
+        for username in ('qa_demo_legacy', 'test_user_legacy', 'flagged-legacy-test'):
+            self.assertNotContains(hookup_response, username)
+
+        match_response = self.client.get(reverse('match_list'))
+        self.assertNotContains(match_response, 'QA profiles for testing')
+        self.assertNotContains(match_response, 'qa_demo_legacy')
+
+    def test_qa_cleanup_migration_removes_users_relations_and_media(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                flagged_user, flagged_profile = self.make_profile(
+                    'legacy-flagged-profile'
+                )
+                flagged_profile.is_test_profile = True
+                flagged_profile.save(update_fields=['is_test_profile'])
+                tag, _ = Tag.objects.get_or_create(name='Cleanup migration tag')
+                flagged_profile.tags.add(tag)
+
+                qa_user, _ = self.make_profile(
+                    'qa_demo_cleanup',
+                    gender='F',
+                    preferred_gender='M',
+                )
+                test_user, _ = self.make_profile(
+                    'test_user_cleanup',
+                    gender='F',
+                    preferred_gender='M',
+                )
+                orphan_user = User.objects.create_user(
+                    username='test_user_orphan',
+                    password='unused-password',
+                )
+                photo = ProfilePhoto(profile=flagged_profile, user=flagged_user)
+                photo.image.save(
+                    'cleanup-profile.svg',
+                    ContentFile(b'<svg/>'),
+                    save=True,
+                )
+                image_name = photo.image.name
+                Match.objects.create(
+                    user1=self.alice,
+                    user2=flagged_user,
+                    expires_at=timezone.now() + timedelta(days=1),
+                )
+
+                migration = import_module(
+                    'dating.migrations.0037_remove_qa_test_profiles'
+                )
+                migration.remove_qa_test_profiles(
+                    apps,
+                    SimpleNamespace(connection=connection),
+                )
+
+                self.assertFalse(User.objects.filter(
+                    pk__in=[
+                        flagged_user.pk,
+                        qa_user.pk,
+                        test_user.pk,
+                        orphan_user.pk,
+                    ]
+                ).exists())
+                self.assertFalse(Match.objects.filter(user2=flagged_user).exists())
+                self.assertFalse(ProfilePhoto.objects.filter(pk=photo.pk).exists())
+                self.assertFalse(photo.image.storage.exists(image_name))
+                self.assertTrue(Tag.objects.filter(pk=tag.pk).exists())
 
     def test_hookup_discovery_applies_distance_filter(self):
         self.alice_profile.relationship_mode = 'HOOKUP'
@@ -467,12 +357,11 @@ class DatingPlatformTests(TestCase):
             'far', mode='HOOKUP', latitude=2, longitude=0
         )
 
-        with override_settings(ENABLE_QA_TEST_PROFILES=False):
-            self.assertEqual(
-                [p.user_id for p in get_profile_batch(self.alice)],
-                [self.bob.pk],
-            )
-            self.assertNotIn(far_profile, get_profile_batch(self.alice))
+        self.assertEqual(
+            [p.user_id for p in get_profile_batch(self.alice)],
+            [self.bob.pk],
+        )
+        self.assertNotIn(far_profile, get_profile_batch(self.alice))
 
     def test_sex_call_mode_is_available_in_creation_settings_and_discovery(self):
         mode_choices = Profile._meta.get_field('relationship_mode').choices
@@ -540,12 +429,13 @@ class DatingPlatformTests(TestCase):
                 )
                 self.assertEqual(test_profiles.count(), 3)
                 self.assertEqual(ProfilePhoto.objects.filter(profile__in=test_profiles).count(), 3)
+                self.assertTrue(all(profile.is_test_profile for profile in test_profiles))
                 self.assertTrue(
                     all(profile.photos.first().image.name.endswith('.svg') for profile in test_profiles)
                 )
                 self.assertTrue(all(profile.tags.count() == 5 for profile in test_profiles))
 
-    def test_seeded_test_profiles_cover_same_gender_discovery_preferences(self):
+    def test_generated_test_profiles_are_never_discoverable(self):
         with tempfile.TemporaryDirectory() as media_root:
             with override_settings(MEDIA_ROOT=media_root):
                 call_command('create_test_data', count=27, stdout=StringIO())
@@ -554,33 +444,23 @@ class DatingPlatformTests(TestCase):
                     gender='M',
                     preferred_gender='M',
                 )
-                candidates = get_profile_batch(same_gender_user, limit=1000)
-                self.assertTrue(candidates)
-                self.assertTrue(all(profile.relationship_mode == 'DATING' for profile in candidates))
-                self.assertTrue(all(profile.gender == 'M' for profile in candidates))
-                self.assertTrue(all(profile.preferred_gender == 'M' for profile in candidates))
+                generated_user_ids = set(
+                    Profile.objects.filter(
+                        is_test_profile=True,
+                        user__username__startswith='test_profile_',
+                    ).values_list('user_id', flat=True)
+                )
+                self.assertFalse(any(
+                    profile.user_id in generated_user_ids
+                    for profile in get_profile_batch(same_gender_user, limit=1000)
+                ))
                 self.client.force_login(same_gender_user)
                 response = self.client.get(reverse('get_profiles_json'))
                 self.assertEqual(response.status_code, 200)
-                self.assertTrue(response.json()['profiles'])
-                self.assertTrue(all(
-                    profile['relationship_mode'] == 'DATING'
+                self.assertFalse(any(
+                    profile['id'] in generated_user_ids
                     for profile in response.json()['profiles']
                 ))
-
-    def test_repair_test_profile_photos_replaces_missing_files(self):
-        with tempfile.TemporaryDirectory() as media_root:
-            with override_settings(MEDIA_ROOT=media_root):
-                call_command('create_test_data', count=1, stdout=StringIO())
-                profile = Profile.objects.get(user__username='test_profile_0001')
-                default_storage.delete(profile.photos.first().image.name)
-
-                call_command('repair_test_profile_photos', stdout=StringIO())
-
-                photo = profile.photos.get()
-                self.assertTrue(photo.is_main)
-                self.assertTrue(default_storage.exists(photo.image.name))
-                self.assertTrue(photo.image.name.endswith('.svg'))
 
     def test_edit_profile_has_tabs_and_updates_account_name(self):
         self.client.force_login(self.alice)
@@ -2139,43 +2019,6 @@ class DatingPlatformTests(TestCase):
         res_charlie = self.client.get(reverse('call_room_page', args=[call.room_id]))
         self.assertEqual(res_charlie.status_code, 403)
 
-    def test_preview_test_profiles_visibility_in_discovery_and_sex_call(self):
-        test_user, test_profile = self.make_profile('test_model_1', mode='SEX_CALL')
-        test_profile.is_test_profile = True
-        test_profile.show_in_discovery = False
-        test_profile.is_host_ready = True
-        test_user.is_active = False
-        test_user.save()
-        test_profile.save()
-
-        # Standard non-staff user does not see test profile
-        self.client.force_login(self.alice)
-        res_normal = self.client.get(reverse('get_profiles_json'))
-        self.assertEqual(res_normal.status_code, 200)
-        self.assertFalse(any(p['id'] == test_profile.pk for p in res_normal.json()['profiles']))
-
-        # Staff user enables preview_test_profiles
-        staff_user, staff_profile = self.make_profile('staff_member', mode='SEX_CALL')
-        staff_user.is_staff = True
-        staff_user.save()
-        self.client.force_login(staff_user)
-
-        session = self.client.session
-        session['preview_test_profiles'] = True
-        session.save()
-
-        # In discovery JSON, test profile now appears
-        res_staff = self.client.get(reverse('get_profiles_json'))
-        self.assertEqual(res_staff.status_code, 200)
-        profiles = res_staff.json()['profiles']
-        self.assertTrue(any(p['id'] == test_profile.pk for p in profiles))
-
-        # In sex call hosts API, test profile appears for staff preview
-        res_hosts = self.client.get(reverse('sex_call_hosts_api'), {'tab': 'hot'})
-        self.assertEqual(res_hosts.status_code, 200)
-        hosts = res_hosts.json()['hosts']
-        self.assertTrue(any(h['id'] == test_profile.pk for h in hosts))
-
     def test_coin_checkout_page_renders_packages_and_closed_loop_rules(self):
         self.client.force_login(self.alice)
         self.alice_profile.relationship_mode = 'SEX_CALL'
@@ -2219,28 +2062,6 @@ class DatingPlatformTests(TestCase):
         self.assertContains(res, 'hosts-grid')
         self.assertNotContains(res, 'view-mode-swipe')
         self.assertNotContains(res, 'swipe-view-section')
-
-    def test_preview_test_profiles_via_query_param_populates_swipe_and_grid(self):
-        test_user, test_profile = self.make_profile('test_model_dual', mode='SEX_CALL')
-        test_profile.is_test_profile = True
-        test_profile.show_in_discovery = False
-        test_profile.save()
-
-        self.client.force_login(self.alice)
-        self.alice_profile.relationship_mode = 'SEX_CALL'
-        self.alice_profile.save()
-
-        # Swipe deck feed with preview_test_profiles=on
-        res_swipe = self.client.get(reverse('get_profiles_json'), {'preview_test_profiles': 'on'})
-        self.assertEqual(res_swipe.status_code, 200)
-        swipe_profiles = res_swipe.json()['profiles']
-        self.assertTrue(any(p['id'] == test_profile.pk for p in swipe_profiles))
-
-        # Grid view feed with preview_test_profiles=on
-        res_grid = self.client.get(reverse('sex_call_hosts_api'), {'preview_test_profiles': 'on'})
-        self.assertEqual(res_grid.status_code, 200)
-        grid_hosts = res_grid.json()['hosts']
-        self.assertTrue(any(h['id'] == test_profile.pk for h in grid_hosts))
 
     def test_direct_calling_without_match_in_sex_call_mode_and_dnd_check(self):
         host_user, host_profile = self.make_profile('host_linda', mode='SEX_CALL', age=23)

@@ -113,34 +113,6 @@
                 {% endif %}
             </div>
         {% endif %}
-
-        {% if qa_profiles %}
-            <section class="mt-10" aria-labelledby="qa-profiles-title">
-                <header class="mb-4 text-center">
-                    <h2 id="qa-profiles-title" class="text-lg font-black uppercase tracking-wide text-slate-700">
-                        QA profiles for testing
-                    </h2>
-                    <p class="mt-1 text-xs font-medium text-slate-500">
-                        Clearly labelled synthetic profiles; viewing them does not create a mutual match.
-                    </p>
-                </header>
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {% for profile in qa_profiles %}
-                    <article class="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50/80 p-3">
-                        <img src="{{ profile.avatar }}" alt="{{ profile.name }}" class="h-14 w-14 rounded-xl border border-amber-200 object-cover">
-                        <div class="min-w-0 flex-1">
-                            <h3 class="truncate text-sm font-black text-slate-900">{{ profile.name }}</h3>
-                            <p class="text-xs text-slate-600">{{ profile.age }} · {{ profile.location }}</p>
-                            <span class="mt-1 inline-block rounded-full bg-amber-200 px-2 py-0.5 text-[9px] font-black uppercase text-amber-900">QA test profile</span>
-                        </div>
-                        <a href="{% url 'public_profile' profile.user_id %}" class="shrink-0 rounded-xl bg-amber-500 px-3 py-2 text-[10px] font-black uppercase text-white">
-                            View
-                        </a>
-                    </article>
-                    {% endfor %}
-                </div>
-            </section>
-        {% endif %}
     </main>
 </div>
 {% endblock %}

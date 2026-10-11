@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     region: ohio
-    buildCommand: pip install -r requirements.txt && python manage.py migrate && python create_admin.py && python manage.py seed_qa_profiles --confirm-qa-data && python manage.py collectstatic --noinput --clear
+    buildCommand: pip install -r requirements.txt && python manage.py migrate && python create_admin.py && python manage.py collectstatic --noinput --clear
     startCommand: daphne -b 0.0.0.0 -p $PORT loveny_site.asgi:application
     healthCheckPath: /
     envVars:
@@ -14,8 +14,6 @@ services:
         generateValue: true
       - key: DJANGO_DEBUG
         value: "false"
-      - key: ENABLE_QA_TEST_PROFILES
-        value: "true"
       - key: DATABASE_URL
         sync: false
       - key: CLOUDINARY_URL
