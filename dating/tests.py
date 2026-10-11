@@ -258,6 +258,155 @@ class DatingPlatformTests(TestCase):
                 self.assertTrue(all(default_storage.exists(name) for name in list(image_names)[:20]))
                 self.assertIn('Total isolated test profiles: 200', output.getvalue())
 
+    def test_seed_qa_profiles_creates_labelled_active_profiles_repeat_safely(self):
+        User.objects.create_superuser(
+            username='qa-seed-admin',
+            email='qa-seed-admin@example.com',
+            password='safe-admin-password',
+        )
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(
+                ENABLE_QA_TEST_PROFILES=True,
+                MEDIA_ROOT=media_root,
+            ):
+                output = StringIO()
+                with self.assertRaises(CommandError):
+                    call_command('seed_qa_profiles', stdout=StringIO())
+
+                call_command(
+                    'seed_qa_profiles',
+                    confirm_qa_data=True,
+                    stdout=output,
+                )
+                profiles = Profile.objects.filter(
+                    user__username__startswith='qa_demo_',
+                    is_test_profile=True,
+                )
+                self.assertEqual(profiles.count(), 50)
+                self.assertEqual(
+                    profiles.filter(relationship_mode='DATING').count(),
+                    17,
+                )
+                self.assertEqual(
+                    profiles.filter(relationship_mode='HOOKUP').count(),
+                    17,
+                )
+                self.assertEqual(
+                    profiles.filter(relationship_mode='SEX_CALL').count(),
+                    16,
+                )
+                self.assertEqual(
+                    profiles.filter(
+                        age__gte=20,
+                        age__lte=34,
+                        min_age_pref=18,
+                        max_age_pref__gte=40,
+                        max_age_pref__lte=60,
+                        max_distance_km__gte=50,
+                        max_distance_km__lte=100,
+                        response_rate__gte=85,
+                        response_rate__lte=99,
+                        show_in_discovery=True,
+                        allow_messages=True,
+                        is_host_ready=True,
+                        is_verified=True,
+                    ).count(),
+                    50,
+                )
+                self.assertEqual(
+                    profiles.filter(user__is_active=True).count(),
+                    50,
+                )
+                self.assertTrue(all(
+                    profile.user.first_name.startswith('[TEST]')
+                    and profile.bio.startswith('[TEST PROFILE]')
+                    and 3 <= profile.tags.count() <= 5
+                    and not profile.user.has_usable_password()
+                    for profile in profiles.select_related('user').prefetch_related('tags')
+                ))
+                self.assertEqual(profiles.filter(is_vip=True).count(), 5)
+                self.assertIn('Configured 50 labelled QA profiles', output.getvalue())
+
+                call_command(
+                    'seed_qa_profiles',
+                    confirm_qa_data=True,
+                    stdout=StringIO(),
+                )
+                self.assertEqual(profiles.count(), 50)
+
+    def test_qa_profiles_are_in_public_discovery_only_when_enabled(self):
+        qa_user, qa_profile = self.make_profile(
+            'qa_demo_0001',
+            gender='M',
+            preferred_gender='F',
+            mode='DATING',
+        )
+        qa_user.first_name = '[TEST] Demo User 0001'
+        qa_user.save(update_fields=['first_name'])
+        qa_profile.is_test_profile = True
+        qa_profile.is_verified = True
+        qa_profile.is_host_ready = True
+        qa_profile.show_in_discovery = True
+        qa_profile.save()
+        qa_sex_user, qa_sex_profile = self.make_profile(
+            'qa_demo_0002',
+            gender='M',
+            preferred_gender='F',
+            mode='SEX_CALL',
+        )
+        qa_sex_user.first_name = '[TEST] Demo User 0002'
+        qa_sex_user.save(update_fields=['first_name'])
+        qa_sex_profile.is_test_profile = True
+        qa_sex_profile.is_verified = True
+        qa_sex_profile.is_host_ready = True
+        qa_sex_profile.show_in_discovery = True
+        qa_sex_profile.save()
+        qa_hookup_user, qa_hookup_profile = self.make_profile(
+            'qa_demo_0003',
+            gender='M',
+            preferred_gender='F',
+            mode='HOOKUP',
+        )
+        qa_hookup_profile.is_test_profile = True
+        qa_hookup_profile.is_verified = True
+        qa_hookup_profile.is_host_ready = True
+        qa_hookup_profile.show_in_discovery = True
+        qa_hookup_profile.save()
+
+        with override_settings(ENABLE_QA_TEST_PROFILES=False):
+            self.assertNotIn(
+                qa_profile,
+                get_profile_batch(self.alice, limit=50),
+            )
+            self.alice_profile.relationship_mode = 'SEX_CALL'
+            self.alice_profile.save(update_fields=['relationship_mode'])
+            self.client.force_login(self.alice)
+            sex_hosts = self.client.get(reverse('sex_call_hosts_api')).json()['hosts']
+            online_hosts = self.client.get(reverse('online_hosts_api')).json()['hosts']
+            self.assertFalse(any(host['id'] == qa_sex_user.pk for host in sex_hosts))
+            self.assertFalse(any(host['user_id'] == qa_sex_user.pk for host in online_hosts))
+
+        with override_settings(ENABLE_QA_TEST_PROFILES=True):
+            self.alice_profile.relationship_mode = 'DATING'
+            self.alice_profile.save(update_fields=['relationship_mode'])
+            self.assertIn(
+                qa_profile,
+                get_profile_batch(self.alice, limit=50),
+            )
+            self.alice_profile.relationship_mode = 'SEX_CALL'
+            self.alice_profile.save(update_fields=['relationship_mode'])
+            sex_hosts = self.client.get(reverse('sex_call_hosts_api')).json()['hosts']
+            online_hosts = self.client.get(reverse('online_hosts_api')).json()['hosts']
+            self.assertTrue(any(host['id'] == qa_sex_user.pk for host in sex_hosts))
+            self.assertTrue(any(host['user_id'] == qa_sex_user.pk for host in online_hosts))
+
+            self.alice_profile.relationship_mode = 'HOOKUP'
+            self.alice_profile.save(update_fields=['relationship_mode'])
+            hookup_page = self.client.get(reverse('hookup_discovery'))
+            self.assertEqual(hookup_page.status_code, 200)
+            self.assertContains(hookup_page, '[TEST] Demo User')
+
     def test_hookup_discovery_applies_distance_filter(self):
         self.alice_profile.relationship_mode = 'HOOKUP'
         self.alice_profile.latitude = 0

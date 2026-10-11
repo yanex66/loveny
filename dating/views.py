@@ -142,10 +142,12 @@ def _candidate_queryset(user, include_test_profiles=False):
         # Staff/admin preview mode:
         # Guarantee seeded test profiles immediately appear without being blocked
         # by location, distance, last_active, show_in_discovery, or swipe history filters.
-        qs = Profile.objects.exclude(user=user).filter(
-            Q(is_test_profile=True)
-            | Q(user__username__startswith='test_')
-            | Q(user__username__startswith='testuser_')
+        qs = _public_test_profile_fallback(
+            Profile.objects.exclude(user=user).filter(
+                Q(is_test_profile=True)
+                | Q(user__username__startswith='test_')
+                | Q(user__username__startswith='testuser_')
+            )
         )
         if target_gender and qs.filter(gender=target_gender).exists():
             qs = qs.filter(gender=target_gender)
@@ -179,13 +181,22 @@ def _candidate_queryset(user, include_test_profiles=False):
     if not is_sex_call_mode and current_profile.gender in ('M', 'F'):
         filters['preferred_gender'] = current_profile.gender
 
-    candidates = (
-        Profile.objects.exclude(user=user)
-        .exclude(user_id__in=Subquery(swiped_ids))
-        .filter(**filters)
-        .select_related('user')
-        .prefetch_related('photos', 'tags')
-    )
+    if settings.ENABLE_QA_TEST_PROFILES:
+        candidate_filters = {key: value for key, value in filters.items() if key != 'is_test_profile'}
+        candidates = Profile.objects.exclude(user=user).exclude(
+            user_id__in=Subquery(swiped_ids)
+        ).filter(
+            Q(is_test_profile=False)
+            | Q(is_test_profile=True, user__username__startswith='qa_demo_'),
+            **candidate_filters,
+        )
+    else:
+        candidates = (
+            Profile.objects.exclude(user=user)
+            .exclude(user_id__in=Subquery(swiped_ids))
+            .filter(**filters)
+        )
+    candidates = candidates.select_related('user').prefetch_related('photos', 'tags')
 
     if not candidates.exists():
         real_fallback = (
@@ -200,10 +211,12 @@ def _candidate_queryset(user, include_test_profiles=False):
         elif real_fallback.exists():
             candidates = real_fallback
         elif is_sex_call_mode:
-            test_qs = Profile.objects.exclude(user=user).filter(
-                Q(is_test_profile=True)
-                | Q(user__username__startswith='test_')
-                | Q(user__username__startswith='testuser_')
+            test_qs = _public_test_profile_fallback(
+                Profile.objects.exclude(user=user).filter(
+                    Q(is_test_profile=True)
+                    | Q(user__username__startswith='test_')
+                    | Q(user__username__startswith='testuser_')
+                )
             )
             if target_gender and test_qs.filter(gender=target_gender).exists():
                 test_qs = test_qs.filter(gender=target_gender)
@@ -213,6 +226,12 @@ def _candidate_queryset(user, include_test_profiles=False):
             return test_qs.select_related('user').prefetch_related('photos', 'tags')
 
     return candidates
+
+
+def _public_test_profile_fallback(queryset):
+    if settings.ENABLE_QA_TEST_PROFILES:
+        return queryset
+    return queryset.exclude(user__username__startswith='qa_demo_')
 
 
 def _distance_km(latitude_a, longitude_a, latitude_b, longitude_b):
@@ -2227,13 +2246,26 @@ def online_hosts_api(request):
             target_gender = 'M'
 
     if include_test_profiles:
-        test_qs = base_qs.filter(Q(is_test_profile=True) | Q(user__username__startswith='test_user_'))
+        test_qs = _public_test_profile_fallback(
+            base_qs.filter(
+                Q(is_test_profile=True)
+                | Q(user__username__startswith='test_user_')
+            )
+        )
         if target_gender and test_qs.filter(gender=target_gender).exists():
             test_qs = test_qs.filter(gender=target_gender)
         sc_qs = test_qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
         hosts = list((sc_qs if sc_qs.exists() else (test_qs if test_qs.exists() else base_qs))[:24])
     else:
-        real_qs = base_qs.filter(is_test_profile=False, user__is_active=True)
+        if settings.ENABLE_QA_TEST_PROFILES:
+            real_qs = base_qs.filter(
+                user__is_active=True,
+            ).filter(
+                Q(is_test_profile=False)
+                | Q(is_test_profile=True, user__username__startswith='qa_demo_')
+            )
+        else:
+            real_qs = base_qs.filter(is_test_profile=False, user__is_active=True)
         if real_qs.exists():
             if target_gender and real_qs.filter(gender=target_gender).exists():
                 matched_real = real_qs.filter(gender=target_gender)
@@ -2241,19 +2273,23 @@ def online_hosts_api(request):
                 matched_real = real_qs
             hosts = list(matched_real.order_by('-is_host_ready', '-last_active')[:24])
             if len(hosts) < 8:
-                test_qs = base_qs.filter(
-                    Q(is_test_profile=True)
-                    | Q(user__username__startswith='test_')
-                    | Q(user__username__startswith='testuser_')
+                test_qs = _public_test_profile_fallback(
+                    base_qs.filter(
+                        Q(is_test_profile=True)
+                        | Q(user__username__startswith='test_')
+                        | Q(user__username__startswith='testuser_')
+                    )
                 )
                 if target_gender and test_qs.filter(gender=target_gender).exists():
                     test_qs = test_qs.filter(gender=target_gender)
                 hosts.extend(list(test_qs[:(8 - len(hosts))]))
         else:
-            test_qs = base_qs.filter(
-                Q(is_test_profile=True)
-                | Q(user__username__startswith='test_')
-                | Q(user__username__startswith='testuser_')
+            test_qs = _public_test_profile_fallback(
+                base_qs.filter(
+                    Q(is_test_profile=True)
+                    | Q(user__username__startswith='test_')
+                    | Q(user__username__startswith='testuser_')
+                )
             )
             if target_gender and test_qs.filter(gender=target_gender).exists():
                 test_qs = test_qs.filter(gender=target_gender)
@@ -3350,17 +3386,25 @@ def sex_call_hosts_api(request):
     target_gender = 'F' if user_gender == 'M' else ('M' if user_gender == 'F' else None)
 
     if include_test_profiles:
-        test_qs = base_qs.filter(
+        test_qs = _public_test_profile_fallback(base_qs.filter(
             Q(is_test_profile=True)
             | Q(user__username__startswith='test_')
             | Q(user__username__startswith='testuser_')
-        )
+        ))
         if target_gender and test_qs.filter(gender=target_gender).exists():
             test_qs = test_qs.filter(gender=target_gender)
         sc_test = test_qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
         hosts_list = list((sc_test if sc_test.exists() else (test_qs if test_qs.exists() else base_qs)).select_related('user').prefetch_related('photos')[:50])
     else:
-        real_qs = base_qs.filter(is_test_profile=False, user__is_active=True)
+        if settings.ENABLE_QA_TEST_PROFILES:
+            real_qs = base_qs.filter(
+                user__is_active=True,
+            ).filter(
+                Q(is_test_profile=False)
+                | Q(is_test_profile=True, user__username__startswith='qa_demo_')
+            )
+        else:
+            real_qs = base_qs.filter(is_test_profile=False, user__is_active=True)
         if real_qs.exists():
             if target_gender and real_qs.filter(gender=target_gender).exists():
                 matched_real = real_qs.filter(gender=target_gender)
@@ -3371,11 +3415,11 @@ def sex_call_hosts_api(request):
                 .order_by('-is_host_ready', '-last_active')[:50]
             )
             if len(hosts_list) < 12:
-                test_qs = base_qs.filter(
+                test_qs = _public_test_profile_fallback(base_qs.filter(
                     Q(is_test_profile=True)
                     | Q(user__username__startswith='test_')
                     | Q(user__username__startswith='testuser_')
-                )
+                ))
                 if target_gender and test_qs.filter(gender=target_gender).exists():
                     test_qs = test_qs.filter(gender=target_gender)
                 sc_test = test_qs.filter(Q(relationship_mode__iexact='sex_call') | Q(relationship_mode='SEX_CALL'))
@@ -3383,10 +3427,12 @@ def sex_call_hosts_api(request):
                 supplement = list(supplement_qs.select_related('user').prefetch_related('photos')[:(12 - len(hosts_list))])
                 hosts_list.extend(supplement)
         else:
-            test_qs = base_qs.filter(
-                Q(is_test_profile=True)
-                | Q(user__username__startswith='test_')
-                | Q(user__username__startswith='testuser_')
+            test_qs = _public_test_profile_fallback(
+                base_qs.filter(
+                    Q(is_test_profile=True)
+                    | Q(user__username__startswith='test_')
+                    | Q(user__username__startswith='testuser_')
+                )
             )
             if target_gender and test_qs.filter(gender=target_gender).exists():
                 test_qs = test_qs.filter(gender=target_gender)
@@ -3621,6 +3667,8 @@ def hookup_discovery_view(request):
 
     # Available profiles for hookup
     base_qs = Profile.objects.exclude(user=request.user).exclude(user_id__in=blocked_ids).filter(show_in_discovery=True, incognito_mode=False)
+    if not settings.ENABLE_QA_TEST_PROFILES:
+        base_qs = base_qs.exclude(user__username__startswith='qa_demo_')
     target_gender = 'F' if profile.gender == 'M' else ('M' if profile.gender == 'F' else None)
     if target_gender:
         candidates_qs = base_qs.filter(gender=target_gender)
