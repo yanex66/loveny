@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 from io import StringIO
 from datetime import timedelta
@@ -81,6 +82,23 @@ class DatingPlatformTests(TestCase):
             'alice', age=26, gender='F', preferred_gender='M'
         )
         self.bob, self.bob_profile = self.make_profile('bob')
+
+    def test_admin_provisioning_requires_a_nonempty_environment_password(self):
+        from create_admin import main as create_admin
+
+        error = (
+            'FATAL: ADMIN_PASSWORD environment variable is not configured. '
+            'Aborting admin provisioning.'
+        )
+        for password in (None, ''):
+            with self.subTest(password_is_set=password is not None):
+                with patch.dict(os.environ):
+                    if password is None:
+                        os.environ.pop('ADMIN_PASSWORD', None)
+                    else:
+                        os.environ['ADMIN_PASSWORD'] = password
+                    with self.assertRaisesRegex(SystemExit, error):
+                        create_admin()
 
     def test_admin_login_replaces_frontend_session_and_rejects_regular_credentials(self):
         self.client.force_login(self.alice)

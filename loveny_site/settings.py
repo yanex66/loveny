@@ -4,6 +4,7 @@ Updated for Production Deployment.
 """
 
 import os
+import secrets
 from pathlib import Path
 
 import dj_database_url
@@ -36,7 +37,7 @@ if not SECRET_KEY:
         raise ImproperlyConfigured(
             'Set DJANGO_SECRET_KEY in the environment when DEBUG is disabled.'
         )
-    SECRET_KEY = 'django-insecure-local-development-only-key'
+    SECRET_KEY = secrets.token_urlsafe(50)
 
 IS_RENDER = os.environ.get('RENDER', '').strip().lower() == 'true'
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '').strip()

@@ -11,7 +11,12 @@ from django.contrib.auth import get_user_model
 
 def main():
     admin_username = os.environ.get("ADMIN_USERNAME", "loveny")
-    admin_password = os.environ.get("ADMIN_PASSWORD", "loveny2025")
+    admin_password = os.environ.get("ADMIN_PASSWORD")
+    if admin_password is None or admin_password == "":
+        raise SystemExit(
+            "FATAL: ADMIN_PASSWORD environment variable is not configured. "
+            "Aborting admin provisioning."
+        )
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@loveny.com")
     user_model = get_user_model()
     username_field = user_model.USERNAME_FIELD
