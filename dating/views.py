@@ -3647,10 +3647,12 @@ def hookup_request_api(request):
     ).exclude(status__in=('declined', 'expired')).first()
 
     if existing:
+        request_direction = 'incoming' if existing.target_id == request.user.pk else 'outgoing'
         return JsonResponse({
             'status': 'exists',
             'match_id': str(existing.id),
             'match_status': existing.status,
+            'request_direction': request_direction,
             'message': 'A connection request already exists between you and this user.',
         })
 

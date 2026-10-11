@@ -2750,7 +2750,25 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(request_response.status_code, 201)
         match_id = request_response.json()['match_id']
 
+        duplicate_response = self.post_json(
+            reverse('hookup_request_api'),
+            {'target_id': self.bob.pk},
+        )
+        self.assertEqual(duplicate_response.status_code, 200)
+        self.assertEqual(duplicate_response.json()['status'], 'exists')
+        self.assertEqual(duplicate_response.json()['request_direction'], 'outgoing')
+        self.assertEqual(HookupMatch.objects.count(), 1)
+
         self.client.force_login(self.bob)
+        reverse_response = self.post_json(
+            reverse('hookup_request_api'),
+            {'target_id': self.alice.pk},
+        )
+        self.assertEqual(reverse_response.status_code, 200)
+        self.assertEqual(reverse_response.json()['status'], 'exists')
+        self.assertEqual(reverse_response.json()['request_direction'], 'incoming')
+        self.assertEqual(HookupMatch.objects.count(), 1)
+
         notifications = self.client.get(reverse('global_notifications_api')).json()
         self.assertEqual(
             notifications['incoming_hookup_requests'],

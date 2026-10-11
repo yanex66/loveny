@@ -255,8 +255,17 @@
                 body: JSON.stringify({ target_id: targetId }),
             });
             const data = await res.json();
-            if (res.ok) {
-                alert(`⚡ Request sent to ${name}! Check your Match Inbox once they accept.`);
+            if (res.ok && data.status === 'success') {
+                alert(`⚡ Request sent to ${name}! They can accept or decline it from their Hookup inbox.`);
+                location.reload();
+            } else if (res.ok && data.status === 'exists') {
+                if (data.request_direction === 'incoming') {
+                    alert(`⚡ ${name} has already sent you a request. Open your Hookup inbox to respond.`);
+                } else if (data.match_status === 'pending') {
+                    alert(`⚡ You have already sent ${name} a request. It is waiting in their Hookup inbox.`);
+                } else {
+                    alert(`⚡ A connection with ${name} is already ${data.match_status}.`);
+                }
                 location.reload();
             } else {
                 alert(data.message || 'Could not send request');
