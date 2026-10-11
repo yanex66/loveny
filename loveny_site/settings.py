@@ -390,8 +390,7 @@ JAZZMIN_SETTINGS = {
     },
     'default_icon_parents': 'fas fa-folder',
     'default_icon_children': 'fas fa-circle',
-    # Enable UI builder so user can tweak or reset themes
-    'show_ui_builder': True,
+    'show_ui_builder': False,
     'custom_css': 'dating/css/admin_custom.css',
     'custom_js': 'dating/js/clear_jazzmin.js',
 }
