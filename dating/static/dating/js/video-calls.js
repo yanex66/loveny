@@ -230,7 +230,7 @@
 
     // --- Wallet Management ---
     async function fetchWallet() {
-        if (!config.dataset.walletUrl) return;
+        if (config.dataset.authenticated !== 'true' || !config.dataset.walletUrl) return;
         try {
             const data = await api(config.dataset.walletUrl);
             if (data.status === 'success') {
@@ -255,6 +255,20 @@
         } catch (err) {
             console.warn('Could not load wallet data.', err);
         }
+    }
+
+    async function processVisitRewards() {
+        if (config.dataset.authenticated !== 'true') return;
+        if (!config.dataset.visitRewardsUrl) {
+            await fetchWallet();
+            return;
+        }
+        try {
+            await api(config.dataset.visitRewardsUrl, {method: 'POST'});
+        } catch (err) {
+            console.warn('Could not process visit rewards.', err);
+        }
+        await fetchWallet();
     }
 
     function updateWalletUI() {
@@ -1598,10 +1612,9 @@
     }
 
     // Initialize on load
-    fetchWallet();
+    processVisitRewards();
     fetchCoinPackages();
     fetchGifts();
-    checkAndShowRewardPopups();
 
     // Export global helpers
     window.lovenyStartVideoCall = initiateCall;

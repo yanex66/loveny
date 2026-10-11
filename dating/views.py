@@ -182,13 +182,26 @@ def _candidate_queryset(user, include_test_profiles=False):
         filters['preferred_gender'] = current_profile.gender
 
     if settings.ENABLE_QA_TEST_PROFILES:
-        candidate_filters = {key: value for key, value in filters.items() if key != 'is_test_profile'}
-        candidates = Profile.objects.exclude(user=user).exclude(
-            user_id__in=Subquery(swiped_ids)
-        ).filter(
-            Q(is_test_profile=False)
-            | Q(is_test_profile=True, user__username__startswith='qa_demo_'),
-            **candidate_filters,
+        qa_filters = {
+            'is_test_profile': True,
+            'user__username__startswith': 'qa_demo_',
+            'user__is_active': True,
+            'incognito_mode': False,
+        }
+        if not is_sex_call_mode:
+            qa_filters['relationship_mode'] = current_profile.relationship_mode
+        qa_profiles = Profile.objects.filter(**qa_filters)
+        regular_filters = {
+            **filters,
+            'user__is_active': True,
+        }
+        regular_profiles = (
+            Profile.objects.exclude(user_id__in=Subquery(swiped_ids))
+            .filter(**regular_filters)
+        )
+        candidates = Profile.objects.exclude(user=user).filter(
+            Q(pk__in=regular_profiles.values('pk'))
+            | Q(pk__in=qa_profiles.values('pk'))
         )
     else:
         candidates = (
@@ -266,6 +279,7 @@ def get_profile_batch(user, limit=10, include_test_profiles=False):
         current_profile.relationship_mode != 'HOOKUP'
         or current_profile.latitude is None
         or include_test_profiles
+        or settings.ENABLE_QA_TEST_PROFILES
     ):
         return list(candidates[:limit])
 
@@ -790,6 +804,10 @@ def swipe_action(request):
 @login_required
 def match_list(request):
     viewer_profile = Profile.objects.filter(user=request.user).first()
+    active_mode = request.session.get(
+        'active_connection_mode',
+        viewer_profile.relationship_mode if viewer_profile else 'DATING',
+    )
     call_rate = SiteConfiguration.get_solo().call_rate_per_minute or 20
     matches = Match.objects.filter(
         Q(user1=request.user) | Q(user2=request.user),
@@ -801,14 +819,20 @@ def match_list(request):
         profile = Profile.objects.filter(user=other).first()
         if not profile:
             continue
-        if profile.is_test_profile and not (
-            request.user.is_staff
-            and (
+        if profile.is_test_profile:
+            is_qa_profile = (
+                settings.ENABLE_QA_TEST_PROFILES
+                and other.username.startswith('qa_demo_')
+                and other.is_active
+            )
+            is_staff_preview = (
+                request.user.is_staff or request.user.is_superuser
+            ) and (
                 request.session.get('staff_test_profile_preview')
                 or request.session.get('preview_test_profiles')
             )
-        ):
-            continue
+            if not is_qa_profile and not is_staff_preview:
+                continue
         payload = _profile_payload(profile)
         data.append({
             'id': m.pk,
@@ -836,8 +860,34 @@ def match_list(request):
             ),
             'is_online': bool(profile.is_host_ready or (profile.last_active and (timezone.now() - profile.last_active).total_seconds() < 1800)),
         })
+    qa_profiles = []
+    if settings.ENABLE_QA_TEST_PROFILES and viewer_profile:
+        qa_profiles = [
+            {
+                'user_id': profile.user_id,
+                'username': profile.user.username,
+                'name': profile.user.first_name or profile.user.username,
+                'avatar': _profile_payload(profile)['image_url'],
+                'age': profile.age,
+                'location': profile.location or 'Nearby',
+                'mode': profile.relationship_mode,
+            }
+            for profile in Profile.objects.filter(
+                is_test_profile=True,
+                user__username__startswith='qa_demo_',
+                user__is_active=True,
+                show_in_discovery=True,
+                incognito_mode=False,
+                relationship_mode=active_mode,
+            ).exclude(user=request.user).select_related('user').prefetch_related(
+                'photos',
+                'tags',
+            ).order_by('user__username')[:50]
+        ]
     return render(request, 'dating/match_list.html', {
         'matches': data,
+        'qa_profiles': qa_profiles,
+        'active_connection_mode': active_mode,
     })
 
 @login_required
@@ -2010,6 +2060,113 @@ def wallet_balance_api(request):
         'checkin_streak': streak,
         'cycle_day': cycle_day,
         'welcome_bonus_coins': getattr(site_config, 'welcome_bonus_coins', 30),
+    })
+
+
+@login_required
+@require_POST
+def wallet_visit_rewards_api(request):
+    """Idempotently grant first-visit and daily rewards for the current day."""
+    profile = Profile.objects.filter(user=request.user).first()
+    if not profile:
+        return JsonResponse(
+            {'status': 'error', 'message': 'profile_required'},
+            status=400,
+        )
+
+    today = timezone.localdate()
+    yesterday = today - timedelta(days=1)
+    site_config = SiteConfiguration.get_solo()
+    welcome_coins = getattr(site_config, 'welcome_bonus_coins', 30) or 30
+    daily_coins = getattr(site_config, 'daily_checkin_coins', 5) or 5
+    d7_coins = getattr(site_config, 'day_7_bonus_coins', 10) or 10
+    d7_diamonds = getattr(site_config, 'day_7_bonus_diamonds', 20) or 20
+
+    with transaction.atomic():
+        profile = Profile.objects.select_for_update().get(pk=profile.pk)
+        welcome_awarded = not (
+            profile.has_claimed_welcome
+            or CoinTransaction.objects.filter(
+                user=request.user,
+                transaction_type='WELCOME_BONUS',
+            ).exists()
+        )
+        daily_awarded = not (
+            profile.last_checkin_date == today
+            or CoinTransaction.objects.filter(
+                user=request.user,
+                transaction_type='DAILY_CHECKIN',
+                created_at__date=today,
+            ).exists()
+        )
+        diamonds_awarded = 0
+        daily_amount = 0
+
+        if welcome_awarded:
+            profile.coin_balance += welcome_coins
+            profile.has_claimed_welcome = True
+            CoinTransaction.objects.create(
+                user=request.user,
+                amount=welcome_coins,
+                transaction_type='WELCOME_BONUS',
+                description=f'Newcomer Joining Reward (+{welcome_coins} Coins)',
+            )
+
+        if daily_awarded:
+            if profile.last_checkin_date == yesterday and profile.checkin_streak > 0:
+                profile.checkin_streak = (profile.checkin_streak % 7) + 1
+            else:
+                profile.checkin_streak = 1
+            daily_amount = (
+                d7_coins if profile.checkin_streak == 7 else daily_coins
+            )
+            if profile.checkin_streak == 7:
+                diamonds_awarded = d7_diamonds
+            profile.coin_balance += daily_amount
+            profile.earned_diamonds += diamonds_awarded
+            profile.last_checkin_date = today
+            description = (
+                f'Day {profile.checkin_streak} Daily Check-In '
+                f'(+{daily_amount} Coins)'
+            )
+            if diamonds_awarded:
+                description = (
+                    f'Day 7 Streak Grand Prize (+{daily_amount} Coins, '
+                    f'+{diamonds_awarded} Diamonds)'
+                )
+            CoinTransaction.objects.create(
+                user=request.user,
+                amount=daily_amount,
+                transaction_type='DAILY_CHECKIN',
+                description=description,
+            )
+
+        if welcome_awarded or daily_awarded:
+            profile.save(update_fields=[
+                'coin_balance',
+                'earned_diamonds',
+                'checkin_streak',
+                'last_checkin_date',
+                'has_claimed_welcome',
+            ])
+            wallet, _ = CoinWallet.objects.select_for_update().get_or_create(
+                user=request.user,
+                defaults={'coin_balance': profile.coin_balance},
+            )
+            wallet.coin_balance = profile.coin_balance
+            wallet.save(update_fields=['coin_balance'])
+
+    return JsonResponse({
+        'status': 'success',
+        'welcome_awarded': welcome_coins if welcome_awarded else 0,
+        'daily_awarded': daily_amount,
+        'diamonds_awarded': diamonds_awarded,
+        'coin_balance': profile.coin_balance,
+        'earned_diamonds': profile.earned_diamonds,
+        'has_claimed_welcome': profile.has_claimed_welcome,
+        'has_checked_in_today': profile.last_checkin_date == today,
+        'checkin_streak': profile.checkin_streak,
+        'cycle_day': profile.checkin_streak or 1,
     })
 
 

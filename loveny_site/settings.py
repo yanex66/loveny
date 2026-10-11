@@ -43,7 +43,7 @@ IS_RENDER = os.environ.get('RENDER', '').strip().lower() == 'true'
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '').strip()
 ENABLE_QA_TEST_PROFILES = os.environ.get(
     'ENABLE_QA_TEST_PROFILES',
-    'false',
+    'true',
 ).strip().lower() in {'1', 'true', 'yes'}
 
 CLOUDINARY_URL = os.environ.get('CLOUDINARY_URL', '').strip()

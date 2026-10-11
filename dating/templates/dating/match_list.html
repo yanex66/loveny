@@ -98,10 +98,48 @@
                 <p class="text-slate-500 max-w-xs mx-auto mb-8 text-sm leading-relaxed">
                     When you and someone like each other, your mutual matches will appear here.
                 </p>
-                <a href="{% if user.profile.relationship_mode == 'SEX_CALL' %}{% url 'sex_call_hub' %}{% else %}{% url 'swipe_card' %}{% endif %}" class="px-8 py-3.5 brand-gradient text-white font-black text-sm uppercase tracking-wider rounded-full shadow-lg shadow-pink-600/30 hover:brightness-105 active:scale-95 transition-all">
-                    Find Matches
-                </a>
+                {% if active_connection_mode == 'HOOKUP' %}
+                    <a href="{% url 'hookup_discovery' %}" class="px-8 py-3.5 brand-gradient text-white font-black text-sm uppercase tracking-wider rounded-full shadow-lg shadow-pink-600/30 hover:brightness-105 active:scale-95 transition-all">
+                        Explore Hookups
+                    </a>
+                {% elif active_connection_mode == 'SEX_CALL' %}
+                    <a href="{% url 'sex_call_hub' %}" class="px-8 py-3.5 brand-gradient text-white font-black text-sm uppercase tracking-wider rounded-full shadow-lg shadow-pink-600/30 hover:brightness-105 active:scale-95 transition-all">
+                        Explore Hosts
+                    </a>
+                {% else %}
+                    <a href="{% url 'swipe_card' %}" class="px-8 py-3.5 brand-gradient text-white font-black text-sm uppercase tracking-wider rounded-full shadow-lg shadow-pink-600/30 hover:brightness-105 active:scale-95 transition-all">
+                        Find Matches
+                    </a>
+                {% endif %}
             </div>
+        {% endif %}
+
+        {% if qa_profiles %}
+            <section class="mt-10" aria-labelledby="qa-profiles-title">
+                <header class="mb-4 text-center">
+                    <h2 id="qa-profiles-title" class="text-lg font-black uppercase tracking-wide text-slate-700">
+                        QA profiles for testing
+                    </h2>
+                    <p class="mt-1 text-xs font-medium text-slate-500">
+                        Clearly labelled synthetic profiles; viewing them does not create a mutual match.
+                    </p>
+                </header>
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {% for profile in qa_profiles %}
+                    <article class="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50/80 p-3">
+                        <img src="{{ profile.avatar }}" alt="{{ profile.name }}" class="h-14 w-14 rounded-xl border border-amber-200 object-cover">
+                        <div class="min-w-0 flex-1">
+                            <h3 class="truncate text-sm font-black text-slate-900">{{ profile.name }}</h3>
+                            <p class="text-xs text-slate-600">{{ profile.age }} · {{ profile.location }}</p>
+                            <span class="mt-1 inline-block rounded-full bg-amber-200 px-2 py-0.5 text-[9px] font-black uppercase text-amber-900">QA test profile</span>
+                        </div>
+                        <a href="{% url 'public_profile' profile.user_id %}" class="shrink-0 rounded-xl bg-amber-500 px-3 py-2 text-[10px] font-black uppercase text-white">
+                            View
+                        </a>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
         {% endif %}
     </main>
 </div>

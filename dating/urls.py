@@ -39,6 +39,7 @@ urlpatterns = [
     path('api/sex-call/hosts/', views.sex_call_hosts_api, name='sex_call_hosts_api'),
     path('api/wallet/convert-diamonds/', views.convert_diamonds_api, name='convert_diamonds_api'),
     path('api/wallet/balance/', views.wallet_balance_api, name='wallet_balance_api'),
+    path('api/wallet/visit-rewards/', views.wallet_visit_rewards_api, name='wallet_visit_rewards_api'),
     path('api/wallet/claim-welcome/', views.claim_welcome_bonus_api, name='claim_welcome_bonus_api'),
     path('api/wallet/check-in/', views.daily_checkin_api, name='daily_checkin_api'),
     path('api/wallet/withdraw/', views.withdrawal_request_api, name='withdrawal_request_api'),

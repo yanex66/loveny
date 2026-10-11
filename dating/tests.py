@@ -348,6 +348,7 @@ class DatingPlatformTests(TestCase):
         qa_profile.is_verified = True
         qa_profile.is_host_ready = True
         qa_profile.show_in_discovery = True
+        qa_profile.last_active = timezone.now() - timedelta(days=60)
         qa_profile.save()
         qa_sex_user, qa_sex_profile = self.make_profile(
             'qa_demo_0002',
@@ -407,6 +408,51 @@ class DatingPlatformTests(TestCase):
             self.assertEqual(hookup_page.status_code, 200)
             self.assertContains(hookup_page, '[TEST] Demo User')
 
+    def test_qa_profiles_bypass_hookup_distance_and_swipe_filters_and_show_without_match(self):
+        self.alice_profile.relationship_mode = 'HOOKUP'
+        self.alice_profile.latitude = 0
+        self.alice_profile.longitude = 0
+        self.alice_profile.max_distance_km = 1
+        self.alice_profile.save()
+        qa_user, qa_profile = self.make_profile(
+            'qa_demo_faraway',
+            age=34,
+            gender='O',
+            preferred_gender='M',
+            mode='HOOKUP',
+            latitude=6.4698,
+            longitude=3.5852,
+        )
+        qa_user.first_name = '[TEST] Demo User Faraway'
+        qa_user.save(update_fields=['first_name'])
+        qa_profile.is_test_profile = True
+        qa_profile.is_verified = True
+        qa_profile.is_host_ready = True
+        qa_profile.show_in_discovery = True
+        qa_profile.save()
+        Swipe.objects.create(
+            swiper=self.alice,
+            swiped=qa_user,
+            type='PASS',
+            mode='HOOKUP',
+        )
+
+        self.client.force_login(self.alice)
+        with override_settings(ENABLE_QA_TEST_PROFILES=True):
+            self.assertIn(
+                qa_profile,
+                get_profile_batch(self.alice, limit=50),
+            )
+            response = self.client.get(reverse('match_list'))
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.context['matches'], [])
+            self.assertEqual(
+                [profile['user_id'] for profile in response.context['qa_profiles']],
+                [qa_user.pk],
+            )
+            self.assertContains(response, '[TEST] Demo User Faraway')
+            self.assertContains(response, 'does not create a mutual match')
+
     def test_hookup_discovery_applies_distance_filter(self):
         self.alice_profile.relationship_mode = 'HOOKUP'
         self.alice_profile.latitude = 0
@@ -421,8 +467,12 @@ class DatingPlatformTests(TestCase):
             'far', mode='HOOKUP', latitude=2, longitude=0
         )
 
-        self.assertEqual([p.user_id for p in get_profile_batch(self.alice)], [self.bob.pk])
-        self.assertNotIn(far_profile, get_profile_batch(self.alice))
+        with override_settings(ENABLE_QA_TEST_PROFILES=False):
+            self.assertEqual(
+                [p.user_id for p in get_profile_batch(self.alice)],
+                [self.bob.pk],
+            )
+            self.assertNotIn(far_profile, get_profile_batch(self.alice))
 
     def test_sex_call_mode_is_available_in_creation_settings_and_discovery(self):
         mode_choices = Profile._meta.get_field('relationship_mode').choices
@@ -1431,6 +1481,42 @@ class DatingPlatformTests(TestCase):
         response2 = self.client.get(reverse('wallet_balance_api'))
         self.assertEqual(response2.json()['coin_balance'], 30)
         self.assertTrue(response2.json()['has_claimed_welcome'])
+
+    def test_visit_rewards_api_grants_welcome_and_daily_rewards_once(self):
+        self.client.force_login(self.alice)
+
+        response = self.client.post(reverse('wallet_visit_rewards_api'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['welcome_awarded'], 30)
+        self.assertEqual(response.json()['daily_awarded'], 5)
+        self.assertEqual(response.json()['coin_balance'], 35)
+        self.assertTrue(response.json()['has_claimed_welcome'])
+        self.assertTrue(response.json()['has_checked_in_today'])
+
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 35)
+        self.assertEqual(self.alice_profile.checkin_streak, 1)
+        self.assertEqual(self.alice_profile.last_checkin_date, timezone.localdate())
+        self.assertEqual(
+            CoinTransaction.objects.filter(
+                user=self.alice,
+                transaction_type='WELCOME_BONUS',
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            CoinTransaction.objects.filter(
+                user=self.alice,
+                transaction_type='DAILY_CHECKIN',
+            ).count(),
+            1,
+        )
+
+        repeat_response = self.client.post(reverse('wallet_visit_rewards_api'))
+        self.assertEqual(repeat_response.status_code, 200)
+        self.assertEqual(repeat_response.json()['welcome_awarded'], 0)
+        self.assertEqual(repeat_response.json()['daily_awarded'], 0)
+        self.assertEqual(repeat_response.json()['coin_balance'], 35)
 
     def test_7_day_streak_awards_diamonds_grand_prize(self):
         self.alice_profile.coin_balance = 0
