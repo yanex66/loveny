@@ -49,10 +49,26 @@ class Migration(migrations.Migration):
             name='target',
             field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='hookup_requests_received', to=settings.AUTH_USER_MODEL),
         ),
-        migrations.AlterField(
-            model_name='hookupmessage',
-            name='id',
-            field=models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False),
+        # Hookup chat is ephemeral; recreate its table rather than casting its
+        # existing bigint primary key to UUID, which PostgreSQL cannot do.
+        migrations.DeleteModel(
+            name='HookupMessage',
+        ),
+        migrations.CreateModel(
+            name='HookupMessage',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('text', models.TextField()),
+                ('created_at', models.DateTimeField(auto_now_add=True, db_index=True)),
+                ('match', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='messages', to='dating.hookupmatch')),
+                ('sender', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='hookup_messages', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'ordering': ('created_at',),
+                'indexes': [
+                    models.Index(fields=['match', 'created_at'], name='dating_hook_match_i_2eaa9e_idx'),
+                ],
+            },
         ),
         migrations.AlterField(
             model_name='supportticket',
