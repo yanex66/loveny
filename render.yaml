@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     region: ohio
-    buildCommand: pip install -r requirements.txt && python manage.py migrate && python manage.py collectstatic --noinput
+    buildCommand: pip install -r requirements.txt && python manage.py migrate && python create_admin.py && python manage.py collectstatic --no-input
     startCommand: daphne -b 0.0.0.0 -p $PORT loveny_site.asgi:application
     healthCheckPath: /
     envVars:
@@ -23,4 +23,10 @@ services:
       - key: PAYSTACK_SECRET_KEY
         sync: false
       - key: FLUTTERWAVE_SECRET_KEY
+        sync: false
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_EMAIL
         sync: false
