@@ -374,6 +374,7 @@ class PaymentTransaction(models.Model):
         ('SEX_CALL', 'Sex Call Premium'),
         ('COINS', 'Coin Pack'),
         ('HOOKUP_MATCH', 'Hookup Match Connection Fee'),
+        ('MODE_SWITCH', 'Connection Mode Switch'),
     )
 
     user = models.ForeignKey(User, related_name='premium_payments', on_delete=models.CASCADE)
@@ -847,6 +848,25 @@ class ProfileStateBackup(models.Model):
         
     def __str__(self):
         return f"Backup for {self.user.username} in {self.mode} mode"
+
+
+class ModeSwitchPaymentIntent(models.Model):
+    user = models.ForeignKey(
+        User,
+        related_name='mode_switch_payment_intents',
+        on_delete=models.CASCADE,
+    )
+    reference = models.CharField(max_length=100, unique=True)
+    source_mode = models.CharField(max_length=12, choices=RELATIONSHIP_MODE_CHOICES)
+    target_mode = models.CharField(max_length=12, choices=RELATIONSHIP_MODE_CHOICES)
+    amount_kobo = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    completed_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ('-created_at',)
 
 
 # ── Support Chat Widget Models ─────────────────────────────────────────────────

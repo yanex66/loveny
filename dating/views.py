@@ -40,9 +40,12 @@ from .models import (
     HookupMatch,
     HookupMessage,
     Match,
+    ModeSwitchPaymentIntent,
     PaymentTransaction,
     Profile,
     ProfilePhoto,
+    ProfileStateBackup,
+    RELATIONSHIP_MODE_CHOICES,
     SiteConfiguration,
     SubscriptionPlan,
     Swipe,
@@ -3216,7 +3219,13 @@ def settings_view(request):
         'form': form, 
         'profile': profile,
         'site_config': site_config,
-        'paystack_public_key': settings.PAYSTACK_PUBLIC_KEY
+        'paystack_public_key': getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''),
+        'mode_switch_fee': site_config.mode_switch_fee if site_config else 200,
+        'mode_switch_modes': RELATIONSHIP_MODE_CHOICES,
+        'mode_switch_payments_enabled': bool(
+            getattr(settings, 'PAYSTACK_PUBLIC_KEY', '')
+            and getattr(settings, 'PAYSTACK_SECRET_KEY', '')
+        ),
     })
 
 def privacy(request): return render(request, 'dating/privacy.html')
@@ -3977,6 +3986,201 @@ def report_user_api(request):
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
 
+
+@login_required
+@require_POST
+def create_mode_switch_payment_intent_api(request):
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
+
+    target_mode = data.get('target_mode')
+    if target_mode not in dict(RELATIONSHIP_MODE_CHOICES):
+        return JsonResponse({'status': 'error', 'message': 'invalid_mode'}, status=400)
+    public_key = getattr(settings, 'PAYSTACK_PUBLIC_KEY', '')
+    secret_key = getattr(settings, 'PAYSTACK_SECRET_KEY', '')
+    if (
+        not public_key
+        or not secret_key
+        or 'put_your_real' in public_key.lower()
+        or 'put_your_real' in secret_key.lower()
+        or 'dummy' in public_key.lower()
+    ):
+        return JsonResponse({'status': 'error', 'message': 'payments_unavailable'}, status=503)
+
+    try:
+        with transaction.atomic():
+            profile = Profile.objects.select_for_update().get(user=request.user)
+            if profile.relationship_mode == target_mode:
+                return JsonResponse({'status': 'error', 'message': 'already_in_mode'}, status=400)
+            existing_intent = ModeSwitchPaymentIntent.objects.filter(
+                user=request.user,
+                completed_at__isnull=True,
+                cancelled_at__isnull=True,
+                expires_at__gt=timezone.now(),
+            ).first()
+            if existing_intent:
+                return JsonResponse({'status': 'error', 'message': 'payment_intent_in_progress'}, status=409)
+
+            site_config = SiteConfiguration.objects.first()
+            fee = site_config.mode_switch_fee if site_config else 200
+            intent = ModeSwitchPaymentIntent.objects.create(
+                user=request.user,
+                reference=str(uuid.uuid4()),
+                source_mode=profile.relationship_mode,
+                target_mode=target_mode,
+                amount_kobo=fee * 100,
+                expires_at=timezone.now() + timedelta(minutes=30),
+            )
+    except Profile.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
+
+    return JsonResponse({
+        'status': 'success',
+        'reference': intent.reference,
+        'amount_kobo': intent.amount_kobo,
+        'email': request.user.email or f'{request.user.username}@loveny.com',
+        'public_key': public_key,
+        'target_mode': intent.target_mode,
+    })
+
+
+@login_required
+@require_POST
+def cancel_mode_switch_payment_intent_api(request):
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
+    reference = data.get('reference')
+    if not isinstance(reference, str) or not reference.strip():
+        return JsonResponse({'status': 'error', 'message': 'reference_required'}, status=400)
+
+    updated = ModeSwitchPaymentIntent.objects.filter(
+        reference=reference.strip(),
+        user=request.user,
+        completed_at__isnull=True,
+        cancelled_at__isnull=True,
+    ).update(cancelled_at=timezone.now())
+    return JsonResponse({'status': 'success', 'cancelled': bool(updated)})
+
+
+@login_required
+@require_POST
+def switch_profile_mode_api(request):
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
+
+    reference = data.get('reference')
+    if not isinstance(reference, str) or not reference.strip():
+        return JsonResponse({'status': 'error', 'message': 'reference_required'}, status=400)
+    reference = reference.strip()
+    intent = ModeSwitchPaymentIntent.objects.filter(
+        reference=reference,
+        user=request.user,
+        completed_at__isnull=True,
+        cancelled_at__isnull=True,
+        expires_at__gt=timezone.now(),
+    ).first()
+    if not intent:
+        return JsonResponse({'status': 'error', 'message': 'payment_intent_invalid'}, status=400)
+
+    verified, verification_error, error_status = _verify_paystack_reference(reference)
+    if not verified:
+        return JsonResponse(
+            {'status': 'error', 'message': verification_error},
+            status=error_status,
+        )
+    payment_data = (
+        verified.get('data')
+        if isinstance(verified, dict) and verified.get('status') is True
+        else None
+    )
+    if (
+        not isinstance(payment_data, dict)
+        or payment_data.get('status') != 'success'
+        or payment_data.get('reference') != reference
+        or payment_data.get('currency') != 'NGN'
+        or type(payment_data.get('amount')) is not int
+        or payment_data['amount'] != intent.amount_kobo
+    ):
+        return JsonResponse({'status': 'error', 'message': 'payment_not_verified'}, status=400)
+
+    try:
+        with transaction.atomic():
+            intent = ModeSwitchPaymentIntent.objects.select_for_update().get(
+                pk=intent.pk,
+                user=request.user,
+                completed_at__isnull=True,
+                cancelled_at__isnull=True,
+                expires_at__gt=timezone.now(),
+            )
+            profile = Profile.objects.select_for_update().get(user=request.user)
+            if profile.relationship_mode != intent.source_mode:
+                return JsonResponse({'status': 'error', 'message': 'profile_mode_changed'}, status=409)
+
+            PaymentTransaction.objects.create(
+                user=request.user,
+                reference=reference,
+                provider='paystack',
+                product='MODE_SWITCH',
+                plan_type=f'{intent.source_mode}_TO_{intent.target_mode}',
+                amount_kobo=intent.amount_kobo,
+                currency='NGN',
+                verified_at=timezone.now(),
+            )
+
+            backup, _ = ProfileStateBackup.objects.get_or_create(
+                user=request.user,
+                mode=intent.source_mode,
+            )
+            backup.bio = profile.bio
+            backup.first_date_idea = profile.first_date_idea
+            backup.job_title = profile.job_title
+            backup.save()
+            backup.tags.set(profile.tags.all())
+            profile.photos.all().update(profile=None)
+
+            target_backup = ProfileStateBackup.objects.filter(
+                user=request.user,
+                mode=intent.target_mode,
+            ).first()
+            if target_backup:
+                profile.bio = target_backup.bio
+                profile.first_date_idea = target_backup.first_date_idea
+                profile.job_title = target_backup.job_title
+                profile.tags.set(target_backup.tags.all())
+            else:
+                profile.bio = ''
+                profile.first_date_idea = ''
+                profile.job_title = ''
+                profile.tags.clear()
+
+            profile.relationship_mode = intent.target_mode
+            profile.save()
+            ProfilePhoto.objects.filter(
+                user=request.user,
+                mode=intent.target_mode,
+            ).update(profile=profile)
+            intent.completed_at = timezone.now()
+            intent.save(update_fields=['completed_at'])
+    except (ModeSwitchPaymentIntent.DoesNotExist, Profile.DoesNotExist):
+        return JsonResponse({'status': 'error', 'message': 'payment_intent_invalid'}, status=409)
+    except IntegrityError:
+        return JsonResponse({'status': 'error', 'message': 'payment_reference_already_used'}, status=409)
+
+    request.session['active_connection_mode'] = intent.target_mode
+    return JsonResponse({'status': 'success', 'target_mode': intent.target_mode})
+
 @login_required
 def blocked_users_view(request):
     blocks = UserBlock.objects.filter(blocker=request.user).select_related('blocked', 'blocked__profile')
@@ -4055,86 +4259,3 @@ def global_notifications_api(request):
         })
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
-import json
-import requests
-from django.conf import settings
-from django.views.decorators.http import require_POST
-from django.http import JsonResponse
-from django.contrib.auth.decorators import login_required
-from dating.models import ProfileStateBackup, ProfilePhoto, SiteConfiguration, RELATIONSHIP_MODE_CHOICES
-
-@login_required
-@require_POST
-def switch_profile_mode_api(request):
-    try:
-        data = json.loads(request.body)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
-    
-    target_mode = data.get('target_mode')
-    reference = data.get('reference')
-    if target_mode not in dict(RELATIONSHIP_MODE_CHOICES).keys():
-        return JsonResponse({'status': 'error', 'message': 'invalid_mode'}, status=400)
-        
-    profile = request.user.profile
-    if profile.relationship_mode == target_mode:
-        return JsonResponse({'status': 'error', 'message': 'already_in_mode'}, status=400)
-        
-    # Verify Payment if reference provided
-    if reference:
-        url = f"https://api.paystack.co/transaction/verify/{reference}"
-        headers = {
-            "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"
-        }
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            res_data = response.json()
-            if not res_data.get('status') or res_data['data']['status'] != 'success':
-                return JsonResponse({"status": "error", "message": "Payment failed or incomplete"}, status=400)
-            
-            # verify amount
-            expected_amount = SiteConfiguration.objects.first().mode_switch_fee * 100
-            if res_data['data']['amount'] < expected_amount:
-                return JsonResponse({"status": "error", "message": "Insufficient payment"}, status=400)
-        else:
-            return JsonResponse({"status": "error", "message": "Verification failed"}, status=400)
-            
-    # Perform Mode Switch (save current to backup, restore from backup if exists, update photos)
-    current_mode = profile.relationship_mode
-    
-    # 1. Backup current mode
-    backup, _ = ProfileStateBackup.objects.get_or_create(user=request.user, mode=current_mode)
-    backup.bio = profile.bio
-    backup.first_date_idea = profile.first_date_idea
-    backup.job_title = profile.job_title
-    backup.save()
-    backup.tags.set(profile.tags.all())
-    
-    # 2. Detach current photos (they retain user and mode)
-    profile.photos.all().update(profile=None)
-    
-    # 3. Restore target mode from backup if it exists
-    target_backup = ProfileStateBackup.objects.filter(user=request.user, mode=target_mode).first()
-    if target_backup:
-        profile.bio = target_backup.bio
-        profile.first_date_idea = target_backup.first_date_idea
-        profile.job_title = target_backup.job_title
-        profile.save()
-        profile.tags.set(target_backup.tags.all())
-    else:
-        # Defaults if new
-        profile.bio = ''
-        profile.first_date_idea = ''
-        profile.job_title = ''
-        profile.save()
-        profile.tags.clear()
-        
-    profile.relationship_mode = target_mode
-    profile.save()
-    
-    # 4. Attach photos for target mode
-    ProfilePhoto.objects.filter(user=request.user, mode=target_mode).update(profile=profile)
-    
-    request.session['active_connection_mode'] = target_mode
-    
-    return JsonResponse({'status': 'success'})

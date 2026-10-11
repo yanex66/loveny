@@ -37,6 +37,7 @@ from .models import (
     HookupMatch,
     HookupMessage,
     Match,
+    ModeSwitchPaymentIntent,
     PaymentTransaction,
     Profile,
     ProfilePhoto,
@@ -2415,6 +2416,8 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, 'Active Mode:')
         self.assertContains(res, 'Do Not Disturb (DND)')
+        self.assertContains(res, 'Change connection mode')
+        self.assertContains(res, 'mode-switch-target')
         self.assertEqual(list(SettingsForm(instance=self.alice.profile).fields), ['is_dnd'])
         # Ensure select dropdown for relationship mode is removed
         self.assertNotContains(res, '<select name="relationship_mode"')
@@ -2431,6 +2434,114 @@ class DatingPlatformTests(TestCase):
         self.assertTrue(self.alice.profile.is_dnd)
         self.assertEqual(self.alice.profile.relationship_mode, 'HOOKUP')
         self.assertTrue(self.alice.profile.incognito_mode)
+
+    def test_mode_switch_requires_a_bound_verified_payment_and_preserves_profile_backup(self):
+        self.client.force_login(self.alice)
+        self.alice_profile.bio = 'My Dating bio'
+        self.alice_profile.first_date_idea = 'Coffee by the beach'
+        self.alice_profile.job_title = 'Designer'
+        self.alice_profile.save(update_fields=['bio', 'first_date_idea', 'job_title'])
+        configuration = SiteConfiguration.get_solo()
+        configuration.mode_switch_fee = 250
+        configuration.save(update_fields=['mode_switch_fee'])
+
+        with override_settings(
+            PAYSTACK_PUBLIC_KEY='pk_test_mode_switch',
+            PAYSTACK_SECRET_KEY='sk_test_mode_switch',
+        ):
+            intent_response = self.post_json(
+                reverse('create_mode_switch_payment_intent_api'),
+                {'target_mode': 'HOOKUP'},
+            )
+            self.assertEqual(intent_response.status_code, 200)
+            intent_data = intent_response.json()
+            self.assertEqual(intent_data['amount_kobo'], 25000)
+            intent = ModeSwitchPaymentIntent.objects.get(reference=intent_data['reference'])
+
+            missing_reference = self.post_json(
+                reverse('switch_profile_mode_api'),
+                {},
+            )
+            self.assertEqual(missing_reference.status_code, 400)
+
+            with patch('dating.views._verify_paystack_reference', return_value=({
+                'status': True,
+                'data': {
+                    'status': 'success',
+                    'reference': intent.reference,
+                    'amount': 24999,
+                    'currency': 'NGN',
+                },
+            }, None, None)):
+                underpaid = self.post_json(
+                    reverse('switch_profile_mode_api'),
+                    {'reference': intent.reference},
+                )
+            self.assertEqual(underpaid.status_code, 400)
+            self.alice_profile.refresh_from_db()
+            self.assertEqual(self.alice_profile.relationship_mode, 'DATING')
+
+            with patch('dating.views._verify_paystack_reference', return_value=({
+                'status': True,
+                'data': {
+                    'status': 'success',
+                    'reference': intent.reference,
+                    'amount': 25000,
+                    'currency': 'NGN',
+                },
+            }, None, None)):
+                verified = self.post_json(
+                    reverse('switch_profile_mode_api'),
+                    {'reference': intent.reference},
+                )
+            self.assertEqual(verified.status_code, 200)
+            self.alice_profile.refresh_from_db()
+            self.assertEqual(self.alice_profile.relationship_mode, 'HOOKUP')
+            backup = self.alice.profile_backups.get(mode='DATING')
+            self.assertEqual(backup.bio, 'My Dating bio')
+            self.assertEqual(backup.first_date_idea, 'Coffee by the beach')
+            self.assertEqual(backup.job_title, 'Designer')
+            self.assertTrue(PaymentTransaction.objects.filter(
+                reference=intent.reference,
+                product='MODE_SWITCH',
+                amount_kobo=25000,
+            ).exists())
+            intent.refresh_from_db()
+            self.assertIsNotNone(intent.completed_at)
+
+            replay = self.post_json(
+                reverse('switch_profile_mode_api'),
+                {'reference': intent.reference},
+            )
+            self.assertEqual(replay.status_code, 400)
+
+    def test_mode_switch_payment_intent_can_be_cancelled_and_cannot_be_used_afterward(self):
+        self.client.force_login(self.alice)
+        with override_settings(
+            PAYSTACK_PUBLIC_KEY='pk_test_mode_switch',
+            PAYSTACK_SECRET_KEY='sk_test_mode_switch',
+        ):
+            intent_response = self.post_json(
+                reverse('create_mode_switch_payment_intent_api'),
+                {'target_mode': 'SEX_CALL'},
+            )
+            self.assertEqual(intent_response.status_code, 200)
+            reference = intent_response.json()['reference']
+
+            cancel_response = self.post_json(
+                reverse('cancel_mode_switch_payment_intent_api'),
+                {'reference': reference},
+            )
+            self.assertEqual(cancel_response.status_code, 200)
+            self.assertTrue(cancel_response.json()['cancelled'])
+
+            with patch('dating.views._verify_paystack_reference') as verify_payment:
+                verify_response = self.post_json(
+                    reverse('switch_profile_mode_api'),
+                    {'reference': reference},
+                )
+            self.assertEqual(verify_response.status_code, 400)
+            verify_payment.assert_not_called()
 
     def test_call_signal_privacy_and_mutual_face_verification(self):
         call = CallSession.objects.create(
