@@ -253,7 +253,7 @@ STORAGES = {
     },
     'staticfiles': {
         'BACKEND': (
-            'whitenoise.storage.CompressedManifestStaticFilesStorage'
+            'loveny_site.storage.NonStrictManifestStaticFilesStorage'
             if not DEBUG
             else 'django.contrib.staticfiles.storage.StaticFilesStorage'
         ),

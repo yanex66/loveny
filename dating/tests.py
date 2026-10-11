@@ -740,6 +740,44 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(settings.JAZZMIN_UI_TWEAKS['default_theme_mode'], 'auto')
         self.assertNotIn('dark_mode_theme', settings.JAZZMIN_UI_TWEAKS)
 
+    def test_non_strict_manifest_storage_falls_back_for_missing_static_reference(self):
+        from django.contrib.staticfiles.storage import staticfiles_storage
+
+        with tempfile.TemporaryDirectory() as static_root:
+            asset_path = os.path.join(
+                static_root,
+                'vendor',
+                'bootswatch',
+                'default',
+                'bootstrap.min.css',
+            )
+            os.makedirs(os.path.dirname(asset_path))
+            with open(asset_path, 'wb') as asset_file:
+                asset_file.write(b'/* test theme asset */')
+
+            with override_settings(
+                STATIC_ROOT=static_root,
+                STORAGES={
+                    'default': {
+                        'BACKEND': 'django.core.files.storage.FileSystemStorage'
+                    },
+                    'staticfiles': {
+                        'BACKEND': (
+                            'loveny_site.storage.'
+                            'NonStrictManifestStaticFilesStorage'
+                        ),
+                    },
+                },
+            ):
+                static_url = staticfiles_storage.url(
+                    'vendor/bootswatch/default/bootstrap.min.css'
+                )
+                self.assertTrue(
+                    static_url.startswith(
+                        '/static/vendor/bootswatch/default/bootstrap.min.'
+                    )
+                )
+
     def test_support_apis_continue_to_work_for_authenticated_users(self):
         self.client.force_login(self.alice)
 

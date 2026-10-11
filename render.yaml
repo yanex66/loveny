@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     region: ohio
-    buildCommand: pip install -r requirements.txt && python manage.py migrate && python create_admin.py && python manage.py collectstatic --no-input
+    buildCommand: pip install -r requirements.txt && python manage.py migrate && python create_admin.py && python manage.py collectstatic --noinput --clear
     startCommand: daphne -b 0.0.0.0 -p $PORT loveny_site.asgi:application
     healthCheckPath: /
     envVars:
