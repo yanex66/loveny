@@ -200,6 +200,14 @@ class DatingPlatformTests(TestCase):
             'sex_call_profiles',
         }
         self.assertTrue(mode_app_labels.issubset(app_labels))
+        app_names = {
+            app_entry['app_label']: app_entry['name']
+            for app_entry in index_response.context['app_list']
+        }
+        self.assertEqual(app_names['dating'], 'Platform Management')
+        self.assertEqual(app_names['dating_profiles'], 'Dating')
+        self.assertEqual(app_names['hookup_profiles'], 'Hookup')
+        self.assertEqual(app_names['sex_call_profiles'], 'Sex Call')
 
         for model, expected_profile, excluded_usernames in (
             (DatingProfile, self.alice_profile, {'admin_hookup', 'admin_sex_call'}),
