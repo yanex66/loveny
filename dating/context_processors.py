@@ -83,6 +83,9 @@ def site_configuration_context(request):
                 'user_cycle_day': cycle_day,
                 'user_coin_balance': profile.coin_balance,
                 'user_earned_diamonds': profile.earned_diamonds,
+                'user_free_trial_active': profile.has_free_trial_access(),
+                'user_free_trial_mode': profile.get_free_trial_mode_display(),
+                'user_free_trial_expires_at': profile.free_trial_expires_at,
             })
 
     return ctx

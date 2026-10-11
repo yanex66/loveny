@@ -20,7 +20,7 @@
                 Stop Swiping. Start Texting.
             </p>
             <p class="mt-2 text-[10px] text-pink-600 font-bold uppercase">
-                Choose your mode carefully: Dating, Hookup, or Sex Call.<br>(Switching later costs ₦{{ site_config.mode_switch_fee|default:200 }})
+                Choose Dating, Hookup, or Sex Call.<br>Pay ₦{{ site_config.mode_switch_fee|default:200 }} once to unlock unlimited switching.
             </p>
         </div>
 
@@ -30,6 +30,9 @@
 
             <form method="post" class="space-y-5">
                 {% csrf_token %}
+                {% if referral_username %}
+                    <input type="hidden" name="ref" value="{{ referral_username }}">
+                {% endif %}
                 
                 {% for field in form %}
                 <div class="space-y-1">

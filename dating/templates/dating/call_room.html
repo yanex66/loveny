@@ -55,13 +55,16 @@
             </button>
         </div>
     </header>
+    <p class="absolute inset-x-4 top-24 z-10 mx-auto max-w-xl rounded-xl border border-amber-300/40 bg-black/75 px-3 py-2 text-center text-[10px] leading-relaxed text-amber-100 backdrop-blur-md">
+        Speech monitoring is active. Your browser’s recognition provider may process audio. LOVENY does not record calls or retain full transcripts. Suspected contact sharing ends the call and suspends the account pending admin review.
+    </p>
 
     <!-- FLOATING LIVE CHAT OVERLAY (Bottom-Left) -->
     <div id="floating-chat-container" class="absolute left-4 bottom-44 z-30 w-64 sm:w-80 flex flex-col justify-end pointer-events-auto">
         <div id="floating-chat-stream" class="space-y-1.5 overflow-y-auto max-h-44 pr-2 pb-2 scrollbar-none flex flex-col justify-end">
             <div class="rounded-2xl bg-black/40 backdrop-blur-md border border-white/10 p-2 text-xs text-white/90">
                 <span class="text-pink-300 font-bold">System:</span>
-                <span>Call connected. Live 1-on-1 private WebRTC encrypted stream.</span>
+                <span>Automated speech monitoring is active to detect attempts to exchange contact details. Your browser’s speech-recognition provider may process audio. LOVENY does not record call audio or retain full transcripts. A likely match ends the call and immediately suspends the account pending admin review.</span>
             </div>
         </div>
         <form id="floating-chat-form" class="mt-1 flex items-center gap-1.5 rounded-full bg-black/50 border border-white/20 backdrop-blur-md px-3 py-1.5 shadow-xl">
@@ -141,6 +144,7 @@
 
 {% block extra_scripts %}
 <script src="{% static 'dating/js/call-privacy.js' %}"></script>
+<script src="{% static 'dating/js/call-speech-monitor.js' %}"></script>
 <script>
 (() => {
     const roomId = '{{ room_id }}';
@@ -164,10 +168,21 @@
     const giftBtn = document.getElementById('btn-gift');
     const giftOverlay = document.getElementById('gift-animation-overlay');
     const endBtn = document.getElementById('btn-end');
+    const muteBtn = document.getElementById('btn-mute');
 
     function csrfToken() {
         const token = document.cookie.split('; ').find(item => item.startsWith('csrftoken='));
         return token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
+    }
+
+    function leaveCallWithNotice(message, destination) {
+        window.CallSpeechMonitor?.stop();
+        if (signalTimer) clearInterval(signalTimer);
+        peer?.close();
+        localStream?.getTracks().forEach(track => track.stop());
+        window.CallPrivacy?.cleanup();
+        window.alert(message);
+        window.location.replace(destination);
     }
 
     async function sendSignal(type, payload) {
@@ -184,12 +199,41 @@
 
     async function initializeMedia() {
         try {
+            if (
+                !window.CallSpeechMonitor
+                || !window.CallSpeechMonitor.requestConsent()
+            ) {
+                await fetch(`/api/calls/${roomId}/end/`, {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': csrfToken()},
+                });
+                window.location.replace('{% url "sex_call_hub" %}');
+                return;
+            }
             localStream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
             localVideo.srcObject = localStream;
             if (window.CallPrivacy) {
                 CallPrivacy.init(roomId, String(currentUserId));
                 CallPrivacy.startFaceVerification(localStream);
             }
+            await window.CallSpeechMonitor.start(roomId, csrfToken(), {
+                waitForConnection: true,
+                onFlagged: result => leaveCallWithNotice(
+                    result.message,
+                    result.login_url || '{% url "login" %}',
+                ),
+                onUnavailable: message => {
+                    fetch(`/api/calls/${roomId}/end/`, {
+                        method: 'POST',
+                        headers: {'X-CSRFToken': csrfToken()},
+                    })
+                        .catch(error => console.error('Could not end an unmonitored call.', error))
+                        .finally(() => leaveCallWithNotice(
+                            message,
+                            '{% url "sex_call_hub" %}',
+                        ));
+                },
+            });
 
             peer = new RTCPeerConnection({
                 iceServers: [{urls: 'stun:stun.l.google.com:19302'}],
@@ -216,6 +260,9 @@
                 window.CallPrivacy?.setRemoteStream(stream);
             };
             peer.onconnectionstatechange = () => {
+                if (peer.connectionState === 'connected') {
+                    window.CallSpeechMonitor?.enableDetection();
+                }
                 if (peer.connectionState === 'failed') {
                     console.error('The video call connection failed.');
                 }
@@ -230,7 +277,24 @@
         } catch (error) {
             console.error('Could not initialize the secure video call.', error);
             const status = document.getElementById('handshake-status');
-            if (status) status.textContent = 'Camera or microphone access is required to continue.';
+            if (status) {
+                status.textContent = 'Camera, microphone, and supported speech monitoring are required. The call is ending.';
+            }
+            window.CallSpeechMonitor?.stop();
+            peer?.close();
+            localStream?.getTracks().forEach(track => track.stop());
+            window.CallPrivacy?.cleanup();
+            fetch(`/api/calls/${roomId}/end/`, {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfToken()},
+            })
+                .catch(cleanupError => console.error('Could not end a call after setup failed.', cleanupError))
+                .finally(() => {
+                    window.setTimeout(
+                        () => window.location.replace('{% url "sex_call_hub" %}'),
+                        1200,
+                    );
+                });
         }
     }
 
@@ -244,6 +308,13 @@
                 lastSignalId = Math.max(lastSignalId, signal.id);
                 if (window.CallPrivacy) {
                     CallPrivacy.onPeerSignal(signal.type, signal.payload);
+                }
+                if (signal.type === 'contact_exchange_flagged') {
+                    leaveCallWithNotice(
+                        'The call ended because the live-call monitor detected suspected contact sharing. The other account has been suspended pending review.',
+                        '{% url "sex_call_hub" %}',
+                    );
+                    return;
                 }
                 if (signal.type === 'offer' && !peer.remoteDescription && !isCaller) {
                     await peer.setRemoteDescription(new RTCSessionDescription(signal.payload));
@@ -360,6 +431,7 @@
 
     // End call
     endBtn?.addEventListener('click', async () => {
+        window.CallSpeechMonitor?.stop();
         try {
             if (signalTimer) clearInterval(signalTimer);
             await fetch(`/api/calls/${roomId}/end/`, {
@@ -371,6 +443,21 @@
         localStream?.getTracks().forEach(track => track.stop());
         window.CallPrivacy?.cleanup();
         window.location.href = '{% url "sex_call_hub" %}';
+    });
+
+    muteBtn?.addEventListener('click', () => {
+        if (!localStream) return;
+        const audioEnabled = localStream.getAudioTracks().some(track => track.enabled);
+        localStream.getAudioTracks().forEach(track => {
+            track.enabled = !audioEnabled;
+        });
+        muteBtn.textContent = audioEnabled ? 'Unmute' : 'Mute';
+        muteBtn.setAttribute(
+            'aria-label',
+            audioEnabled ? 'Unmute audio' : 'Mute audio',
+        );
+        if (audioEnabled) window.CallSpeechMonitor?.pause();
+        else window.CallSpeechMonitor?.resume();
     });
 
     initializeMedia();

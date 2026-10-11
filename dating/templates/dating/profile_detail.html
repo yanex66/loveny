@@ -119,6 +119,25 @@
             </div>
         </div>
 
+        <section class="rounded-3xl border border-amber-400/25 bg-gradient-to-r from-amber-950/35 via-purple-950/60 to-slate-900/70 p-5 shadow-xl">
+            <h2 class="text-sm font-black uppercase tracking-wider text-amber-300">Invite friends</h2>
+            <p class="mt-2 text-xs leading-relaxed text-white/70">
+                Earn {{ site_config.referral_reward_coins|default:100 }} coins for each new account that signs up through your link.
+                Every {{ site_config.referrals_per_free_hookup|default:10 }} successful referrals earns one free Hookup connection.
+            </p>
+            <div class="mt-3 flex items-center justify-between gap-3 text-xs">
+                <span class="text-white/70">Successful referrals: <strong class="text-white">{{ referral_count }}</strong></span>
+                <span class="text-amber-200">Free Hookup connections: <strong>{{ profile.hookup_free_connections }}</strong></span>
+            </div>
+            <div class="mt-4 flex gap-2">
+                <input id="referral-link" type="text" readonly value="{{ referral_link }}" class="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/80">
+                <button type="button" id="copy-referral-link" class="shrink-0 rounded-xl bg-amber-400 px-4 py-2 text-xs font-black text-slate-950">
+                    Copy link
+                </button>
+            </div>
+            <p id="referral-copy-status" class="mt-2 min-h-4 text-xs text-emerald-300" role="status" aria-live="polite"></p>
+        </section>
+
         <!-- 2. Top Banner: Coin Wallet & Top-Up -->
         <div class="rounded-3xl border border-amber-500/30 bg-gradient-to-r from-amber-950/40 via-purple-950/50 to-slate-900/90 p-5 shadow-2xl backdrop-blur-md coin-gold-glow">
             <div class="flex items-center justify-between">
@@ -281,6 +300,18 @@
 
 <script>
     // Copy User ID
+    document.getElementById('copy-referral-link')?.addEventListener('click', async () => {
+        const link = document.getElementById('referral-link');
+        const status = document.getElementById('referral-copy-status');
+        try {
+            await navigator.clipboard.writeText(link.value);
+            status.textContent = 'Referral link copied.';
+        } catch (error) {
+            link.select();
+            status.textContent = 'Select and copy your referral link.';
+        }
+    });
+
     function copyUserId(userId) {
         if (navigator.clipboard) {
             navigator.clipboard.writeText(userId);

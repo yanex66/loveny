@@ -129,6 +129,8 @@
                 stopRingtone();
                 return;
             }
+            if (!window.CallSpeechMonitor?.requestConsent()) return;
+
             try {
                 const now = ctx.currentTime;
                 const osc1 = ctx.createOscillator();
@@ -576,6 +578,7 @@
         if (window.CallPrivacy && !window.CallPrivacy.handshakeComplete) return;
         stopRingtone();
         stopCallTimer();
+        window.CallSpeechMonitor?.enableDetection();
         callDurationSeconds = 0;
         updateCallTimerDisplay();
         callTimerInterval = window.setInterval(() => {
@@ -740,6 +743,7 @@
     function closeRoom() {
         stopPolling();
         stopRingtone();
+        window.CallSpeechMonitor?.stop();
         if (peer) {
             peer.onicecandidate = null;
             peer.ontrack = null;
@@ -792,6 +796,11 @@
         if (!activeCall) return;
         if (window.CallPrivacy && typeof window.CallPrivacy.onPeerSignal === 'function') {
             window.CallPrivacy.onPeerSignal(signal.type, signal.payload);
+        }
+        if (signal.type === 'contact_exchange_flagged') {
+            closeRoom();
+            toast('The call ended because the live-call monitor detected suspected contact sharing. The other account has been suspended pending review.', true);
+            return;
         }
         // In-call Gift Signal handling
         if (signal.type === 'gift') {
@@ -875,6 +884,27 @@
             window.CallPrivacy.init(activeCall.room_id, config.dataset.userId);
             window.CallPrivacy.startFaceVerification(localStream);
         }
+        await window.CallSpeechMonitor.start(
+            activeCall.room_id,
+            csrfToken(),
+            {
+                waitForConnection: true,
+                onFlagged: result => {
+                    closeRoom();
+                    window.alert(result.message);
+                    window.location.assign(result.login_url || '/accounts/login/');
+                },
+                onUnavailable: message => {
+                    const roomId = activeCall && activeCall.room_id;
+                    closeRoom();
+                    if (roomId) {
+                        api(`${apiPrefix}${roomId}/end/`, {method: 'POST', body: '{}'})
+                            .catch(error => console.warn('Could not end an unmonitored call.', error));
+                    }
+                    toast(message, true);
+                },
+            },
+        );
         peer = new RTCPeerConnection({
             iceServers: [{urls: 'stun:stun.l.google.com:19302'}],
         });
@@ -964,6 +994,18 @@
     async function respondToCall(action) {
         const roomId = incomingRoomId;
         if (!roomId) return;
+        if (action === 'accept' && !window.CallSpeechMonitor?.requestConsent()) {
+            hideIncoming();
+            try {
+                await api(`${apiPrefix}${roomId}/respond/`, {
+                    method: 'POST',
+                    body: JSON.stringify({action: 'decline'}),
+                });
+            } catch (error) {
+                toast(error.message);
+            }
+            return;
+        }
         hideIncoming();
         stopRingtone();
         if (action === 'decline') {
@@ -1030,6 +1072,8 @@
         if (!localStream) return;
         const enabled = localStream.getAudioTracks().some(track => track.enabled);
         localStream.getAudioTracks().forEach(track => { track.enabled = !enabled; });
+        if (enabled) window.CallSpeechMonitor?.pause();
+        else window.CallSpeechMonitor?.resume();
         event.currentTarget.textContent = enabled ? 'Unmute' : 'Mute';
         event.currentTarget.setAttribute('aria-label', enabled ? 'Unmute audio' : 'Mute audio');
     });

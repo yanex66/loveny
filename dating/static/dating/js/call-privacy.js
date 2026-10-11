@@ -60,10 +60,11 @@
                 main[aria-label="1-on-1 Video Call"],
                 .call-display,
                 #video-call-room video,
+                #video-call-room img,
                 main[aria-label="1-on-1 Video Call"] video,
+                main[aria-label="1-on-1 Video Call"] img,
                 .call-display video,
-                img.call-avatar,
-                img.user-avatar {
+                .call-display img {
                     -webkit-touch-callout: none !important;
                     -webkit-user-select: none !important;
                     user-select: none !important;

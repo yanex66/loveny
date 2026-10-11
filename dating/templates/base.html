@@ -227,6 +227,12 @@
 </head>
 <body class="min-h-screen font-sans antialiased selection:bg-pink-500 selection:text-white {% block body_class %}bg-[#fff8fc] text-[#35162f]{% endblock %}">
     <div class="device-frame w-full overflow-x-hidden {% if user.is_authenticated %}pb-36{% endif %}">
+        {% if user_free_trial_active %}
+        <div class="mx-4 mt-3 rounded-xl border border-emerald-300/40 bg-emerald-900 px-4 py-2 text-center text-xs font-bold text-white shadow-lg">
+            {{ user_free_trial_mode }} free access ends in
+            <span id="free-trial-countdown" data-expires-at="{{ user_free_trial_expires_at|date:'c' }}" class="ml-1 font-mono text-emerald-200"></span>
+        </div>
+        {% endif %}
         {% block content %}{% endblock %}
     </div>
 
@@ -547,6 +553,9 @@
 
         <!-- Call Status Feedback -->
         <p id="call-feedback" class="pip-hidden-in-pip absolute left-1/2 top-24 z-10 -translate-x-1/2 rounded-full bg-black/60 px-4 py-1.5 text-center text-xs font-semibold backdrop-blur-md max-w-[80vw]" role="status" aria-live="polite"></p>
+        <p class="pip-hidden-in-pip absolute inset-x-4 top-36 z-10 mx-auto max-w-xl rounded-xl border border-amber-300/40 bg-black/75 px-3 py-2 text-center text-[10px] leading-relaxed text-amber-100 backdrop-blur-md">
+            Speech monitoring is active. Your browser’s recognition provider may process audio. LOVENY does not record calls or retain full transcripts. Suspected contact sharing ends the call and suspends the account pending admin review.
+        </p>
 
         <!-- Floating Gift Celebration Overlay -->
         <div id="call-gift-overlay" class="pip-hidden-in-pip absolute inset-0 z-40 pointer-events-none flex flex-col items-center justify-center overflow-hidden"></div>
@@ -701,6 +710,7 @@
     <script src="https://js.paystack.co/v1/inline.js" defer></script>
     <script src="https://checkout.flutterwave.com/v3.js" defer></script>
     <script src="{% static 'dating/js/call-privacy.js' %}" defer></script>
+    <script src="{% static 'dating/js/call-speech-monitor.js' %}" defer></script>
     <script src="{% static 'dating/js/video-calls.js' %}" defer></script>
     {% endif %}
 
@@ -708,6 +718,25 @@
     <div id="global-toast-container" class="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none"></div>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            const trialCountdown = document.getElementById('free-trial-countdown');
+            if (trialCountdown) {
+                const expiresAt = new Date(trialCountdown.dataset.expiresAt).getTime();
+                let reloadScheduled = false;
+                const updateTrialCountdown = () => {
+                    const remaining = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+                    const hours = Math.floor(remaining / 3600);
+                    const minutes = Math.floor((remaining % 3600) / 60);
+                    const seconds = remaining % 60;
+                    trialCountdown.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                    if (remaining === 0 && !reloadScheduled) {
+                        reloadScheduled = true;
+                        window.location.reload();
+                    }
+                };
+                updateTrialCountdown();
+                setInterval(updateTrialCountdown, 1000);
+            }
+
             let lastNotificationId = 0;
             let knownHookupRequestIds = new Set();
             const toastContainer = document.getElementById('global-toast-container');

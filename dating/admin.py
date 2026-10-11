@@ -18,6 +18,7 @@ from .models import (
     PaymentTransaction,
     Profile,
     ProfilePhoto,
+    Referral,
     SiteConfiguration,
     SubscriptionPlan,
     Swipe,
@@ -273,6 +274,15 @@ class CallSignalAdmin(admin.ModelAdmin):
 @admin.register(SiteConfiguration)
 class SiteConfigurationAdmin(admin.ModelAdmin):
     fieldsets = (
+        ('Referral Rewards & New User Trial', {
+            'fields': (
+                'referral_reward_coins',
+                'referrals_per_free_hookup',
+                'free_trial_enabled',
+                'free_trial_duration_hours',
+            ),
+            'description': 'Set the one-time coin reward per new referral, successful referrals needed for a free Hookup connection, and selected-mode free-trial duration.',
+        }),
         ('Sex Call Video Economy', {
             'fields': (
                 'call_rate_per_minute',
@@ -305,6 +315,7 @@ class SiteConfigurationAdmin(admin.ModelAdmin):
         }),
         ('Advanced Platform Controls', {
             'fields': (
+                'mode_switch_fee',
                 'min_coins_for_video_call',
                 'hookup_connection_fee',
                 'default_user_coins',
@@ -355,12 +366,38 @@ class GiftItemAdmin(admin.ModelAdmin):
 class HookupMatchAdmin(admin.ModelAdmin):
     list_display = (
         'id', 'initiator', 'target', 'status',
-        'initiator_paid', 'target_paid', 'connection_fee',
+        'initiator_paid', 'initiator_referral_free', 'target_paid', 'connection_fee',
         'created_at', 'expires_at',
     )
-    list_filter = ('status', 'initiator_paid', 'target_paid')
+    list_filter = ('status', 'initiator_paid', 'initiator_referral_free', 'target_paid')
     search_fields = ('id', 'initiator__username', 'target__username')
     readonly_fields = ('id', 'created_at', 'unlocked_at')
+
+
+@admin.register(Referral)
+class ReferralAdmin(admin.ModelAdmin):
+    list_display = (
+        'referrer',
+        'referred_user',
+        'coins_awarded',
+        'free_hookup_connection_awarded',
+        'created_at',
+    )
+    list_filter = ('free_hookup_connection_awarded', 'created_at')
+    search_fields = ('referrer__username', 'referred_user__username')
+    readonly_fields = (
+        'referrer',
+        'referred_user',
+        'coins_awarded',
+        'free_hookup_connection_awarded',
+        'created_at',
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(HookupMessage)

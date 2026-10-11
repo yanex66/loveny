@@ -24,6 +24,13 @@
             
             <div class="absolute top-0 left-0 w-full h-2 brand-gradient"></div>
 
+            {% if suspension_notice %}
+                <div class="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
+                    <p class="font-bold">Account temporarily suspended</p>
+                    <p class="mt-1">{{ suspension_notice }}</p>
+                </div>
+            {% endif %}
+
             {% if form.non_field_errors or form.relationship_mode.errors or form.email.errors or form.password.errors %}
                 <div class="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r animate-pulse">
                     <div class="flex items-center gap-3">
@@ -67,7 +74,7 @@
                 <div class="space-y-1">
                     <label for="{{ form.relationship_mode.id_for_label }}" class="block text-xs font-bold text-pink-700 uppercase tracking-widest ml-1">Connection mode</label>
                     {{ form.relationship_mode }}
-                    <p class="text-[10px] font-medium text-slate-500 ml-1">Note: Switching modes later costs &#x1FA99;{{ site_config.mode_switch_fee|default:200 }} coins.</p>
+                    <p class="text-[10px] font-medium text-slate-500 ml-1">A one-time ₦{{ site_config.mode_switch_fee|default:200 }} fee unlocks unlimited mode switching.</p>
                     {{ form.relationship_mode.errors }}
                 </div>
 

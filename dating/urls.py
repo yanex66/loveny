@@ -44,6 +44,11 @@ urlpatterns = [
     path('api/calls/<uuid:room_id>/', views.call_status_api, name='call_status_api'),
     path('api/calls/<uuid:room_id>/signals/', views.call_signals_api, name='call_signals_api'),
     path('api/calls/<uuid:room_id>/signals/send/', views.call_signal_send_api, name='call_signal_send_api'),
+    path(
+        'api/calls/<uuid:room_id>/moderation-flag/',
+        views.call_moderation_flag_api,
+        name='call_moderation_flag_api',
+    ),
     path('sex-call/', views.sex_call_hub, name='sex_call_hub'),
     path('call/<uuid:room_id>/', views.call_room_page, name='call_room_page'),
     path('api/sex-call/hosts/', views.sex_call_hosts_api, name='sex_call_hosts_api'),

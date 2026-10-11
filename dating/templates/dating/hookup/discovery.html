@@ -121,7 +121,11 @@
                 </div>
                 <p class="text-[11px] text-purple-200/80 mb-3">
                     {% if m.has_paid %}
+                    {% if m.has_referral_free %}
+                    Your referral reward covered your fee. Your partner still needs to pay to unlock the 24-hour chat.
+                    {% else %}
                     Your fee is deposited in escrow! Awaiting your partner's payment to unlock the 24h chat.
+                    {% endif %}
                     {% else %}
                     Both parties must pay the ₦{{ m.connection_fee|floatformat:"0" }} connection fee to unlock 24-hour direct chat.
                     {% endif %}
@@ -256,7 +260,10 @@
             });
             const data = await res.json();
             if (res.ok && data.status === 'success') {
-                alert(`⚡ Request sent to ${name}! They can accept or decline it from their Hookup inbox.`);
+                const rewardNotice = data.referral_reward_used
+                    ? ' Your referral reward covered your connection fee; they will still need to pay their share after accepting.'
+                    : '';
+                alert(`⚡ Request sent to ${name}! They can accept or decline it from their Hookup inbox.${rewardNotice}`);
                 location.reload();
             } else if (res.ok && data.status === 'exists') {
                 if (data.request_direction === 'incoming') {

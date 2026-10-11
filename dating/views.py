@@ -15,7 +15,7 @@ from django.http import Http404, HttpResponse, HttpResponseBadRequest, HttpRespo
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login, logout, views as auth_views
 from django.db import IntegrityError, transaction
-from django.db.models import Count, IntegerField, OuterRef, Q, Subquery
+from django.db.models import Count, F, IntegerField, OuterRef, Q, Subquery
 from django.utils import timezone
 from django.urls import reverse
 from django.contrib.auth.models import User
@@ -45,6 +45,7 @@ from .models import (
     Profile,
     ProfilePhoto,
     ProfileStateBackup,
+    Referral,
     RELATIONSHIP_MODE_CHOICES,
     SiteConfiguration,
     SubscriptionPlan,
@@ -303,6 +304,7 @@ def profile_detail(request):
     following_count = Swipe.objects.filter(swiper=request.user, type='LIKE').count()
     followers_count = Swipe.objects.filter(swiped=request.user, type='LIKE').count()
     numeric_id = 317000000 + request.user.pk
+    referral_count = Referral.objects.filter(referrer=request.user).count()
 
     return render(request, 'dating/profile_detail.html', {
         'profile': profile, 
@@ -314,6 +316,10 @@ def profile_detail(request):
         'following_count': following_count,
         'followers_count': followers_count,
         'has_checked_in_today': has_checked_in_today,
+        'referral_count': referral_count,
+        'referral_link': request.build_absolute_uri(
+            f"{reverse('signup')}?ref={quote(request.user.username, safe='')}"
+        ),
     })
 
 @login_required
@@ -1328,7 +1334,11 @@ def call_initiate_api(request):
     caller_profile = Profile.objects.filter(user=request.user).first()
     config = SiteConfiguration.get_solo()
     min_coins = getattr(config, 'call_rate_per_minute', 20) or 20
-    if not caller_profile or (not request.user.is_superuser and caller_profile.coin_balance < min_coins):
+    if not caller_profile or (
+        not request.user.is_superuser
+        and not caller_profile.is_sex_call_premium
+        and caller_profile.coin_balance < min_coins
+    ):
         return JsonResponse({
             'status': 'error',
             'message': 'insufficient_coins',
@@ -1449,6 +1459,7 @@ def call_respond_api(request, room_id):
                 not caller_profile
                 or (
                     not call.caller.is_superuser
+                    and not caller_profile.is_sex_call_premium
                     and caller_profile.coin_balance < call_rate
                 )
             ):
@@ -1494,98 +1505,212 @@ def call_end_api(request, room_id):
             room_id=room_id,
         )
         _call_participants(call, request.user)
-        now = timezone.now()
-
-        # If call is still ringing or initiated, cancel or decline without any coin deduction
-        if call.status in ('ringing', 'initiated'):
-            call.status = 'cancelled' if request.user == call.caller else 'declined'
-            call.ended_at = now
-            call.save(update_fields=['status', 'ended_at'])
-            return JsonResponse({'status': 'success', 'call': _call_payload(call)})
-
-        if call.status not in ('ended', 'declined', 'missed', 'cancelled'):
-            call.status = 'ended'
-            call.ended_at = now
-            if call.started_at:
-                duration = int((call.ended_at - call.started_at).total_seconds())
-                call.duration_seconds = max(0, duration)
-                caller_profile = Profile.objects.select_for_update().filter(user_id=call.caller_id).first()
-                receiver_profile = Profile.objects.select_for_update().filter(user_id=call.receiver_id).first()
-                is_unlimited = bool(caller_profile and (caller_profile.user.is_superuser or caller_profile.is_sex_call_premium))
-
-                config = SiteConfiguration.get_solo()
-                grace_period = getattr(config, 'grace_period_seconds', 20)
-                commission = Decimal(getattr(config, 'host_commission_percentage', 70)) / Decimal(100)
-                rate = getattr(call, 'rate_per_minute', config.call_rate_per_minute) or config.call_rate_per_minute
-
-                if call.duration_seconds < grace_period:
-                    refund = call.coins_spent
-                    if caller_profile and refund > 0:
-                        caller_profile.coin_balance += refund
-                        caller_profile.save(update_fields=['coin_balance'])
-                    CoinTransaction.objects.filter(
-                        user=call.caller,
-                        transaction_type='CALL_DEDUCTION',
-                        call=call,
-                    ).delete()
-                    CoinTransaction.objects.create(
-                        user=call.caller,
-                        amount=0,
-                        transaction_type='CALL_REFUND',
-                        call=call,
-                        description=f'Grace period protected: {call.duration_seconds}s < {grace_period}s. 0 coins charged.',
-                    )
-                    call.coins_spent = 0
-                elif not is_unlimited and caller_profile:
-                    billed_minutes = max(1, math.ceil(call.duration_seconds / 60))
-                    total_due = billed_minutes * rate
-                    additional_due = max(0, total_due - call.coins_spent)
-                    additional_deducted = min(caller_profile.coin_balance, additional_due)
-
-                    if additional_deducted > 0:
-                        caller_profile.coin_balance = max(0, caller_profile.coin_balance - additional_deducted)
-                        caller_profile.save(update_fields=['coin_balance'])
-                        call.coins_spent += additional_deducted
-
-                    tx = CoinTransaction.objects.filter(
-                        user=call.caller,
-                        transaction_type='CALL_DEDUCTION',
-                        call=call,
-                    ).first()
-                    if tx:
-                        tx.amount = -call.coins_spent
-                        tx.description = f'Deducted {call.coins_spent} coins for {call.duration_seconds}s video call ({billed_minutes}m @ {rate}/min)'
-                        tx.save(update_fields=['amount', 'description'])
-                    else:
-                        CoinTransaction.objects.create(
-                            user=call.caller,
-                            amount=-call.coins_spent,
-                            transaction_type='CALL_DEDUCTION',
-                            call=call,
-                            description=f'Deducted {call.coins_spent} coins for {call.duration_seconds}s video call ({billed_minutes}m @ {rate}/min)',
-                        )
-
-                    diamonds_earned = int(Decimal(call.coins_spent) * commission)
-                    if receiver_profile and diamonds_earned > 0:
-                        receiver_profile.earned_diamonds += diamonds_earned
-                        receiver_profile.save(update_fields=['earned_diamonds'])
-                        CoinTransaction.objects.create(
-                            user=call.receiver,
-                            amount=diamonds_earned,
-                            transaction_type='CALL_EARNING',
-                            call=call,
-                            description=f'Earned {diamonds_earned} diamonds from {call.duration_seconds}s video call with {call.caller.username}',
-                        )
-                elif is_unlimited and receiver_profile:
-                    billed_minutes = max(1, math.ceil(call.duration_seconds / 60))
-                    simulated_coins = billed_minutes * rate
-                    diamonds_earned = int(Decimal(simulated_coins) * commission)
-                    if diamonds_earned > 0:
-                        receiver_profile.earned_diamonds += diamonds_earned
-                        receiver_profile.save(update_fields=['earned_diamonds'])
-
-            call.save(update_fields=['status', 'ended_at', 'duration_seconds', 'coins_spent'])
+        call = _finalize_call_end(call, request.user)
     return JsonResponse({'status': 'success', 'call': _call_payload(call)})
+
+
+def _finalize_call_end(call, user):
+    now = timezone.now()
+    if call.status in ('ringing', 'initiated'):
+        call.status = 'cancelled' if user == call.caller else 'declined'
+        call.ended_at = now
+        call.save(update_fields=['status', 'ended_at'])
+        return call
+
+    if call.status in ('ended', 'declined', 'missed', 'cancelled'):
+        return call
+
+    call.status = 'ended'
+    call.ended_at = now
+    if call.started_at:
+        call.duration_seconds = max(
+            0,
+            int((call.ended_at - call.started_at).total_seconds()),
+        )
+        caller_profile = Profile.objects.select_for_update().filter(
+            user_id=call.caller_id,
+        ).first()
+        receiver_profile = Profile.objects.select_for_update().filter(
+            user_id=call.receiver_id,
+        ).first()
+        is_unlimited = bool(
+            caller_profile
+            and (
+                caller_profile.user.is_superuser
+                or caller_profile.is_sex_call_premium
+            )
+        )
+
+        config = SiteConfiguration.get_solo()
+        grace_period = getattr(config, 'grace_period_seconds', 20)
+        commission = Decimal(
+            getattr(config, 'host_commission_percentage', 70),
+        ) / Decimal(100)
+        rate = getattr(
+            call,
+            'rate_per_minute',
+            config.call_rate_per_minute,
+        ) or config.call_rate_per_minute
+
+        if call.duration_seconds < grace_period:
+            refund = call.coins_spent
+            if caller_profile and refund > 0:
+                caller_profile.coin_balance += refund
+                caller_profile.save(update_fields=['coin_balance'])
+            CoinTransaction.objects.filter(
+                user=call.caller,
+                transaction_type='CALL_DEDUCTION',
+                call=call,
+            ).delete()
+            CoinTransaction.objects.create(
+                user=call.caller,
+                amount=0,
+                transaction_type='CALL_REFUND',
+                call=call,
+                description=(
+                    f'Grace period protected: {call.duration_seconds}s '
+                    f'< {grace_period}s. 0 coins charged.'
+                ),
+            )
+            call.coins_spent = 0
+        elif not is_unlimited and caller_profile:
+            billed_minutes = max(1, math.ceil(call.duration_seconds / 60))
+            total_due = billed_minutes * rate
+            additional_due = max(0, total_due - call.coins_spent)
+            additional_deducted = min(caller_profile.coin_balance, additional_due)
+
+            if additional_deducted > 0:
+                caller_profile.coin_balance = max(
+                    0,
+                    caller_profile.coin_balance - additional_deducted,
+                )
+                caller_profile.save(update_fields=['coin_balance'])
+                call.coins_spent += additional_deducted
+
+            tx = CoinTransaction.objects.filter(
+                user=call.caller,
+                transaction_type='CALL_DEDUCTION',
+                call=call,
+            ).first()
+            if tx:
+                tx.amount = -call.coins_spent
+                tx.description = (
+                    f'Deducted {call.coins_spent} coins for '
+                    f'{call.duration_seconds}s video call '
+                    f'({billed_minutes}m @ {rate}/min)'
+                )
+                tx.save(update_fields=['amount', 'description'])
+            else:
+                CoinTransaction.objects.create(
+                    user=call.caller,
+                    amount=-call.coins_spent,
+                    transaction_type='CALL_DEDUCTION',
+                    call=call,
+                    description=(
+                        f'Deducted {call.coins_spent} coins for '
+                        f'{call.duration_seconds}s video call '
+                        f'({billed_minutes}m @ {rate}/min)'
+                    ),
+                )
+
+            diamonds_earned = int(Decimal(call.coins_spent) * commission)
+            if receiver_profile and diamonds_earned > 0:
+                receiver_profile.earned_diamonds += diamonds_earned
+                receiver_profile.save(update_fields=['earned_diamonds'])
+                CoinTransaction.objects.create(
+                    user=call.receiver,
+                    amount=diamonds_earned,
+                    transaction_type='CALL_EARNING',
+                    call=call,
+                    description=(
+                        f'Earned {diamonds_earned} diamonds from '
+                        f'{call.duration_seconds}s video call with '
+                        f'{call.caller.username}'
+                    ),
+                )
+        elif is_unlimited and receiver_profile:
+            billed_minutes = max(1, math.ceil(call.duration_seconds / 60))
+            simulated_coins = billed_minutes * rate
+            diamonds_earned = int(Decimal(simulated_coins) * commission)
+            if diamonds_earned > 0:
+                receiver_profile.earned_diamonds += diamonds_earned
+                receiver_profile.save(update_fields=['earned_diamonds'])
+
+    call.save(update_fields=['status', 'ended_at', 'duration_seconds', 'coins_spent'])
+    return call
+
+
+@login_required
+@require_POST
+def call_moderation_flag_api(request, room_id):
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
+    transcript = data.get('transcript')
+    if not isinstance(transcript, str) or not transcript.strip() or len(transcript) > 500:
+        return JsonResponse({'status': 'error', 'message': 'invalid_transcript'}, status=400)
+
+    with transaction.atomic():
+        call = get_object_or_404(
+            CallSession.objects.select_for_update().select_related('caller', 'receiver'),
+            room_id=room_id,
+        )
+        _call_participants(call, request.user)
+        if call.status not in ('connected', 'active'):
+            return JsonResponse({'status': 'error', 'message': 'call_not_active'}, status=409)
+
+        blocked, _ = ContentFilter.inspect(transcript)
+        if not blocked:
+            return JsonResponse({'status': 'clear'})
+
+        reported_user = request.user
+        reporter = call.receiver if call.caller_id == request.user.pk else call.caller
+        _finalize_call_end(call, reported_user)
+
+        Profile.objects.filter(user_id=reported_user.pk).update(
+            off_platform_attempts=F('off_platform_attempts') + 1,
+        )
+        User.objects.filter(pk=reported_user.pk).update(is_active=False)
+        UserReport.objects.create(
+            reporter=reporter,
+            reported=reported_user,
+            reason='off_platform',
+            details=(
+                'Automatic live-call speech moderation flagged suspected '
+                'off-platform contact sharing. The call was ended and the '
+                'account suspended pending admin review. Transcript text was '
+                f'not retained. Call room: {call.room_id}.'
+            ),
+        )
+        CallSignal.objects.create(
+            call=call,
+            sender=reported_user,
+            signal_type='contact_exchange_flagged',
+            payload={
+                'reason': 'suspected_contact_exchange',
+                'user_id': reported_user.pk,
+                'call_id': str(call.room_id),
+                'timestamp': timezone.now().isoformat(),
+            },
+        )
+        request.session['live_call_suspension_notice'] = (
+            'Your account was immediately suspended after the live-call monitor '
+            'detected suspected contact sharing. An administrator will review '
+            'the report before restoring access.'
+        )
+
+    return JsonResponse({
+        'status': 'suspended',
+        'message': (
+            'Your account was immediately suspended after the live-call monitor '
+            'detected suspected contact sharing. An administrator will review '
+            'the report before restoring access.'
+        ),
+        'login_url': reverse('login'),
+    }, status=201)
 
 
 @login_required
@@ -1618,7 +1743,12 @@ def call_status_api(request, room_id):
         room_id=room_id,
     )
     _call_participants(call, request.user)
-    return JsonResponse({'call': _call_payload(call)})
+    return JsonResponse({
+        'call': _call_payload(call),
+        'moderation_flagged': call.signals.filter(
+            signal_type='contact_exchange_flagged',
+        ).exists(),
+    })
 
 
 @login_required
@@ -1634,7 +1764,8 @@ def call_signal_send_api(request, room_id):
     payload = data.get('payload')
     allowed_signals = (
         'offer', 'answer', 'candidate', 'gift', 'chat', 'follow',
-        'face_verified', 'privacy_blur_engaged', 'privacy_blur_lifted',
+        'face_verified', 'speech_monitor_ready',
+        'privacy_blur_engaged', 'privacy_blur_lifted',
     )
     if signal_type not in allowed_signals or not isinstance(payload, dict):
         return JsonResponse({'status': 'error', 'message': 'invalid_signal'}, status=400)
@@ -1652,7 +1783,12 @@ def call_signal_send_api(request, room_id):
     ):
         return JsonResponse({'status': 'error', 'message': 'receiver_must_answer_active_call'}, status=403)
     events = []
-    if signal_type in ('face_verified', 'privacy_blur_engaged', 'privacy_blur_lifted'):
+    if signal_type in (
+        'face_verified',
+        'speech_monitor_ready',
+        'privacy_blur_engaged',
+        'privacy_blur_lifted',
+    ):
         signal, events = record_call_signal(
             call.room_id,
             request.user,
@@ -3094,18 +3230,89 @@ def conversation_room(request, conversation_id):
 @ensure_csrf_cookie
 def index(request): return render(request, 'dating/landing.html')
 
+
+def _award_referral_signup_rewards(referrer_id, referred_user):
+    if not referrer_id or str(referrer_id) == str(referred_user.pk):
+        return
+
+    with transaction.atomic():
+        referrer_profile = Profile.objects.select_for_update().filter(
+            user_id=referrer_id,
+        ).first()
+        if not referrer_profile:
+            logger.warning(
+                'Referral attribution ignored because referrer %s has no profile.',
+                referrer_id,
+            )
+            return
+
+        referral, created = Referral.objects.get_or_create(
+            referred_user=referred_user,
+            defaults={'referrer_id': referrer_id},
+        )
+        if not created:
+            return
+
+        config = SiteConfiguration.get_solo()
+        coin_reward = config.referral_reward_coins
+        referrer_profile.coin_balance += coin_reward
+        referrer_profile.save(update_fields=['coin_balance'])
+        CoinTransaction.objects.create(
+            user=referrer_profile.user,
+            sender=referred_user,
+            recipient=referrer_profile.user,
+            amount=coin_reward,
+            transaction_type='REFERRAL_REWARD',
+            description=f'Referral reward for inviting {referred_user.username}',
+        )
+        referral.coins_awarded = coin_reward
+
+        referrals_per_connection = config.referrals_per_free_hookup
+        referral_count = Referral.objects.filter(referrer_id=referrer_id).count()
+        if referral_count % referrals_per_connection == 0:
+            referrer_profile.hookup_free_connections += 1
+            referrer_profile.save(update_fields=['hookup_free_connections'])
+            referral.free_hookup_connection_awarded = True
+        referral.save(update_fields=[
+            'coins_awarded',
+            'free_hookup_connection_awarded',
+        ])
+
+
 @ensure_csrf_cookie
 def signup(request):
     if request.user.is_authenticated:
         return redirect('swipe_card')
+    referral_username = request.GET.get('ref', '').strip()
+    if referral_username:
+        referrer = User.objects.filter(
+            username=referral_username,
+            profile__isnull=False,
+        ).first()
+        if referrer:
+            request.session['pending_referrer_id'] = referrer.pk
+
     form = SignUpForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         mode = form.cleaned_data['relationship_mode']
         user = form.save()
+        referrer_id = request.session.pop('pending_referrer_id', None)
+        if not referrer_id:
+            posted_referral = request.POST.get('ref', '').strip()
+            if posted_referral:
+                referrer_id = User.objects.filter(
+                    username=posted_referral,
+                    profile__isnull=False,
+                ).values_list('pk', flat=True).first()
+        if referrer_id:
+            _award_referral_signup_rewards(referrer_id, user)
         login(request, user, backend='dating.backends.EmailAuthBackend')
         request.session['active_connection_mode'] = mode
         return redirect('create_profile')
-    return render(request, 'registration/signup.html', {'form': form})
+    return render(request, 'registration/signup.html', {
+        'form': form,
+        'referral_username': referral_username,
+    })
 
 
 @ensure_csrf_cookie
@@ -3120,11 +3327,22 @@ def login_view(request):
         mode = form.cleaned_data['relationship_mode']
         user = form.get_user()
         login(request, user)
-        request.session['active_connection_mode'] = mode
         profile = Profile.objects.filter(user=user).first()
         if profile:
-            profile.relationship_mode = mode
-            profile.save(update_fields=['relationship_mode'])
+            if profile.relationship_mode != mode:
+                with transaction.atomic():
+                    profile = Profile.objects.select_for_update().get(user=user)
+                    if profile.relationship_mode != mode:
+                        if profile.has_paid_mode_switch_fee:
+                            _apply_profile_mode_switch(profile, mode, user)
+                        else:
+                            request.session['active_connection_mode'] = profile.relationship_mode
+                            return redirect(
+                                f"{reverse('settings')}?mode_switch_required=1&target_mode={mode}"
+                            )
+            request.session['active_connection_mode'] = profile.relationship_mode
+        else:
+            request.session['active_connection_mode'] = mode
 
         next_url = request.POST.get('next') or request.GET.get('next', '')
         if next_url and url_has_allowed_host_and_scheme(
@@ -3134,7 +3352,14 @@ def login_view(request):
         ):
             return redirect(next_url)
         return redirect('swipe_card' if profile else 'create_profile')
-    return render(request, 'registration/login.html', {'form': form, 'next': request.GET.get('next', '')})
+    return render(request, 'registration/login.html', {
+        'form': form,
+        'next': request.GET.get('next', ''),
+        'suspension_notice': request.session.pop(
+            'live_call_suspension_notice',
+            '',
+        ),
+    })
 
 
 class SafePasswordResetView(auth_views.PasswordResetView):
@@ -3161,6 +3386,7 @@ class SafePasswordResetView(auth_views.PasswordResetView):
 @login_required
 def create_profile(request):
     existing_profile = Profile.objects.filter(user=request.user).first()
+    existing_mode = existing_profile.relationship_mode if existing_profile else None
     if existing_profile and existing_profile.age and existing_profile.age >= 18 and existing_profile.photos.exists():
         if existing_profile.relationship_mode == 'SEX_CALL':
             return redirect('sex_call_hub')
@@ -3175,13 +3401,44 @@ def create_profile(request):
         },
     )
     if request.method == 'POST' and form.is_valid():
+        chosen_mode = form.cleaned_data.get('relationship_mode') or request.session.get('active_connection_mode', 'DATING')
+        if (
+            existing_profile
+            and chosen_mode != existing_mode
+            and not existing_profile.has_paid_mode_switch_fee
+        ):
+            form.add_error(
+                'relationship_mode',
+                'Pay the one-time mode-switch fee from Settings to switch modes.',
+            )
+            return render(request, 'dating/create_profile.html', {'form': form})
+
         p = form.save(commit=False)
         p.user = request.user
         if form.cleaned_data.get('name'):
             request.user.first_name = form.cleaned_data['name']
             request.user.save(update_fields=['first_name'])
-        chosen_mode = form.cleaned_data.get('relationship_mode') or request.session.get('active_connection_mode', 'DATING')
+        if (
+            existing_profile
+            and chosen_mode != existing_mode
+            and existing_profile.has_paid_mode_switch_fee
+        ):
+            current_profile = Profile.objects.get(user=request.user)
+            _apply_profile_mode_switch(current_profile, chosen_mode, request.user)
         p.relationship_mode = chosen_mode
+        if not p.free_trial_expires_at:
+            trial_config = SiteConfiguration.get_solo()
+            trial_window_start = timezone.now() - timedelta(
+                hours=trial_config.free_trial_duration_hours,
+            )
+            if (
+                trial_config.free_trial_enabled
+                and request.user.date_joined >= trial_window_start
+            ):
+                p.free_trial_mode = chosen_mode
+                p.free_trial_expires_at = timezone.now() + timedelta(
+                    hours=trial_config.free_trial_duration_hours,
+                )
         p.save()
         form.save_m2m()
         request.session['active_connection_mode'] = p.relationship_mode
@@ -3215,12 +3472,18 @@ def settings_view(request):
         return redirect('swipe_card')
     
     site_config = SiteConfiguration.objects.first()
+    requested_mode = request.GET.get('target_mode', '')
+    if requested_mode not in dict(RELATIONSHIP_MODE_CHOICES):
+        requested_mode = ''
     return render(request, 'dating/settings.html', {
         'form': form, 
         'profile': profile,
         'site_config': site_config,
         'paystack_public_key': getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''),
         'mode_switch_fee': site_config.mode_switch_fee if site_config else 200,
+        'mode_switch_unlocked': profile.has_paid_mode_switch_fee,
+        'mode_switch_required': request.GET.get('mode_switch_required') == '1',
+        'requested_mode': requested_mode,
         'mode_switch_modes': RELATIONSHIP_MODE_CHOICES,
         'mode_switch_payments_enabled': bool(
             getattr(settings, 'PAYSTACK_PUBLIC_KEY', '')
@@ -3248,18 +3511,25 @@ def sex_call_hub(request):
     """
     profile = Profile.objects.filter(user=request.user).first()
     if not profile:
-        profile, _ = Profile.objects.get_or_create(
-            user=request.user,
-            defaults={'relationship_mode': 'SEX_CALL', 'is_host_ready': True, 'age': 22, 'gender': 'M', 'location': 'Lagos, Nigeria'}
-        )
+        return redirect('create_profile')
+
+    if profile.relationship_mode != 'SEX_CALL':
+        if not profile.has_paid_mode_switch_fee:
+            return redirect(
+                f"{reverse('settings')}?mode_switch_required=1&target_mode=SEX_CALL"
+            )
+        with transaction.atomic():
+            profile = Profile.objects.select_for_update().get(user=request.user)
+            if profile.relationship_mode != 'SEX_CALL':
+                if not profile.has_paid_mode_switch_fee:
+                    return redirect(
+                        f"{reverse('settings')}?mode_switch_required=1&target_mode=SEX_CALL"
+                    )
+                _apply_profile_mode_switch(profile, 'SEX_CALL', request.user)
+        request.session['active_connection_mode'] = 'SEX_CALL'
 
     profile.last_active = timezone.now()
-    if profile.relationship_mode != 'SEX_CALL':
-        profile.relationship_mode = 'SEX_CALL'
-        request.session['active_connection_mode'] = 'SEX_CALL'
-        profile.save(update_fields=['last_active', 'relationship_mode'])
-    else:
-        profile.save(update_fields=['last_active'])
+    profile.save(update_fields=['last_active'])
 
     site_config = SiteConfiguration.get_solo()
     CoinWallet.objects.get_or_create(
@@ -3582,6 +3852,7 @@ def hookup_discovery_view(request):
     for m in accepted_matches:
         m.is_initiator = (m.initiator_id == request.user.id)
         m.has_paid = m.initiator_paid if m.is_initiator else m.target_paid
+        m.has_referral_free = m.initiator_referral_free and m.is_initiator
 
     # Active unlocked 24-hr chats
     active_unlocked = list(
@@ -3656,16 +3927,27 @@ def hookup_request_api(request):
             'message': 'A connection request already exists between you and this user.',
         })
 
-    match = HookupMatch.objects.create(
-        initiator=request.user,
-        target=target_user,
-        status='pending',
-        connection_fee=SiteConfiguration.get_solo().hookup_connection_fee,
-    )
+    with transaction.atomic():
+        initiator_profile = Profile.objects.select_for_update().get(user=request.user)
+        if initiator_profile.relationship_mode != 'HOOKUP':
+            return JsonResponse({'status': 'error', 'message': 'hookup_mode_required'}, status=403)
+        referral_free = initiator_profile.hookup_free_connections > 0
+        if referral_free:
+            initiator_profile.hookup_free_connections -= 1
+            initiator_profile.save(update_fields=['hookup_free_connections'])
+        match = HookupMatch.objects.create(
+            initiator=request.user,
+            target=target_user,
+            status='pending',
+            initiator_paid=referral_free,
+            initiator_referral_free=referral_free,
+            connection_fee=SiteConfiguration.get_solo().hookup_connection_fee,
+        )
     return JsonResponse({
         'status': 'success',
         'match_id': str(match.id),
         'message': f'Connection request sent to {target_user.username}!',
+        'referral_reward_used': referral_free,
     }, status=201)
 
 
@@ -3690,8 +3972,25 @@ def hookup_respond_api(request, match_id):
     if action == 'accept':
         match.status = 'accepted'
     elif action == 'decline':
-        match.status = 'declined'
-    match.save(update_fields=['status'])
+        with transaction.atomic():
+            match = HookupMatch.objects.select_for_update().get(pk=match.pk)
+            if match.status != 'pending':
+                return JsonResponse({'status': 'error', 'message': 'request_not_pending'}, status=409)
+            match.status = 'declined'
+            update_fields = ['status']
+            if match.initiator_referral_free and match.initiator_paid:
+                initiator_profile = Profile.objects.select_for_update().filter(
+                    user_id=match.initiator_id,
+                ).first()
+                if initiator_profile:
+                    initiator_profile.hookup_free_connections += 1
+                    initiator_profile.save(update_fields=['hookup_free_connections'])
+                match.initiator_referral_free = False
+                match.initiator_paid = False
+                update_fields.extend(['initiator_referral_free', 'initiator_paid'])
+            match.save(update_fields=update_fields)
+    if action == 'accept':
+        match.save(update_fields=['status'])
 
     return JsonResponse({
         'status': 'success',
@@ -3710,6 +4009,8 @@ def hookup_initialize_payment_api(request, match_id):
         return JsonResponse({'status': 'error', 'message': 'request_not_accepted'}, status=409)
     if (
         request.user.pk == match.initiator_id and match.initiator_paid
+    ) or (
+        request.user.pk == match.initiator_id and match.initiator_referral_free
     ) or (
         request.user.pk == match.target_id and match.target_paid
     ):
@@ -3989,6 +4290,42 @@ def report_user_api(request):
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
 
 
+def _apply_profile_mode_switch(profile, target_mode, user):
+    source_mode = profile.relationship_mode
+    backup, _ = ProfileStateBackup.objects.get_or_create(
+        user=user,
+        mode=source_mode,
+    )
+    backup.bio = profile.bio
+    backup.first_date_idea = profile.first_date_idea
+    backup.job_title = profile.job_title
+    backup.save()
+    backup.tags.set(profile.tags.all())
+    profile.photos.all().update(profile=None)
+
+    target_backup = ProfileStateBackup.objects.filter(
+        user=user,
+        mode=target_mode,
+    ).first()
+    if target_backup:
+        profile.bio = target_backup.bio
+        profile.first_date_idea = target_backup.first_date_idea
+        profile.job_title = target_backup.job_title
+        profile.tags.set(target_backup.tags.all())
+    else:
+        profile.bio = ''
+        profile.first_date_idea = ''
+        profile.job_title = ''
+        profile.tags.clear()
+
+    profile.relationship_mode = target_mode
+    profile.save()
+    ProfilePhoto.objects.filter(
+        user=user,
+        mode=target_mode,
+    ).update(profile=profile)
+
+
 @login_required
 @require_POST
 def create_mode_switch_payment_intent_api(request):
@@ -4002,6 +4339,19 @@ def create_mode_switch_payment_intent_api(request):
     target_mode = data.get('target_mode')
     if target_mode not in dict(RELATIONSHIP_MODE_CHOICES):
         return JsonResponse({'status': 'error', 'message': 'invalid_mode'}, status=400)
+    try:
+        profile = Profile.objects.get(user=request.user)
+    except Profile.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
+    if profile.relationship_mode == target_mode:
+        return JsonResponse({'status': 'error', 'message': 'already_in_mode'}, status=400)
+    if profile.has_paid_mode_switch_fee:
+        return JsonResponse({
+            'status': 'success',
+            'switching_unlocked': True,
+            'target_mode': target_mode,
+        })
+
     public_key = getattr(settings, 'PAYSTACK_PUBLIC_KEY', '')
     secret_key = getattr(settings, 'PAYSTACK_SECRET_KEY', '')
     if (
@@ -4018,6 +4368,12 @@ def create_mode_switch_payment_intent_api(request):
             profile = Profile.objects.select_for_update().get(user=request.user)
             if profile.relationship_mode == target_mode:
                 return JsonResponse({'status': 'error', 'message': 'already_in_mode'}, status=400)
+            if profile.has_paid_mode_switch_fee:
+                return JsonResponse({
+                    'status': 'success',
+                    'switching_unlocked': True,
+                    'target_mode': target_mode,
+                })
             existing_intent = ModeSwitchPaymentIntent.objects.filter(
                 user=request.user,
                 completed_at__isnull=True,
@@ -4042,6 +4398,7 @@ def create_mode_switch_payment_intent_api(request):
 
     return JsonResponse({
         'status': 'success',
+        'switching_unlocked': False,
         'reference': intent.reference,
         'amount_kobo': intent.amount_kobo,
         'email': request.user.email or f'{request.user.username}@loveny.com',
@@ -4082,7 +4439,34 @@ def switch_profile_mode_api(request):
     if not isinstance(data, dict):
         return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
 
+    target_mode = data.get('target_mode')
+    if target_mode is not None and target_mode not in dict(RELATIONSHIP_MODE_CHOICES):
+        return JsonResponse({'status': 'error', 'message': 'invalid_mode'}, status=400)
+
     reference = data.get('reference')
+    if target_mode is not None:
+        try:
+            with transaction.atomic():
+                profile = Profile.objects.select_for_update().get(user=request.user)
+                if profile.relationship_mode == target_mode:
+                    return JsonResponse({'status': 'error', 'message': 'already_in_mode'}, status=400)
+                if not profile.has_paid_mode_switch_fee:
+                    if not isinstance(reference, str) or not reference.strip():
+                        return JsonResponse({
+                            'status': 'error',
+                            'message': 'mode_switch_payment_required',
+                        }, status=402)
+                else:
+                    _apply_profile_mode_switch(profile, target_mode, request.user)
+                    request.session['active_connection_mode'] = target_mode
+                    return JsonResponse({
+                        'status': 'success',
+                        'target_mode': target_mode,
+                        'switching_unlocked': True,
+                    })
+        except Profile.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
+
     if not isinstance(reference, str) or not reference.strip():
         return JsonResponse({'status': 'error', 'message': 'reference_required'}, status=400)
     reference = reference.strip()
@@ -4095,6 +4479,8 @@ def switch_profile_mode_api(request):
     ).first()
     if not intent:
         return JsonResponse({'status': 'error', 'message': 'payment_intent_invalid'}, status=400)
+    if target_mode is not None and target_mode != intent.target_mode:
+        return JsonResponse({'status': 'error', 'message': 'payment_target_mode_mismatch'}, status=400)
 
     verified, verification_error, error_status = _verify_paystack_reference(reference)
     if not verified:
@@ -4141,38 +4527,9 @@ def switch_profile_mode_api(request):
                 verified_at=timezone.now(),
             )
 
-            backup, _ = ProfileStateBackup.objects.get_or_create(
-                user=request.user,
-                mode=intent.source_mode,
-            )
-            backup.bio = profile.bio
-            backup.first_date_idea = profile.first_date_idea
-            backup.job_title = profile.job_title
-            backup.save()
-            backup.tags.set(profile.tags.all())
-            profile.photos.all().update(profile=None)
-
-            target_backup = ProfileStateBackup.objects.filter(
-                user=request.user,
-                mode=intent.target_mode,
-            ).first()
-            if target_backup:
-                profile.bio = target_backup.bio
-                profile.first_date_idea = target_backup.first_date_idea
-                profile.job_title = target_backup.job_title
-                profile.tags.set(target_backup.tags.all())
-            else:
-                profile.bio = ''
-                profile.first_date_idea = ''
-                profile.job_title = ''
-                profile.tags.clear()
-
-            profile.relationship_mode = intent.target_mode
-            profile.save()
-            ProfilePhoto.objects.filter(
-                user=request.user,
-                mode=intent.target_mode,
-            ).update(profile=profile)
+            _apply_profile_mode_switch(profile, intent.target_mode, request.user)
+            profile.has_paid_mode_switch_fee = True
+            profile.save(update_fields=['has_paid_mode_switch_fee'])
             intent.completed_at = timezone.now()
             intent.save(update_fields=['completed_at'])
     except (ModeSwitchPaymentIntent.DoesNotExist, Profile.DoesNotExist):
@@ -4181,7 +4538,11 @@ def switch_profile_mode_api(request):
         return JsonResponse({'status': 'error', 'message': 'payment_reference_already_used'}, status=409)
 
     request.session['active_connection_mode'] = intent.target_mode
-    return JsonResponse({'status': 'success', 'target_mode': intent.target_mode})
+    return JsonResponse({
+        'status': 'success',
+        'target_mode': intent.target_mode,
+        'switching_unlocked': True,
+    })
 
 @login_required
 def blocked_users_view(request):

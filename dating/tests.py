@@ -41,19 +41,21 @@ from .models import (
     PaymentTransaction,
     Profile,
     ProfilePhoto,
+    Referral,
     SiteConfiguration,
     SubscriptionPlan,
     Swipe,
     Tag,
     SupportKnowledgeBase,
     SupportTicket,
+    UserReport,
 )
 from .mode_admin.dating_profiles.models import DatingProfile
 from .mode_admin.hookup_profiles.models import HookupProfile
 from .mode_admin.sex_call_profiles.models import SexCallProfile
 from .services.content_filter import ContentFilter
 from .services.support_bot import process_support_inquiry, FALLBACK_RESPONSE
-from .views import _provider_payment, get_profile_batch
+from .views import _award_referral_signup_rewards, _provider_payment, get_profile_batch
 
 
 class DatingPlatformTests(TestCase):
@@ -651,6 +653,8 @@ class DatingPlatformTests(TestCase):
         self.assertNotIn('_auth_user_id', self.client.session)
 
         # Logging in with email succeeds
+        self.alice_profile.has_paid_mode_switch_fee = True
+        self.alice_profile.save(update_fields=['has_paid_mode_switch_fee'])
         response = self.client.post(reverse('login'), {
             'email': 'alice@example.com',
             'password': 'test-password-123',
@@ -660,6 +664,125 @@ class DatingPlatformTests(TestCase):
         self.alice_profile.refresh_from_db()
         self.assertEqual(self.alice_profile.relationship_mode, 'HOOKUP')
         self.assertEqual(self.client.session['active_connection_mode'], 'HOOKUP')
+
+    def test_login_cannot_change_mode_before_one_time_unlock(self):
+        response = self.client.post(reverse('login'), {
+            'email': 'alice@example.com',
+            'password': 'test-password-123',
+            'relationship_mode': 'HOOKUP',
+        })
+        self.assertRedirects(
+            response,
+            f"{reverse('settings')}?mode_switch_required=1&target_mode=HOOKUP",
+        )
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.relationship_mode, 'DATING')
+        settings_response = self.client.get(response.url)
+        self.assertContains(settings_response, 'Your current mode was kept.')
+        self.assertContains(settings_response, 'Pay a one-time fee')
+
+    def test_referral_rewards_are_idempotent_and_award_hookup_milestones(self):
+        config = SiteConfiguration.get_solo()
+        config.referral_reward_coins = 100
+        config.referrals_per_free_hookup = 2
+        config.save()
+        starting_balance = self.alice_profile.coin_balance
+
+        referred_users = [
+            User.objects.create_user(
+                username=f'referred{index}',
+                email=f'referred{index}@example.com',
+                password='test-password-123',
+            )
+            for index in (1, 2)
+        ]
+        for referred_user in referred_users:
+            _award_referral_signup_rewards(self.alice.pk, referred_user)
+
+        _award_referral_signup_rewards(self.alice.pk, referred_users[0])
+
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, starting_balance + 200)
+        self.assertEqual(self.alice_profile.hookup_free_connections, 1)
+        self.assertEqual(Referral.objects.filter(referrer=self.alice).count(), 2)
+        self.assertEqual(
+            CoinTransaction.objects.filter(
+                user=self.alice,
+                transaction_type='REFERRAL_REWARD',
+            ).count(),
+            2,
+        )
+
+    def test_signup_referral_link_awards_referrer_and_starts_selected_mode_trial(self):
+        referral_url = reverse('signup') + f'?ref={self.alice.username}'
+        self.client.get(referral_url)
+        response = self.client.post(reverse('signup'), {
+            'username': 'referredmember',
+            'email': 'referredmember@example.com',
+            'first_name': 'Referred',
+            'password1': 'secure-password-123',
+            'password2': 'secure-password-123',
+            'relationship_mode': 'HOOKUP',
+            'ref': self.alice.username,
+        })
+        self.assertRedirects(response, reverse('create_profile'))
+        referred_user = User.objects.get(username='referredmember')
+        self.assertTrue(Referral.objects.filter(
+            referrer=self.alice,
+            referred_user=referred_user,
+        ).exists())
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(
+            self.alice_profile.coin_balance,
+            self.alice_profile._meta.get_field('coin_balance').get_default() + 100,
+        )
+
+        response = self.client.post(reverse('create_profile'), {
+            'age': 25,
+            'gender': 'F',
+            'preferred_gender': 'M',
+            'relationship_mode': 'HOOKUP',
+        })
+        self.assertRedirects(response, reverse('swipe_card'))
+        trial_profile = Profile.objects.get(user=referred_user)
+        self.assertEqual(trial_profile.free_trial_mode, 'HOOKUP')
+        self.assertTrue(trial_profile.has_free_trial_access('HOOKUP'))
+        self.assertFalse(trial_profile.has_free_trial_access('DATING'))
+
+    def test_free_trial_access_expires_and_is_mode_specific(self):
+        self.alice_profile.free_trial_mode = 'HOOKUP'
+        self.alice_profile.free_trial_expires_at = timezone.now() + timedelta(hours=1)
+        self.alice_profile.save(update_fields=[
+            'free_trial_mode',
+            'free_trial_expires_at',
+        ])
+        self.assertTrue(self.alice_profile.is_premium('HOOKUP'))
+        self.assertFalse(self.alice_profile.is_premium('DATING'))
+
+        self.alice_profile.free_trial_expires_at = timezone.now() - timedelta(seconds=1)
+        self.alice_profile.save(update_fields=['free_trial_expires_at'])
+        self.assertFalse(self.alice_profile.is_premium('HOOKUP'))
+
+    def test_support_bot_answers_common_questions_without_external_ai(self):
+        ticket = SupportTicket.objects.create(user=self.alice)
+        with override_settings(GEMINI_API_KEY=''):
+            greeting = process_support_inquiry(ticket, 'Hello, are you there?')
+            capabilities = process_support_inquiry(ticket, 'What can you do for me?')
+            referral = process_support_inquiry(ticket, 'How does the referral reward work?')
+            mode_switch = process_support_inquiry(ticket, 'How do I switch my mode?')
+            call_monitor = process_support_inquiry(
+                ticket,
+                'Are live calls monitored for exchanging contact details?',
+            )
+
+        self.assertIn('What can I help you with?', greeting)
+        self.assertIn('changing modes', capabilities)
+        self.assertIn('100 coins', referral)
+        self.assertIn('10 successful referrals', referral)
+        self.assertIn('paid once', mode_switch)
+        self.assertIn('lifetime switching', mode_switch)
+        self.assertIn('speech recognition', call_monitor)
+        self.assertIn('pending admin review', call_monitor)
 
     def test_auth_pages_show_concise_password_guidance(self):
         signup = self.client.get(reverse('signup'))
@@ -1029,6 +1152,31 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(profile.min_age_pref, 18)
         self.assertEqual(profile.max_age_pref, 50)
         self.assertEqual(profile.max_distance_km, 100)
+
+    def test_incomplete_profile_cannot_bypass_mode_switch_unlock(self):
+        new_user = User.objects.create_user(
+            username='incompleteprofile',
+            email='incompleteprofile@example.com',
+            password='test-password-123',
+        )
+        profile = Profile.objects.create(
+            user=new_user,
+            relationship_mode='DATING',
+            age=None,
+        )
+        self.client.force_login(new_user)
+
+        response = self.client.post(reverse('create_profile'), {
+            'age': 27,
+            'gender': 'M',
+            'preferred_gender': 'F',
+            'relationship_mode': 'HOOKUP',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Pay the one-time mode-switch fee from Settings')
+        profile.refresh_from_db()
+        self.assertEqual(profile.relationship_mode, 'DATING')
 
     def test_likes_are_hidden_until_premium(self):
         Swipe.objects.create(swiper=self.bob, swiped=self.alice, type='LIKE')
@@ -2117,6 +2265,18 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(api_res_nearby.status_code, 200)
         self.assertEqual(api_res_nearby.json()['tab'], 'nearby')
 
+    def test_sex_call_hub_cannot_bypass_mode_switch_unlock(self):
+        self.client.force_login(self.alice)
+
+        response = self.client.get(reverse('sex_call_hub'))
+
+        self.assertRedirects(
+            response,
+            f"{reverse('settings')}?mode_switch_required=1&target_mode=SEX_CALL",
+        )
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.relationship_mode, 'DATING')
+
     def test_call_room_page_access_and_controls(self):
         call = CallSession.objects.create(
             caller=self.alice,
@@ -2135,6 +2295,7 @@ class DatingPlatformTests(TestCase):
         self.assertContains(res_alice, 'floating-chat-container')
         self.assertContains(res_alice, 'local-video')
         self.assertContains(res_alice, 'remote-video')
+        self.assertContains(res_alice, 'Speech monitoring is active')
 
         # Bob (receiver) can access the connected call room.
         self.client.force_login(self.bob)
@@ -2508,12 +2669,45 @@ class DatingPlatformTests(TestCase):
             ).exists())
             intent.refresh_from_db()
             self.assertIsNotNone(intent.completed_at)
+            self.alice_profile.refresh_from_db()
+            self.assertTrue(self.alice_profile.has_paid_mode_switch_fee)
 
             replay = self.post_json(
                 reverse('switch_profile_mode_api'),
                 {'reference': intent.reference},
             )
             self.assertEqual(replay.status_code, 400)
+
+            switch_back = self.post_json(
+                reverse('switch_profile_mode_api'),
+                {'target_mode': 'DATING'},
+            )
+            self.assertEqual(switch_back.status_code, 200)
+            self.alice_profile.refresh_from_db()
+            self.assertEqual(self.alice_profile.relationship_mode, 'DATING')
+
+            unlocked_intent = self.post_json(
+                reverse('create_mode_switch_payment_intent_api'),
+                {'target_mode': 'SEX_CALL'},
+            )
+            self.assertEqual(unlocked_intent.status_code, 200)
+            self.assertTrue(unlocked_intent.json()['switching_unlocked'])
+            self.assertNotIn('amount_kobo', unlocked_intent.json())
+
+            switch_again = self.post_json(
+                reverse('switch_profile_mode_api'),
+                {'target_mode': 'SEX_CALL'},
+            )
+            self.assertEqual(switch_again.status_code, 200)
+            self.alice_profile.refresh_from_db()
+            self.assertEqual(self.alice_profile.relationship_mode, 'SEX_CALL')
+            self.assertEqual(
+                PaymentTransaction.objects.filter(
+                    user=self.alice,
+                    product='MODE_SWITCH',
+                ).count(),
+                1,
+            )
 
     def test_mode_switch_payment_intent_can_be_cancelled_and_cannot_be_used_afterward(self):
         self.client.force_login(self.alice)
@@ -2564,6 +2758,11 @@ class DatingPlatformTests(TestCase):
             {'type': 'face_verified', 'payload': {'verified': True}}
         )
         self.assertEqual(alice_face_res.status_code, 201)
+        alice_monitor_res = self.post_json(
+            reverse('call_signal_send_api', args=[call.room_id]),
+            {'type': 'speech_monitor_ready', 'payload': {'ready': True}},
+        )
+        self.assertEqual(alice_monitor_res.status_code, 201)
 
         forged_unlock = self.post_json(
             reverse('call_signal_send_api', args=[call.room_id]),
@@ -2581,9 +2780,116 @@ class DatingPlatformTests(TestCase):
             {'type': 'face_verified', 'payload': {'verified': True}}
         )
         self.assertEqual(bob_face_res.status_code, 201)
+        self.assertFalse(call.signals.filter(signal_type='feeds_unlocked').exists())
+        bob_monitor_res = self.post_json(
+            reverse('call_signal_send_api', args=[call.room_id]),
+            {'type': 'speech_monitor_ready', 'payload': {'ready': True}},
+        )
+        self.assertEqual(bob_monitor_res.status_code, 201)
 
-        # Both verified: feeds_unlocked signal should now be created!
+        # Both users need face and live speech checks before feeds unlock.
         self.assertTrue(call.signals.filter(signal_type='feeds_unlocked').exists())
+
+    def test_live_call_contact_exchange_suspends_speaker_and_creates_private_moderation_report(self):
+        call = CallSession.objects.create(
+            caller=self.alice,
+            receiver=self.bob,
+            status='connected',
+            started_at=timezone.now() - timedelta(seconds=35),
+            rate_per_minute=20,
+        )
+        self.client.force_login(self.alice)
+
+        response = self.post_json(
+            reverse('call_moderation_flag_api', args=[call.room_id]),
+            {'transcript': 'My WhatsApp number is 0803 123 4567'},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['status'], 'suspended')
+        self.alice.refresh_from_db()
+        self.alice_profile.refresh_from_db()
+        call.refresh_from_db()
+        report = UserReport.objects.get(reported=self.alice, reason='off_platform')
+        signal = call.signals.get(signal_type='contact_exchange_flagged')
+        self.assertFalse(self.alice.is_active)
+        self.assertEqual(self.alice_profile.off_platform_attempts, 1)
+        self.assertEqual(call.status, 'ended')
+        self.assertEqual(report.reporter, self.bob)
+        self.assertIn(str(call.room_id), report.details)
+        self.assertIn('Transcript text was not retained.', report.details)
+        self.assertNotIn('0803 123 4567', report.details)
+        self.assertNotIn('WhatsApp', report.details)
+        self.assertEqual(signal.sender, self.alice)
+        self.assertNotIn('transcript', signal.payload)
+        self.assertEqual(
+            self.client.session['live_call_suspension_notice'],
+            response.json()['message'],
+        )
+
+    def test_live_call_monitor_does_not_suspend_for_clean_speech(self):
+        call = CallSession.objects.create(
+            caller=self.alice,
+            receiver=self.bob,
+            status='connected',
+            started_at=timezone.now(),
+        )
+        self.client.force_login(self.alice)
+
+        response = self.post_json(
+            reverse('call_moderation_flag_api', args=[call.room_id]),
+            {'transcript': 'It is nice to meet you on LOVENY.'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'clear')
+        self.alice.refresh_from_db()
+        call.refresh_from_db()
+        self.assertTrue(self.alice.is_active)
+        self.assertEqual(call.status, 'connected')
+        self.assertFalse(UserReport.objects.filter(reported=self.alice).exists())
+
+    def test_login_shows_live_call_suspension_notice(self):
+        session = self.client.session
+        session['live_call_suspension_notice'] = (
+            'Your account was temporarily suspended pending admin review.'
+        )
+        session.save()
+        response = self.client.get(reverse('login'))
+
+        self.assertContains(response, 'Account temporarily suspended')
+        self.assertContains(response, 'pending admin review')
+        self.assertNotIn('live_call_suspension_notice', self.client.session)
+
+    def test_sex_call_free_trial_can_start_and_accept_calls_without_coin_balance(self):
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.coin_balance = 0
+        self.alice_profile.free_trial_mode = 'SEX_CALL'
+        self.alice_profile.free_trial_expires_at = timezone.now() + timedelta(hours=1)
+        self.alice_profile.save(update_fields=[
+            'relationship_mode',
+            'coin_balance',
+            'free_trial_mode',
+            'free_trial_expires_at',
+        ])
+        self.client.force_login(self.alice)
+
+        initiated = self.post_json(
+            reverse('call_initiate_api'),
+            {'receiver_id': self.bob.pk},
+        )
+        self.assertEqual(initiated.status_code, 201)
+        room_id = initiated.json()['room_id']
+
+        self.client.force_login(self.bob)
+        accepted = self.post_json(
+            reverse('call_respond_api', args=[room_id]),
+            {'action': 'accept'},
+        )
+        self.assertEqual(accepted.status_code, 200)
+        call = CallSession.objects.get(room_id=room_id)
+        self.assertEqual(call.status, 'connected')
+        self.assertEqual(call.coins_spent, 0)
 
     def test_hookup_mode_lifecycle_and_paystack_webhook(self):
         self.alice_profile.relationship_mode = 'HOOKUP'
@@ -2701,6 +3007,58 @@ class DatingPlatformTests(TestCase):
         )
         self.assertEqual(leak_msg_res.status_code, 400)
         self.assertEqual(leak_msg_res.json()['message'], 'prohibited_content')
+
+    def test_referral_free_hookup_connection_is_consumed_and_restored_on_decline(self):
+        self.alice_profile.relationship_mode = 'HOOKUP'
+        self.alice_profile.hookup_free_connections = 1
+        self.alice_profile.save(update_fields=[
+            'relationship_mode',
+            'hookup_free_connections',
+        ])
+        self.bob_profile.relationship_mode = 'HOOKUP'
+        self.bob_profile.save(update_fields=['relationship_mode'])
+        self.client.force_login(self.alice)
+
+        first_request = self.post_json(
+            reverse('hookup_request_api'),
+            {'target_id': self.bob.pk},
+        )
+        self.assertEqual(first_request.status_code, 201)
+        first_match = HookupMatch.objects.get(pk=first_request.json()['match_id'])
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.hookup_free_connections, 0)
+        self.assertTrue(first_match.initiator_paid)
+        self.assertTrue(first_match.initiator_referral_free)
+
+        self.client.force_login(self.bob)
+        decline = self.post_json(
+            reverse('hookup_respond_api', args=[first_match.pk]),
+            {'action': 'decline'},
+        )
+        self.assertEqual(decline.status_code, 200)
+        self.alice_profile.refresh_from_db()
+        first_match.refresh_from_db()
+        self.assertEqual(self.alice_profile.hookup_free_connections, 1)
+        self.assertFalse(first_match.initiator_paid)
+        self.assertFalse(first_match.initiator_referral_free)
+
+        self.client.force_login(self.alice)
+        second_request = self.post_json(
+            reverse('hookup_request_api'),
+            {'target_id': self.bob.pk},
+        )
+        self.assertEqual(second_request.status_code, 201)
+        second_match = HookupMatch.objects.get(pk=second_request.json()['match_id'])
+        self.client.force_login(self.bob)
+        accept = self.post_json(
+            reverse('hookup_respond_api', args=[second_match.pk]),
+            {'action': 'accept'},
+        )
+        self.assertEqual(accept.status_code, 200)
+        second_match.refresh_from_db()
+        self.assertEqual(second_match.status, 'accepted')
+        self.assertTrue(second_match.initiator_paid)
+        self.assertTrue(second_match.initiator_referral_free)
 
     def test_hookup_route_does_not_switch_dating_profile(self):
         self.client.force_login(self.alice)

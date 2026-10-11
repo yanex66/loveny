@@ -98,6 +98,18 @@ class Profile(models.Model):
     last_checkin_date = models.DateField(null=True, blank=True, help_text="Last daily coin reward check-in date")
     checkin_streak = models.PositiveSmallIntegerField(default=0, help_text="Consecutive 7-day daily check-in streak (0 to 7)")
     has_claimed_welcome = models.BooleanField(default=False, help_text="Whether newcomer joining gift has been claimed")
+    free_trial_mode = models.CharField(
+        max_length=12,
+        choices=RELATIONSHIP_MODE_CHOICES,
+        blank=True,
+        help_text="Mode covered by this user's new-account free trial",
+    )
+    free_trial_expires_at = models.DateTimeField(null=True, blank=True)
+    hookup_free_connections = models.PositiveSmallIntegerField(default=0)
+    has_paid_mode_switch_fee = models.BooleanField(
+        default=False,
+        help_text="Whether this account has paid once to permanently unlock profile-mode switching",
+    )
     off_platform_attempts = models.PositiveIntegerField(default=0, help_text="Count of detected contact-info off-platform leak attempts")
     is_test_profile = models.BooleanField(default=False, editable=False)
 
@@ -127,22 +139,39 @@ class Profile(models.Model):
     @property
     def is_dating_premium(self):
         return bool(
-            self.dating_premium_expiry
-            and self.dating_premium_expiry > timezone.now()
+            (
+                self.dating_premium_expiry
+                and self.dating_premium_expiry > timezone.now()
+            )
+            or self.has_free_trial_access('DATING')
         )
 
     @property
     def is_hookup_premium(self):
         return bool(
-            self.hookup_premium_expiry
-            and self.hookup_premium_expiry > timezone.now()
+            (
+                self.hookup_premium_expiry
+                and self.hookup_premium_expiry > timezone.now()
+            )
+            or self.has_free_trial_access('HOOKUP')
         )
 
     @property
     def is_sex_call_premium(self):
         return bool(
-            self.sex_call_premium_expiry
-            and self.sex_call_premium_expiry > timezone.now()
+            (
+                self.sex_call_premium_expiry
+                and self.sex_call_premium_expiry > timezone.now()
+            )
+            or self.has_free_trial_access('SEX_CALL')
+        )
+
+    def has_free_trial_access(self, mode=None):
+        active_mode = mode or self.relationship_mode
+        return bool(
+            self.free_trial_mode == active_mode
+            and self.free_trial_expires_at
+            and self.free_trial_expires_at > timezone.now()
         )
 
     @property
@@ -151,6 +180,8 @@ class Profile(models.Model):
 
     def is_premium(self, mode=None):
         active_mode = mode or self.relationship_mode
+        if self.has_free_trial_access(active_mode):
+            return True
         if active_mode == 'DATING':
             return self.is_dating_premium
         if active_mode == 'HOOKUP':
@@ -490,6 +521,7 @@ class CoinTransaction(models.Model):
         ('GIFT_RECEIVED', 'Gift Received'),
         ('DIAMOND_CONVERSION', 'Diamond to Coin Exchange'),
         ('DAILY_CHECKIN', 'Daily Check-In Reward'),
+        ('REFERRAL_REWARD', 'Referral Reward'),
     )
 
     user = models.ForeignKey(User, related_name='coin_transactions', on_delete=models.CASCADE)
@@ -548,6 +580,7 @@ class CallSignal(models.Model):
         ('privacy_blur_engaged', 'Privacy Blur Engaged'),
         ('privacy_blur_lifted', 'Privacy Blur Lifted'),
         ('feeds_unlocked', 'Feeds Unlocked'),
+        ('contact_exchange_flagged', 'Contact Exchange Flagged'),
     )
 
     call = models.ForeignKey(CallSession, related_name='signals', on_delete=models.CASCADE)
@@ -627,6 +660,24 @@ class SiteConfiguration(models.Model):
     hookup_connection_fee = models.PositiveIntegerField(
         default=1500,
         help_text="Connection fee in NGN per participant for Hookup Matches",
+    )
+    referral_reward_coins = models.PositiveIntegerField(
+        default=100,
+        help_text="Coins credited to the referrer for each successful new referral",
+    )
+    referrals_per_free_hookup = models.PositiveSmallIntegerField(
+        default=10,
+        validators=[MinValueValidator(1)],
+        help_text="Successful referrals required to earn one free Hookup connection",
+    )
+    free_trial_enabled = models.BooleanField(
+        default=True,
+        help_text="Give new users a free premium-access trial in their selected mode",
+    )
+    free_trial_duration_hours = models.PositiveSmallIntegerField(
+        default=24,
+        validators=[MinValueValidator(1)],
+        help_text="Length of the new-user free premium-access trial in hours",
     )
     default_user_coins = models.PositiveIntegerField(
         default=100,
@@ -721,6 +772,10 @@ class HookupMatch(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
     initiator_paid = models.BooleanField(default=False)
     target_paid = models.BooleanField(default=False)
+    initiator_referral_free = models.BooleanField(
+        default=False,
+        help_text="Initiator used a referral-earned free connection for their share",
+    )
     connection_fee = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -848,6 +903,28 @@ class ProfileStateBackup(models.Model):
         
     def __str__(self):
         return f"Backup for {self.user.username} in {self.mode} mode"
+
+
+class Referral(models.Model):
+    referrer = models.ForeignKey(
+        User,
+        related_name='referrals_made',
+        on_delete=models.CASCADE,
+    )
+    referred_user = models.OneToOneField(
+        User,
+        related_name='referral_attribution',
+        on_delete=models.CASCADE,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    coins_awarded = models.PositiveIntegerField(default=0)
+    free_hookup_connection_awarded = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ('-created_at',)
+
+    def __str__(self):
+        return f'{self.referred_user.username} referred by {self.referrer.username}'
 
 
 class ModeSwitchPaymentIntent(models.Model):
