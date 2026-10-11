@@ -233,6 +233,10 @@ class DatingPlatformTests(TestCase):
                         expected_profile,
                     ),
                 )
+                mode_admin = admin.site._registry[model]
+                self.assertNotIn('relationship_mode', mode_admin.list_display)
+                self.assertNotIn('relationship_mode', mode_admin.list_filter)
+                self.assertNotContains(response, 'relationship mode')
 
     def test_discovery_excludes_self_acted_profiles_and_other_modes(self):
         self.client.force_login(self.alice)

@@ -88,6 +88,30 @@ class ProfileAdmin(VersionAdmin): # Inherit from VersionAdmin
     filter_horizontal = ('tags',) # Nicer interface for ManyToMany field
     inlines = [ProfilePhotoInline] # Include photo management inline
 
+
+class ModeProfileAdmin(ProfileAdmin):
+    mode = None
+    list_display = tuple(
+        field for field in ProfileAdmin.list_display
+        if field != 'relationship_mode'
+    )
+    list_filter = tuple(
+        field for field in ProfileAdmin.list_filter
+        if field != 'relationship_mode'
+    )
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).filter(relationship_mode=self.mode)
+
+    def get_exclude(self, request, obj=None):
+        exclude = list(super().get_exclude(request, obj) or ())
+        exclude.append('relationship_mode')
+        return exclude
+
+    def save_model(self, request, obj, form, change):
+        obj.relationship_mode = self.mode
+        super().save_model(request, obj, form, change)
+
 # Register Swipe model (Read-only for inspection)
 @admin.register(Swipe)
 class SwipeAdmin(admin.ModelAdmin):
