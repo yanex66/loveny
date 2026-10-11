@@ -3515,10 +3515,14 @@ def hookup_discovery_view(request):
     if not profile:
         return redirect('create_profile')
 
-    if profile.relationship_mode != 'HOOKUP':
-        profile.relationship_mode = 'HOOKUP'
-        request.session['active_connection_mode'] = 'HOOKUP'
-        profile.save(update_fields=['relationship_mode', 'last_active'])
+    pending_incoming = list(
+        HookupMatch.objects.filter(target=request.user, status='pending')
+        .select_related('initiator', 'initiator__profile')
+        .prefetch_related('initiator__profile__photos')
+    )
+    is_hookup_mode = profile.relationship_mode == 'HOOKUP'
+    if not is_hookup_mode and not pending_incoming:
+        return redirect('settings')
 
     now = timezone.now()
 
@@ -3528,30 +3532,29 @@ def hookup_discovery_view(request):
     blocked_ids = set(blocked_by_me).union(set(blocking_me))
 
     # Available profiles for hookup
-    base_qs = _exclude_test_profiles(
-        Profile.objects.exclude(user=request.user)
-        .exclude(user_id__in=blocked_ids)
-        .filter(show_in_discovery=True, incognito_mode=False)
-    )
-    target_gender = 'F' if profile.gender == 'M' else ('M' if profile.gender == 'F' else None)
-    if target_gender:
-        candidates_qs = base_qs.filter(gender=target_gender)
-        if not candidates_qs.exists():
+    if is_hookup_mode:
+        base_qs = _exclude_test_profiles(
+            Profile.objects.exclude(user=request.user)
+            .exclude(user_id__in=blocked_ids)
+            .filter(
+                relationship_mode='HOOKUP',
+                show_in_discovery=True,
+                incognito_mode=False,
+            )
+        )
+        target_gender = 'F' if profile.gender == 'M' else ('M' if profile.gender == 'F' else None)
+        if target_gender:
+            candidates_qs = base_qs.filter(gender=target_gender)
+            if not candidates_qs.exists():
+                candidates_qs = base_qs
+        else:
             candidates_qs = base_qs
+        available_candidates = list(
+            candidates_qs.select_related('user').prefetch_related('photos')
+            .order_by('-last_active')[:30]
+        )
     else:
-        candidates_qs = base_qs
-
-    available_candidates = list(
-        candidates_qs.select_related('user').prefetch_related('photos')
-        .order_by('-last_active')[:30]
-    )
-
-    # Inbox: Incoming pending requests
-    pending_incoming = list(
-        HookupMatch.objects.filter(target=request.user, status='pending')
-        .select_related('initiator', 'initiator__profile')
-        .prefetch_related('initiator__profile__photos')
-    )
+        available_candidates = []
 
     # Outgoing pending requests
     pending_outgoing = list(
@@ -3590,6 +3593,7 @@ def hookup_discovery_view(request):
 
     return render(request, 'dating/hookup/discovery.html', {
         'profile': profile,
+        'is_hookup_mode': is_hookup_mode,
         'candidates': available_candidates,
         'pending_incoming': pending_incoming,
         'pending_outgoing': pending_outgoing,
@@ -3607,6 +3611,14 @@ def hookup_request_api(request):
         data = json.loads(request.body)
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
+
+    initiator_profile = Profile.objects.filter(user=request.user).first()
+    if not initiator_profile:
+        return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
+    if initiator_profile.relationship_mode != 'HOOKUP':
+        return JsonResponse({'status': 'error', 'message': 'hookup_mode_required'}, status=403)
 
     target_id = data.get('target_id')
     if not target_id or target_id == request.user.pk:
@@ -3616,6 +3628,8 @@ def hookup_request_api(request):
     target_profile = Profile.objects.filter(user=target_user).first()
     if not target_profile:
         return JsonResponse({'status': 'error', 'message': 'profile_not_found'}, status=404)
+    if target_profile.relationship_mode != 'HOOKUP':
+        return JsonResponse({'status': 'error', 'message': 'target_not_in_hookup_mode'}, status=400)
 
     # Check for existing active/pending match
     existing = HookupMatch.objects.filter(
@@ -4021,6 +4035,11 @@ def global_notifications_api(request):
         profile = request.user.profile if hasattr(request.user, 'profile') else None
         coin_balance = profile.coin_balance if profile else 0
         diamond_balance = profile.earned_diamonds if profile else 0
+        incoming_hookup_requests = list(
+            HookupMatch.objects.filter(target=request.user, status='pending')
+            .select_related('initiator')
+            .order_by('-created_at')[:5]
+        )
             
         return JsonResponse({
             'status': 'success',
@@ -4028,7 +4047,11 @@ def global_notifications_api(request):
             'new_messages': messages_data,
             'last_id': max_id,
             'coin_balance': coin_balance,
-            'diamond_balance': diamond_balance
+            'diamond_balance': diamond_balance,
+            'incoming_hookup_requests': [{
+                'id': str(match.pk),
+                'initiator_name': match.initiator.first_name or match.initiator.username,
+            } for match in incoming_hookup_requests],
         })
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)

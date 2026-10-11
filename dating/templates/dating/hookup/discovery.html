@@ -17,7 +17,13 @@
                     <span>⚡ Available Tonight</span>
                 </h1>
             </div>
-            <p class="text-xs text-purple-300/80 font-medium mt-0.5">Real connections nearby · Dual-fiat escrow protected</p>
+            <p class="text-xs text-purple-300/80 font-medium mt-0.5">
+                {% if is_hookup_mode %}
+                    Real connections nearby · Dual-fiat escrow protected
+                {% else %}
+                    You received a Hookup invitation. Your Dating mode has not been changed.
+                {% endif %}
+            </p>
         </div>
         <a href="{% url 'settings' %}" class="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-white/80 hover:bg-white/20 transition" aria-label="Settings">
             ⚙️

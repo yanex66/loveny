@@ -709,19 +709,26 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             let lastNotificationId = 0;
+            let knownHookupRequestIds = new Set();
             const toastContainer = document.getElementById('global-toast-container');
             const chatNavIcon = document.querySelector('a[href="/messages/"]');
 
             function showToast(title, body, avatar, url) {
                 const toast = document.createElement('div');
                 toast.className = 'bg-[#1a0c33]/95 border border-purple-500/30 text-white p-3 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-xl transition-all duration-300 transform translate-x-full opacity-0 pointer-events-auto cursor-pointer';
-                toast.innerHTML = `
-                    ${avatar ? `<img src="${avatar}" class="w-10 h-10 rounded-full object-cover">` : '<div class="w-10 h-10 rounded-full bg-purple-500/20"></div>'}
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm font-black truncate">${title}</p>
-                        <p class="text-xs text-white/70 truncate">${body}</p>
-                    </div>
-                `;
+                const avatarElement = document.createElement(avatar ? 'img' : 'div');
+                avatarElement.className = 'w-10 h-10 rounded-full object-cover bg-purple-500/20';
+                if (avatar) avatarElement.src = avatar;
+                const textContainer = document.createElement('div');
+                textContainer.className = 'flex-1 min-w-0';
+                const titleElement = document.createElement('p');
+                titleElement.className = 'text-sm font-black truncate';
+                titleElement.textContent = title;
+                const bodyElement = document.createElement('p');
+                bodyElement.className = 'text-xs text-white/70 truncate';
+                bodyElement.textContent = body;
+                textContainer.append(titleElement, bodyElement);
+                toast.append(avatarElement, textContainer);
                 toast.onclick = () => { window.location.href = url; };
                 toastContainer.appendChild(toast);
 
@@ -792,6 +799,22 @@
                                 setTimeout(() => window.location.reload(), 1500);
                             }
                         }
+
+                        const hookupRequests = data.incoming_hookup_requests || [];
+                        const currentRequestIds = new Set(hookupRequests.map(request => request.id));
+                        const newRequest = hookupRequests.find(request => !knownHookupRequestIds.has(request.id));
+                        if (newRequest) {
+                            showToast(
+                                newRequest.initiator_name,
+                                'Sent you a Hookup connection request.',
+                                null,
+                                "{% url 'hookup_discovery' %}"
+                            );
+                            if (window.location.pathname === "{% url 'hookup_discovery' %}") {
+                                setTimeout(() => window.location.reload(), 1500);
+                            }
+                        }
+                        knownHookupRequestIds = currentRequestIds;
                         
                         updateChatIndicator(data.unread_count);
                         

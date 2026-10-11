@@ -2475,6 +2475,10 @@ class DatingPlatformTests(TestCase):
         self.assertTrue(call.signals.filter(signal_type='feeds_unlocked').exists())
 
     def test_hookup_mode_lifecycle_and_paystack_webhook(self):
+        self.alice_profile.relationship_mode = 'HOOKUP'
+        self.alice_profile.save(update_fields=['relationship_mode'])
+        self.bob_profile.relationship_mode = 'HOOKUP'
+        self.bob_profile.save(update_fields=['relationship_mode'])
         self.client.force_login(self.alice)
 
         # 1. Send hookup request
@@ -2586,6 +2590,70 @@ class DatingPlatformTests(TestCase):
         )
         self.assertEqual(leak_msg_res.status_code, 400)
         self.assertEqual(leak_msg_res.json()['message'], 'prohibited_content')
+
+    def test_hookup_route_does_not_switch_dating_profile(self):
+        self.client.force_login(self.alice)
+
+        response = self.client.get(reverse('hookup_discovery'))
+
+        self.assertRedirects(response, reverse('settings'))
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.relationship_mode, 'DATING')
+
+    def test_dating_recipient_can_review_existing_hookup_invitation_without_mode_change(self):
+        match = HookupMatch.objects.create(
+            initiator=self.bob,
+            target=self.alice,
+            status='pending',
+        )
+        self.client.force_login(self.alice)
+
+        response = self.client.get(reverse('hookup_discovery'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Your Dating mode has not been changed.')
+        self.assertEqual(
+            [str(request.pk) for request in response.context['pending_incoming']],
+            [str(match.pk)],
+        )
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.relationship_mode, 'DATING')
+
+    def test_hookup_request_requires_both_profiles_in_hookup_mode_and_notifies_recipient(self):
+        self.client.force_login(self.alice)
+        dating_response = self.post_json(
+            reverse('hookup_request_api'),
+            {'target_id': self.bob.pk},
+        )
+        self.assertEqual(dating_response.status_code, 403)
+        self.assertEqual(HookupMatch.objects.count(), 0)
+
+        self.alice_profile.relationship_mode = 'HOOKUP'
+        self.alice_profile.save(update_fields=['relationship_mode'])
+        self.bob_profile.relationship_mode = 'HOOKUP'
+        self.bob_profile.save(update_fields=['relationship_mode'])
+        request_response = self.post_json(
+            reverse('hookup_request_api'),
+            {'target_id': self.bob.pk},
+        )
+        self.assertEqual(request_response.status_code, 201)
+        match_id = request_response.json()['match_id']
+
+        self.client.force_login(self.bob)
+        notifications = self.client.get(reverse('global_notifications_api')).json()
+        self.assertEqual(
+            notifications['incoming_hookup_requests'],
+            [{
+                'id': match_id,
+                'initiator_name': self.alice.username,
+            }],
+        )
+        inbox = self.client.get(reverse('hookup_discovery'))
+        self.assertEqual(inbox.status_code, 200)
+        self.assertEqual(
+            [str(match.pk) for match in inbox.context['pending_incoming']],
+            [match_id],
+        )
 
     def test_hookup_payment_api_requires_a_verified_paystack_transaction(self):
         match = HookupMatch.objects.create(
