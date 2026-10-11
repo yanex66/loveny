@@ -729,7 +729,7 @@ class DatingPlatformTests(TestCase):
                         content_type='application/json',
                     )
                 )
-                self.assertEqual(response.status_code, 401)
+                self.assertEqual(response.status_code, 200)
                 self.assertTrue(response.headers['Content-Type'].startswith('application/json'))
                 self.assertEqual(
                     response.json(),

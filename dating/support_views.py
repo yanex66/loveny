@@ -27,7 +27,6 @@ ACTIVE_TICKET_STATUSES = ['open', 'in_progress', 'needs_admin']
 def _unauthenticated_response():
     return JsonResponse(
         {'status': 'unauthenticated', 'messages': []},
-        status=401,
     )
 
 
