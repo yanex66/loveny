@@ -981,6 +981,66 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(inbox_response.status_code, 200)
         self.assertContains(inbox_response, 'MESSAGES')
 
+    def test_empty_messages_actions_follow_active_connection_mode(self):
+        self.client.force_login(self.alice)
+        mode_destinations = {
+            'DATING': (
+                'Explore Matches',
+                'Explore profiles to start connecting.',
+                'swipe_card',
+            ),
+            'HOOKUP': (
+                'Explore Hookups',
+                'Explore nearby hookups to start connecting.',
+                'hookup_discovery',
+            ),
+            'SEX_CALL': (
+                'Explore Hosts',
+                'Explore hosts to start connecting.',
+                'sex_call_hub',
+            ),
+        }
+
+        for mode, (button_label, subtext, route_name) in mode_destinations.items():
+            with self.subTest(mode=mode):
+                self.alice_profile.relationship_mode = mode
+                self.alice_profile.save(update_fields=['relationship_mode'])
+                session = self.client.session
+                session.pop('active_connection_mode', None)
+                session.save()
+
+                response = self.client.get(reverse('messages_inbox'))
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.context['active_connection_mode'], mode)
+                self.assertContains(response, button_label)
+                self.assertContains(response, subtext)
+                self.assertContains(
+                    response,
+                    f'href="{reverse(route_name)}"',
+                )
+                self.assertContains(
+                    response,
+                    f'<a href="{reverse(route_name)}" class="bottom-tab',
+                    html=False,
+                )
+
+    def test_empty_messages_uses_active_session_mode_for_bottom_navigation(self):
+        self.client.force_login(self.alice)
+        session = self.client.session
+        session['active_connection_mode'] = 'HOOKUP'
+        session.save()
+
+        response = self.client.get(reverse('messages_inbox'))
+
+        self.assertEqual(response.context['active_connection_mode'], 'HOOKUP')
+        self.assertContains(response, 'Explore Hookups')
+        self.assertContains(
+            response,
+            f'<a href="{reverse("hookup_discovery")}" class="bottom-tab',
+            html=False,
+        )
+
     def test_chat_requires_active_match_and_respects_privacy(self):
         match = Match.objects.create(
             user1=self.alice,

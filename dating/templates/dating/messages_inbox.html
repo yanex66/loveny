@@ -65,10 +65,27 @@
                 </div>
                 <h2 class="text-2xl font-black text-slate-900 mb-2">No conversations yet</h2>
                 <p class="text-slate-500 max-w-xs mx-auto mb-8 text-sm leading-relaxed">
-                    Explore hosts to start connecting.
+                    {% if active_connection_mode == 'HOOKUP' %}
+                        Explore nearby hookups to start connecting.
+                    {% elif active_connection_mode == 'SEX_CALL' %}
+                        Explore hosts to start connecting.
+                    {% else %}
+                        Explore profiles to start connecting.
+                    {% endif %}
                 </p>
-                <a href="{% url 'sex_call_hub' %}" class="px-8 py-3.5 brand-gradient text-white font-black text-sm uppercase tracking-wider rounded-full shadow-lg shadow-pink-600/30 hover:brightness-105 active:scale-95 transition-all">
-                    Explore Hosts
+                {% if active_connection_mode == 'HOOKUP' %}
+                    <a href="{% url 'hookup_discovery' %}" class="px-8 py-3.5 brand-gradient text-white font-black text-sm uppercase tracking-wider rounded-full shadow-lg shadow-pink-600/30 hover:brightness-105 active:scale-95 transition-all">
+                        Explore Hookups
+                    </a>
+                {% elif active_connection_mode == 'SEX_CALL' %}
+                    <a href="{% url 'sex_call_hub' %}" class="px-8 py-3.5 brand-gradient text-white font-black text-sm uppercase tracking-wider rounded-full shadow-lg shadow-pink-600/30 hover:brightness-105 active:scale-95 transition-all">
+                        Explore Hosts
+                    </a>
+                {% else %}
+                    <a href="{% url 'swipe_card' %}" class="px-8 py-3.5 brand-gradient text-white font-black text-sm uppercase tracking-wider rounded-full shadow-lg shadow-pink-600/30 hover:brightness-105 active:scale-95 transition-all">
+                        Explore Matches
+                    </a>
+                {% endif %}
                 </a>
             </div>
         {% endif %}
@@ -76,4 +93,3 @@
 
 </div>
 {% endblock %}
-

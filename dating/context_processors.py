@@ -1,6 +1,6 @@
 from datetime import timedelta
 from django.utils import timezone
-from .models import SiteConfiguration, CoinTransaction
+from .models import Profile, SiteConfiguration, CoinTransaction
 
 
 def site_configuration_context(request):
@@ -18,6 +18,7 @@ def site_configuration_context(request):
 
     ctx = {
         'site_config': config,
+        'active_connection_mode': 'DATING',
         'user_has_claimed_welcome': True,
         'user_has_checked_in_today': True,
         'user_checkin_streak': 0,
@@ -36,7 +37,14 @@ def site_configuration_context(request):
 
     user = getattr(request, 'user', None)
     if user and getattr(user, 'is_authenticated', False):
-        profile = getattr(user, 'profile', None)
+        active_mode = request.session.get('active_connection_mode')
+        try:
+            profile = user.profile
+        except Profile.DoesNotExist:
+            profile = None
+        if active_mode not in {'DATING', 'HOOKUP', 'SEX_CALL'}:
+            active_mode = profile.relationship_mode if profile else 'DATING'
+        ctx['active_connection_mode'] = active_mode
         if profile:
             today = timezone.localdate()
             yesterday = today - timedelta(days=1)
@@ -78,4 +86,3 @@ def site_configuration_context(request):
             })
 
     return ctx
-
