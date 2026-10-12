@@ -3,8 +3,21 @@ from django.utils import timezone
 
 from dating.models import CallSession, CallSignal
 
+SIGNAL_TYPE_ALIASES = {
+    'call_offer': 'offer',
+    'call_answer': 'answer',
+    'ice_candidate': 'candidate',
+}
+
+
+def normalize_call_signal_type(signal_type):
+    if not isinstance(signal_type, str):
+        return signal_type
+    return SIGNAL_TYPE_ALIASES.get(signal_type, signal_type)
+
 
 def record_call_signal(room_id, user, signal_type, payload):
+    signal_type = normalize_call_signal_type(signal_type)
     with transaction.atomic():
         call = CallSession.objects.select_for_update().filter(room_id=room_id).first()
         if not call or user.pk not in (call.caller_id, call.receiver_id):

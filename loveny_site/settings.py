@@ -142,6 +142,11 @@ else:
     CHANNEL_LAYERS = {
         'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'},
     }
+# Set to false only in QA environments to test calls without coin limits.
+SEX_CALL_BALANCE_GATING_ENABLED = os.environ.get(
+    'SEX_CALL_BALANCE_GATING_ENABLED',
+    'true',
+).strip().lower() not in {'0', 'false', 'no', 'off'}
 if CLOUDINARY_URL:
     INSTALLED_APPS[5:5] = ['cloudinary']
 

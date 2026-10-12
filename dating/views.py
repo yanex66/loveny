@@ -57,7 +57,7 @@ from .models import (
 )
 from .services.content_filter import ContentFilter
 from .utils import detect_contact_leak
-from .services.call_signals import record_call_signal
+from .services.call_signals import normalize_call_signal_type, record_call_signal
 from .forms import (
     LoginForm,
     SignUpForm,
@@ -1280,7 +1280,11 @@ def _call_payload(call):
         photo_url = caller_photo.image.url
 
     caller_coins = caller_profile.coin_balance if caller_profile else 0
-    is_unlimited = bool(caller_profile and (caller_profile.user.is_superuser or caller_profile.is_sex_call_premium))
+    balance_gating_enabled = settings.SEX_CALL_BALANCE_GATING_ENABLED
+    is_unlimited = bool(
+        not balance_gating_enabled
+        or (caller_profile and (caller_profile.user.is_superuser or caller_profile.is_sex_call_premium))
+    )
     config = SiteConfiguration.get_solo()
     rate = getattr(call, 'rate_per_minute', None) or getattr(config, 'call_rate_per_minute', 20) or 20
     max_seconds = 86400 if is_unlimited else ((caller_coins // rate) * 60)
@@ -1304,6 +1308,7 @@ def _call_payload(call):
         'caller_coins': caller_coins,
         'receiver_diamonds': receiver_profile.earned_diamonds if receiver_profile else 0,
         'is_unlimited': is_unlimited,
+        'balance_gating_enabled': balance_gating_enabled,
         'max_seconds': max_seconds,
         'elapsed_seconds': elapsed_seconds,
         'remaining_seconds': remaining_seconds,
@@ -1328,6 +1333,8 @@ def _can_use_sex_call(profile_or_user):
         return False
     if profile.relationship_mode != 'SEX_CALL':
         return False
+    if not settings.SEX_CALL_BALANCE_GATING_ENABLED:
+        return True
     if user and user.is_superuser:
         return True
     config = SiteConfiguration.get_solo()
@@ -1351,11 +1358,11 @@ def call_initiate_api(request):
     caller_profile = Profile.objects.filter(user=request.user).first()
     config = SiteConfiguration.get_solo()
     min_coins = getattr(config, 'call_rate_per_minute', 20) or 20
-    if not caller_profile or (
+    if not caller_profile or (settings.SEX_CALL_BALANCE_GATING_ENABLED and (
         not request.user.is_superuser
         and not caller_profile.is_sex_call_premium
         and caller_profile.coin_balance < min_coins
-    ):
+    )):
         return JsonResponse({
             'status': 'error',
             'message': 'insufficient_coins',
@@ -1474,11 +1481,11 @@ def call_respond_api(request, room_id):
             call_rate = call.rate_per_minute or SiteConfiguration.get_solo().call_rate_per_minute or 20
             if (
                 not caller_profile
-                or (
+                or (settings.SEX_CALL_BALANCE_GATING_ENABLED and (
                     not call.caller.is_superuser
                     and not caller_profile.is_sex_call_premium
                     and caller_profile.coin_balance < call_rate
-                )
+                ))
             ):
                 call.status = 'declined'
                 call.ended_at = timezone.now()
@@ -1494,7 +1501,7 @@ def call_respond_api(request, room_id):
             site_config = SiteConfiguration.get_solo()
             rate = getattr(call, 'rate_per_minute', site_config.call_rate_per_minute) or site_config.call_rate_per_minute
             is_unlimited = bool(caller_profile and (caller_profile.user.is_superuser or caller_profile.is_sex_call_premium))
-            if not is_unlimited and caller_profile:
+            if settings.SEX_CALL_BALANCE_GATING_ENABLED and not is_unlimited and caller_profile:
                 deposit = min(caller_profile.coin_balance, rate)
                 caller_profile.coin_balance = max(0, caller_profile.coin_balance - deposit)
                 caller_profile.save(update_fields=['coin_balance'])
@@ -1544,6 +1551,9 @@ def _finalize_call_end(call, user):
             0,
             int((call.ended_at - call.started_at).total_seconds()),
         )
+        if not settings.SEX_CALL_BALANCE_GATING_ENABLED:
+            call.save(update_fields=['status', 'ended_at', 'duration_seconds'])
+            return call
         caller_profile = Profile.objects.select_for_update().filter(
             user_id=call.caller_id,
         ).first()
@@ -1777,12 +1787,13 @@ def call_signal_send_api(request, room_id):
         return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
     if not isinstance(data, dict):
         return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
-    signal_type = data.get('type') or data.get('signal_type')
+    signal_type = normalize_call_signal_type(data.get('type') or data.get('signal_type'))
     payload = data.get('payload')
     allowed_signals = (
         'offer', 'answer', 'candidate', 'gift', 'chat', 'follow',
         'face_verified', 'speech_monitor_ready',
         'privacy_blur_engaged', 'privacy_blur_lifted',
+        'end_call',
     )
     if signal_type not in allowed_signals or not isinstance(payload, dict):
         return JsonResponse({'status': 'error', 'message': 'invalid_signal'}, status=400)
@@ -1799,41 +1810,55 @@ def call_signal_send_api(request, room_id):
         request.user.pk != call.receiver_id or call.status not in ('connected', 'ringing')
     ):
         return JsonResponse({'status': 'error', 'message': 'receiver_must_answer_active_call'}, status=403)
+    if signal_type == 'end_call':
+        with transaction.atomic():
+            call = CallSession.objects.select_for_update().get(pk=call.pk)
+            _finalize_call_end(call, request.user)
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            try:
+                peer_id = call.receiver_id if request.user.pk == call.caller_id else call.caller_id
+                async_to_sync(channel_layer.group_send)(
+                    f'call_{call.room_id.hex}',
+                    {
+                        'type': 'call.event',
+                        'recipient_id': peer_id,
+                        'signal_type': 'end_call',
+                        'payload': payload,
+                    },
+                )
+            except Exception:
+                logger.exception('Could not broadcast WebRTC call end event.')
+        return JsonResponse({'status': 'success', 'call': _call_payload(call)})
     events = []
-    if signal_type in (
-        'face_verified',
-        'speech_monitor_ready',
-        'privacy_blur_engaged',
-        'privacy_blur_lifted',
-    ):
-        signal, events = record_call_signal(
-            call.room_id,
-            request.user,
-            signal_type,
-            payload,
-        )
-        if signal is None:
-            return JsonResponse({'status': 'error', 'message': 'call_not_active'}, status=409)
-    else:
-        signal = CallSignal.objects.create(
-            call=call,
-            sender=request.user,
-            signal_type=signal_type,
-            payload=payload,
-        )
+    signal, events = record_call_signal(
+        call.room_id,
+        request.user,
+        signal_type,
+        payload,
+    )
+    if signal is None:
+        return JsonResponse({'status': 'error', 'message': 'call_not_active'}, status=409)
 
     channel_layer = get_channel_layer()
     if channel_layer:
         for event in events:
-            async_to_sync(channel_layer.group_send)(
-                f'call_{call.room_id.hex}',
-                {
-                    'type': 'call.event',
-                    'recipient_id': event['recipient_id'],
-                    'signal_type': event['type'],
-                    'payload': event['payload'],
-                },
-            )
+            try:
+                async_to_sync(channel_layer.group_send)(
+                    f'call_{call.room_id.hex}',
+                    {
+                        'type': 'call.event',
+                        'recipient_id': event['recipient_id'],
+                        'signal_type': event['type'],
+                        'payload': event['payload'],
+                        'signal_id': signal.pk,
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    'Could not broadcast persisted WebRTC signal %s; polling can deliver it.',
+                    signal.pk,
+                )
 
     return JsonResponse({'status': 'success', 'id': signal.pk}, status=201)
 
@@ -1847,6 +1872,8 @@ def call_heartbeat_api(request, room_id):
     )
     _call_participants(call, request.user)
     if call.status != 'connected' or not call.started_at:
+        return JsonResponse({'status': 'ok', 'call': _call_payload(call)})
+    if not settings.SEX_CALL_BALANCE_GATING_ENABLED:
         return JsonResponse({'status': 'ok', 'call': _call_payload(call)})
 
     elapsed = max(0, int((timezone.now() - call.started_at).total_seconds()))
@@ -2553,7 +2580,11 @@ def quick_call_match_api(request):
             started_at=now,
             connected_at=now,
         )
-        deposit = min(caller_profile.coin_balance, call.rate_per_minute)
+        deposit = (
+            min(caller_profile.coin_balance, call.rate_per_minute)
+            if settings.SEX_CALL_BALANCE_GATING_ENABLED
+            else 0
+        )
         if deposit:
             caller_profile.coin_balance -= deposit
             caller_profile.save(update_fields=('coin_balance',))

@@ -617,13 +617,19 @@
             }
         } else {
             if (callBillingBadge) {
-                callBillingBadge.textContent = isSexCallPremium ? '👑 Pass Active' : '🪙 20/min';
+                callBillingBadge.textContent = activeCall?.balance_gating_enabled === false
+                    ? 'QA call · no coin limit'
+                    : (isSexCallPremium ? '👑 Pass Active' : '🪙 20/min');
                 callBillingBadge.className = 'rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white/90 backdrop-blur-md';
             }
         }
 
         // Low coin estimate for caller
-        if (isCaller && !isSexCallPremium) {
+        if (
+            isCaller
+            && !isSexCallPremium
+            && activeCall?.balance_gating_enabled !== false
+        ) {
             const billableElapsed = Math.max(0, callDurationSeconds - 20);
             const billableMinutes = Math.ceil(billableElapsed / 60);
             const estimatedSpent = billableMinutes * 20;
@@ -794,8 +800,24 @@
 
     async function consumeSignal(signal) {
         if (!activeCall) return;
+        signal.type = ({
+            call_offer: 'offer',
+            call_answer: 'answer',
+            ice_candidate: 'candidate',
+        })[signal.type] || signal.type;
         if (window.CallPrivacy && typeof window.CallPrivacy.onPeerSignal === 'function') {
             window.CallPrivacy.onPeerSignal(signal.type, signal.payload);
+        }
+        if (signal.type === 'end_call') {
+            const roomId = activeCall.room_id;
+            closeRoom();
+            try {
+                await api(`${apiPrefix}${roomId}/end/`, {method: 'POST', body: '{}'});
+            } catch (error) {
+                console.warn('Could not finalize the call ended by the other participant.', error);
+            }
+            toast('The other participant ended the call.');
+            return;
         }
         if (signal.type === 'contact_exchange_flagged') {
             closeRoom();
@@ -854,7 +876,7 @@
         if (!activeCall || document.visibilityState !== 'visible') return;
         try {
             const response = await api(`${apiPrefix}${activeCall.room_id}/`);
-            if (['ended', 'declined'].includes(response.call.status)) {
+            if (['ended', 'declined', 'missed', 'cancelled'].includes(response.call.status)) {
                 closeRoom();
                 toast(response.call.status === 'declined' ? 'The call was declined.' : 'The call has ended.');
             }
@@ -873,13 +895,30 @@
 
     async function createPeer() {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            throw new Error('Video calling requires a supported browser and a secure connection (HTTPS or localhost).');
+            const message = 'Video calling requires a supported browser and a secure connection (HTTPS or localhost).';
+            if (feedback) feedback.textContent = message;
+            throw new Error(message);
         }
-        localStream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
-            video: {facingMode: cameraFacing},
-        });
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({
+                audio: true,
+                video: {facingMode: cameraFacing},
+            });
+        } catch (error) {
+            const message = error.name === 'NotAllowedError' || error.name === 'SecurityError'
+                ? 'Camera or microphone permission was denied. Allow access in browser settings and try again.'
+                : error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError'
+                    ? 'No camera or microphone was found. Connect an available device and try again.'
+                    : error.name === 'NotReadableError' || error.name === 'TrackStartError'
+                        ? 'Your camera or microphone is already in use. Close the other app and try again.'
+                        : 'Could not access your camera and microphone. Check device permissions and try again.';
+            if (feedback) feedback.textContent = message;
+            throw new Error(message);
+        }
         if (localVideo) localVideo.srcObject = localStream;
+        localVideo?.play().catch(error => {
+            console.warn('Local video playback requires user interaction.', error);
+        });
         if (window.CallPrivacy && activeCall) {
             window.CallPrivacy.init(activeCall.room_id, config.dataset.userId);
             window.CallPrivacy.startFaceVerification(localStream);
@@ -906,7 +945,10 @@
             },
         );
         peer = new RTCPeerConnection({
-            iceServers: [{urls: 'stun:stun.l.google.com:19302'}],
+            iceServers: [
+                {urls: 'stun:stun.l.google.com:19302'},
+                {urls: 'stun:stun1.l.google.com:19302'},
+            ],
         });
         const senders = new Map();
         ['audio', 'video'].forEach(kind => {
@@ -951,13 +993,6 @@
     }
 
     async function initiateCall(receiverId) {
-        // Pre-check coins locally to guide user proactively
-        if (userCoins < 20 && !isSexCallPremium) {
-            toast('At least 20 coins (or a Sex Call Pass) is required to start a call. Opening Coin Store...', true);
-            openCoinStore();
-            return;
-        }
-
         try {
             const response = await api(config.dataset.initiateUrl, {
                 method: 'POST',
@@ -977,7 +1012,12 @@
             await sendSignal('offer', peer.localDescription.toJSON());
             startPolling();
         } catch (error) {
+            const roomId = activeCall && activeCall.room_id;
             closeRoom();
+            if (roomId) {
+                api(`${apiPrefix}${roomId}/end/`, {method: 'POST', body: '{}'})
+                    .catch(cleanupError => console.warn('Could not end call after setup failed.', cleanupError));
+            }
             const isPassOrCoinsNeeded = error.status === 403 && (
                 error.payload?.message === 'sex_call_pass_required' ||
                 error.payload?.message === 'insufficient_coins'
@@ -1054,6 +1094,7 @@
     const endCallBtn = document.getElementById('end-call');
     if (endCallBtn) endCallBtn.addEventListener('click', async () => {
         const roomId = activeCall && activeCall.room_id;
+        await sendSignal('end_call', {reason: 'participant_ended'});
         closeRoom();
         if (roomId) {
             try {

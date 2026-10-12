@@ -58,6 +58,7 @@
     <p class="absolute inset-x-4 top-24 z-10 mx-auto max-w-xl rounded-xl border border-amber-300/40 bg-black/75 px-3 py-2 text-center text-[10px] leading-relaxed text-amber-100 backdrop-blur-md">
         Speech monitoring is active. Your browser’s recognition provider may process audio. LOVENY does not record calls or retain full transcripts. Suspected contact sharing ends the call and suspends the account pending admin review.
     </p>
+    <p id="call-feedback" role="status" aria-live="polite" class="absolute inset-x-4 top-40 z-20 mx-auto hidden max-w-xl rounded-xl border border-white/20 bg-black/80 px-4 py-3 text-center text-sm font-semibold text-white shadow-xl"></p>
 
     <!-- FLOATING LIVE CHAT OVERLAY (Bottom-Left) -->
     <div id="floating-chat-container" class="absolute left-4 bottom-44 z-30 w-64 sm:w-80 flex flex-col justify-end pointer-events-auto">
@@ -153,13 +154,30 @@
     const isCaller = {{ is_caller|yesno:"true,false" }};
     const localVideo = document.getElementById('local-video');
     const remoteVideo = document.getElementById('remote-video');
+    const callFeedback = document.getElementById('call-feedback');
     let peer = null;
     let signalingSocket = null;
     let lastSignalId = 0;
     const processedSignalIds = new Set();
     let signalTimer = null;
+    let heartbeatTimer = null;
     let localStream = null;
     let pendingCandidates = [];
+    let callTerminating = false;
+
+    function setCallFeedback(message, visible = true) {
+        if (!callFeedback) return;
+        callFeedback.textContent = message;
+        callFeedback.classList.toggle('hidden', !visible);
+    }
+
+    function normalizeSignalType(type) {
+        return ({
+            call_offer: 'offer',
+            call_answer: 'answer',
+            ice_candidate: 'candidate',
+        })[type] || type;
+    }
 
     // Room DOM Elements
     const chatContainer = document.getElementById('floating-chat-container');
@@ -180,6 +198,7 @@
     function leaveCallWithNotice(message, destination) {
         window.CallSpeechMonitor?.stop();
         if (signalTimer) clearInterval(signalTimer);
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
         signalingSocket?.close();
         signalingSocket = null;
         peer?.close();
@@ -208,6 +227,7 @@
 
     async function initializeMedia() {
         try {
+            setCallFeedback('Waiting for camera and microphone access…');
             if (
                 !window.CallSpeechMonitor
                 || !window.CallSpeechMonitor.requestConsent()
@@ -219,8 +239,31 @@
                 window.location.replace('{% url "sex_call_hub" %}');
                 return;
             }
-            localStream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
+            if (!navigator.mediaDevices?.getUserMedia) {
+                throw new Error('Camera and microphone access requires a supported browser and a secure HTTPS connection.');
+            }
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: true,
+                });
+            } catch (error) {
+                if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
+                    throw new Error('Camera or microphone permission was denied. Allow access in your browser settings, then rejoin the call.');
+                }
+                if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+                    throw new Error('No camera or microphone was found. Connect an available device and rejoin the call.');
+                }
+                if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+                    throw new Error('Your camera or microphone is already in use by another app. Close that app and rejoin.');
+                }
+                throw new Error('Could not access your camera and microphone. Check device permissions and try again.');
+            }
             localVideo.srcObject = localStream;
+            localVideo.play().catch(error => {
+                console.warn('Local video playback requires user interaction.', error);
+            });
+            setCallFeedback('Camera and microphone ready. Connecting to your partner…');
             if (window.CallPrivacy) {
                 CallPrivacy.init(roomId, String(currentUserId));
                 CallPrivacy.startFaceVerification(localStream);
@@ -245,7 +288,10 @@
             });
 
             peer = new RTCPeerConnection({
-                iceServers: [{urls: 'stun:stun.l.google.com:19302'}],
+                iceServers: [
+                    {urls: 'stun:stun.l.google.com:19302'},
+                    {urls: 'stun:stun1.l.google.com:19302'},
+                ],
             });
             const senders = new Map();
             ['audio', 'video'].forEach(kind => {
@@ -266,14 +312,23 @@
             };
             peer.ontrack = event => {
                 const stream = event.streams[0] || new MediaStream([event.track]);
-                window.CallPrivacy?.setRemoteStream(stream);
+                if (window.CallPrivacy?.setRemoteStream) {
+                    window.CallPrivacy.setRemoteStream(stream);
+                } else {
+                    remoteVideo.srcObject = stream;
+                    remoteVideo.play().catch(error => {
+                        console.warn('Remote video playback requires user interaction.', error);
+                    });
+                }
+                setCallFeedback('Partner media received. Completing secure connection…');
             };
             peer.onconnectionstatechange = () => {
                 if (peer.connectionState === 'connected') {
+                    setCallFeedback('Call connected', false);
                     window.CallSpeechMonitor?.enableDetection();
                 }
-                if (peer.connectionState === 'failed') {
-                    console.error('The video call connection failed.');
+                if (peer.connectionState === 'failed' || peer.connectionState === 'disconnected') {
+                    setCallFeedback('Connection interrupted. Trying to reconnect…');
                 }
             };
 
@@ -283,13 +338,12 @@
                 await sendSignal('offer', peer.localDescription.toJSON());
             }
             signalTimer = window.setInterval(pollSignals, 1000);
+            heartbeatTimer = window.setInterval(checkCallStatus, 10000);
             pollSignals();
+            checkCallStatus();
         } catch (error) {
             console.error('Could not initialize the secure video call.', error);
-            const status = document.getElementById('handshake-status');
-            if (status) {
-                status.textContent = 'Camera, microphone, and supported speech monitoring are required. The call is ending.';
-            }
+            setCallFeedback(error.message || 'Could not start the call. Check camera and microphone permissions.');
             window.CallSpeechMonitor?.stop();
             peer?.close();
             localStream?.getTracks().forEach(track => track.stop());
@@ -302,9 +356,28 @@
                 .finally(() => {
                     window.setTimeout(
                         () => window.location.replace('{% url "sex_call_hub" %}'),
-                        1200,
+                        3500,
                     );
                 });
+        }
+    }
+
+    async function checkCallStatus() {
+        if (callTerminating) return;
+        try {
+            const response = await fetch(`/api/calls/${roomId}/heartbeat/`, {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfToken()},
+            });
+            if (!response.ok) throw new Error('Could not check call status.');
+            const data = await response.json();
+            if (['ended', 'declined', 'missed', 'cancelled'].includes(data.call?.status)) {
+                callTerminating = true;
+                setCallFeedback('Your partner ended the call.');
+                window.setTimeout(() => window.location.replace('{% url "sex_call_hub" %}'), 1200);
+            }
+        } catch (error) {
+            console.warn('Call status heartbeat failed.', error);
         }
     }
 
@@ -324,12 +397,23 @@
     }
 
     async function consumeSignal(signal) {
+        signal.type = normalizeSignalType(signal.type);
         if (signal.id) {
             if (processedSignalIds.has(signal.id)) return;
             processedSignalIds.add(signal.id);
             if (processedSignalIds.size > 250) {
                 processedSignalIds.delete(processedSignalIds.values().next().value);
             }
+        }
+        if (signal.type === 'end_call') {
+            callTerminating = true;
+            setCallFeedback('Your partner ended the call.');
+            await fetch(`/api/calls/${roomId}/end/`, {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfToken()},
+            }).catch(error => console.warn('Could not finalize the ended call.', error));
+            window.setTimeout(() => window.location.replace('{% url "sex_call_hub" %}'), 1200);
+            return;
         }
         if (signal.type === 'call_accepted') return;
         if (window.CallPrivacy) {
@@ -497,14 +581,23 @@
 
     // End call
     endBtn?.addEventListener('click', async () => {
+        callTerminating = true;
         window.CallSpeechMonitor?.stop();
         try {
             if (signalTimer) clearInterval(signalTimer);
+            if (heartbeatTimer) clearInterval(heartbeatTimer);
+            await sendSignal('end_call', {reason: 'participant_ended'});
             await fetch(`/api/calls/${roomId}/end/`, {
                 method: 'POST',
                 headers: { 'X-CSRFToken': csrfToken() },
             });
-        } catch (_) {}
+        } catch (error) {
+            console.warn('Could not send the call end signal.', error);
+            await fetch(`/api/calls/${roomId}/end/`, {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfToken()},
+            }).catch(endError => console.error('Could not end the call.', endError));
+        }
         peer?.close();
         localStream?.getTracks().forEach(track => track.stop());
         window.CallPrivacy?.cleanup();

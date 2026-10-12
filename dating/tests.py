@@ -1541,24 +1541,39 @@ class DatingPlatformTests(TestCase):
 
         self.client.force_login(self.alice)
         response = self.post_json(send_signal_url, {
-            'type': 'offer',
+            'type': 'call_offer',
             'payload': {'type': 'offer', 'sdp': 'fake-offer'},
         })
         self.assertEqual(response.status_code, 201)
         self.client.force_login(self.bob)
         self.assertEqual(self.client.get(signals_url).json()['signals'][0]['type'], 'offer')
         response = self.post_json(send_signal_url, {
-            'type': 'answer',
+            'type': 'call_answer',
             'payload': {'type': 'answer', 'sdp': 'fake-answer'},
         })
         self.assertEqual(response.status_code, 201)
         self.client.force_login(self.alice)
         self.assertEqual(self.client.get(signals_url).json()['signals'][0]['type'], 'answer')
-        response = self.client.post(reverse('call_end_api', args=[room_id]))
+        candidate = self.post_json(send_signal_url, {
+            'type': 'ice_candidate',
+            'payload': {'candidate': 'candidate:1 1 UDP 1 127.0.0.1 9 typ host'},
+        })
+        self.assertEqual(candidate.status_code, 201)
+        self.client.force_login(self.bob)
+        self.assertEqual(self.client.get(signals_url).json()['signals'][-1]['type'], 'candidate')
+        self.client.force_login(self.alice)
+        response = self.post_json(send_signal_url, {
+            'type': 'end_call',
+            'payload': {'reason': 'test'},
+        })
         self.assertEqual(response.status_code, 200)
         call.refresh_from_db()
         self.assertEqual(call.status, 'ended')
         self.assertIsNotNone(call.ended_at)
+        self.assertEqual(
+            self.post_json(reverse('call_end_api', args=[room_id]), {}).status_code,
+            200,
+        )
 
         expired_match = Match.objects.get(user1=self.alice, user2=self.bob)
         expired_match.expires_at = timezone.now() - timedelta(seconds=1)
@@ -1581,6 +1596,59 @@ class DatingPlatformTests(TestCase):
         self.alice_profile.save(update_fields=['coin_balance'])
         response = self.post_json(initiate_url, {'receiver_id': self.bob.pk})
         self.assertEqual(response.status_code, 201)
+
+    @override_settings(SEX_CALL_BALANCE_GATING_ENABLED=False)
+    def test_qa_calls_can_start_and_remain_active_without_coins(self):
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.coin_balance = 0
+        self.alice_profile.save(update_fields=['relationship_mode', 'coin_balance'])
+        self.bob_profile.relationship_mode = 'SEX_CALL'
+        self.bob_profile.coin_balance = 0
+        self.bob_profile.save(update_fields=['relationship_mode', 'coin_balance'])
+        Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            mode='SEX_CALL',
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+
+        self.client.force_login(self.alice)
+        initiated = self.post_json(
+            reverse('call_initiate_api'),
+            {'receiver_id': self.bob.pk},
+        )
+        self.assertEqual(initiated.status_code, 201)
+        self.assertFalse(initiated.json()['call']['balance_gating_enabled'])
+        room_id = initiated.json()['room_id']
+
+        self.client.force_login(self.bob)
+        accepted = self.post_json(
+            reverse('call_respond_api', args=[room_id]),
+            {'action': 'accept'},
+        )
+        self.assertEqual(accepted.status_code, 200)
+        self.assertEqual(accepted.json()['call']['status'], 'connected')
+        self.assertEqual(accepted.json()['call']['coins_spent'], 0)
+
+        call = CallSession.objects.get(room_id=room_id)
+        call.started_at = timezone.now() - timedelta(minutes=5)
+        call.save(update_fields=['started_at'])
+        self.client.force_login(self.alice)
+        heartbeat = self.post_json(
+            reverse('call_heartbeat_api', args=[room_id]),
+            {'duration_seconds': 300},
+        )
+        self.assertEqual(heartbeat.status_code, 200)
+        self.assertEqual(heartbeat.json()['call']['status'], 'connected')
+        self.assertEqual(heartbeat.json()['call']['remaining_seconds'], 86400)
+
+        ended = self.post_json(reverse('call_end_api', args=[room_id]), {})
+        self.assertEqual(ended.status_code, 200)
+        self.alice_profile.refresh_from_db()
+        self.bob_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 0)
+        self.assertEqual(self.bob_profile.earned_diamonds, 0)
+        self.assertFalse(CoinTransaction.objects.filter(call=call).exists())
 
     def test_subscription_pass_entitlements_are_category_specific(self):
         self.alice_profile.hookup_premium_expiry = timezone.now() + timedelta(days=1)
@@ -2124,19 +2192,25 @@ class DatingPlatformTests(TestCase):
                 self.assertEqual(acceptance['type'], 'call_accepted')
                 self.assertEqual(bob_acceptance['type'], 'call_accepted')
                 await bob_socket.send_json_to({
-                    'type': 'offer',
+                    'type': 'call_offer',
                     'payload': {'type': 'offer', 'sdp': 'test-offer'},
                 })
                 offer = await alice_socket.receive_json_from()
                 self.assertEqual(offer['type'], 'offer')
                 self.assertEqual(offer['payload']['sdp'], 'test-offer')
                 await alice_socket.send_json_to({
-                    'type': 'answer',
+                    'type': 'call_answer',
                     'payload': {'type': 'answer', 'sdp': 'test-answer'},
                 })
                 answer = await bob_socket.receive_json_from()
                 self.assertEqual(answer['type'], 'answer')
                 self.assertEqual(answer['payload']['sdp'], 'test-answer')
+                await bob_socket.send_json_to({
+                    'type': 'end_call',
+                    'payload': {'reason': 'test'},
+                })
+                end_event = await alice_socket.receive_json_from()
+                self.assertEqual(end_event['type'], 'end_call')
             finally:
                 await alice_socket.disconnect()
                 await bob_socket.disconnect()
@@ -2460,6 +2534,7 @@ class DatingPlatformTests(TestCase):
         self.assertContains(res_alice, 'floating-chat-container')
         self.assertContains(res_alice, 'local-video')
         self.assertContains(res_alice, 'remote-video')
+        self.assertContains(res_alice, 'call-feedback')
         self.assertContains(res_alice, 'Speech monitoring is active')
 
         # Bob (receiver) can access the connected call room.
