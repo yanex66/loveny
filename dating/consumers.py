@@ -25,6 +25,9 @@ class CallSignalingConsumer(AsyncJsonWebsocketConsumer):
         self.group_name = f'call_{self.room_id.hex}'
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
+        acceptance = await self.quick_match_acceptance()
+        if acceptance:
+            await self.send_json(acceptance)
 
     async def disconnect(self, close_code):
         if hasattr(self, 'group_name'):
@@ -38,6 +41,28 @@ class CallSignalingConsumer(AsyncJsonWebsocketConsumer):
             receiver_id=self.user.pk
         ).exists()
 
+    @database_sync_to_async
+    def quick_match_acceptance(self):
+        call = CallSession.objects.filter(
+            room_id=self.room_id,
+            status__in=('connected', 'active'),
+            signals__signal_type='call_accepted',
+            signals__payload__is_quick_match=True,
+        ).first()
+        if not call:
+            return None
+        signal = call.signals.filter(
+            signal_type='call_accepted',
+            payload__is_quick_match=True,
+        ).first()
+        if not signal:
+            return None
+        return {
+            'type': signal.signal_type,
+            'payload': signal.payload,
+            'id': signal.pk,
+        }
+
     async def receive_json(self, content, **kwargs):
         if not isinstance(content, dict):
             await self.close(code=4400)
@@ -45,6 +70,9 @@ class CallSignalingConsumer(AsyncJsonWebsocketConsumer):
         signal_type = content.get('type')
         payload = content.get('payload', {})
         if signal_type not in {
+            'offer',
+            'answer',
+            'candidate',
             'face_verified',
             'privacy_blur_engaged',
             'privacy_blur_lifted',
@@ -68,6 +96,7 @@ class CallSignalingConsumer(AsyncJsonWebsocketConsumer):
                 'recipient_id': event['recipient_id'],
                 'signal_type': event['type'],
                 'payload': event['payload'],
+                'signal_id': signal.pk,
             })
 
     async def call_event(self, event):
@@ -75,6 +104,7 @@ class CallSignalingConsumer(AsyncJsonWebsocketConsumer):
             await self.send_json({
                 'type': event['signal_type'],
                 'payload': event['payload'],
+                'id': event.get('signal_id'),
             })
 
 

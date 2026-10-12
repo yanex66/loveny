@@ -489,6 +489,21 @@ class CallSession(models.Model):
         return f'Call {self.room_id}: {self.caller} → {self.receiver} ({self.status})'
 
 
+class SexCallQueue(models.Model):
+    user = models.OneToOneField(
+        User,
+        related_name='sex_call_search',
+        on_delete=models.CASCADE,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_ping_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=('last_ping_at', 'created_at')),
+        ]
+
+
 class CallGift(models.Model):
     GIFT_CHOICES = (
         ('rose', 'Rose 🌹'),
@@ -590,6 +605,7 @@ class CallSignal(models.Model):
         ('privacy_blur_lifted', 'Privacy Blur Lifted'),
         ('feeds_unlocked', 'Feeds Unlocked'),
         ('contact_exchange_flagged', 'Contact Exchange Flagged'),
+        ('call_accepted', 'Call Accepted'),
     )
 
     call = models.ForeignKey(CallSession, related_name='signals', on_delete=models.CASCADE)

@@ -372,39 +372,81 @@
     const cosmicOverlay = document.getElementById('cosmic-match-overlay');
     const startCosmicBtn = document.getElementById('start-cosmic-match-btn');
     const cancelCosmicBtn = document.getElementById('cancel-cosmic-match-btn');
-    let cosmicTimer = null;
+    const cosmicStatus = document.getElementById('cosmic-status-label');
+    const quickMatchUrl = "{% url 'quick_call_match_api' %}";
+    let cosmicSearchTimer = null;
+    let cosmicSearchStartedAt = 0;
+    let cosmicSearchActive = false;
+
+    async function searchCosmicMatch() {
+        if (!cosmicSearchActive) return;
+        if (Date.now() - cosmicSearchStartedAt >= 60000) {
+            cosmicSearchActive = false;
+            await fetch(quickMatchUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+                body: JSON.stringify({ action: 'cancel' }),
+            });
+            cosmicStatus.textContent = 'No match found yet. Please try again.';
+            return;
+        }
+
+        try {
+            const res = await fetch(quickMatchUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+                body: JSON.stringify({}),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || data.message || 'Could not start matching.');
+            if (data.status === 'success' && data.room_id) {
+                cosmicSearchActive = false;
+                window.location.href = `/call/${data.room_id}/`;
+                return;
+            }
+            const flexibleSeconds = Number(data.flexible_after_seconds || 0);
+            cosmicStatus.textContent = flexibleSeconds > 0
+                ? `Searching for a preferred match. Everyone will be included in ${flexibleSeconds}s…`
+                : 'Searching all available Sex Call members…';
+            cosmicSearchTimer = setTimeout(searchCosmicMatch, 1800);
+        } catch (error) {
+            cosmicSearchActive = false;
+            cosmicStatus.textContent = error.message || 'Could not search right now. Please retry.';
+        }
+    }
 
     startCosmicBtn?.addEventListener('click', () => {
         cosmicOverlay.classList.remove('hidden');
         cosmicOverlay.classList.add('flex');
-        
-        cosmicTimer = setTimeout(async () => {
+        cosmicSearchActive = true;
+        cosmicSearchStartedAt = Date.now();
+        cosmicStatus.textContent = 'Searching for another active Sex Call member…';
+        searchCosmicMatch();
+    });
+
+    cancelCosmicBtn?.addEventListener('click', async () => {
+        cosmicSearchActive = false;
+        if (cosmicSearchTimer) clearTimeout(cosmicSearchTimer);
+        if (cosmicSearchStartedAt) {
             try {
-                const res = await fetch("/api/calls/quick-match/", {
+                await fetch(quickMatchUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': csrfToken(),
                     },
+                    body: JSON.stringify({ action: 'cancel' }),
                 });
-                const data = await res.json();
-                if (data.status === 'success' && data.room_id) {
-                    window.location.href = `/call/${data.room_id}/`;
-                } else if (data.status === 'success' && data.host_id) {
-                    startDirectCall(data.host_id, data.host_username);
-                } else if (data.message === 'insufficient_coins') {
-                    window.location.href = "{% url 'coin_shop' %}";
-                } else {
-                    document.getElementById('cosmic-status-label').textContent = 'No hosts found right now. Try again!';
-                }
-            } catch (_) {
-                document.getElementById('cosmic-status-label').textContent = 'Match timed out. Please retry.';
+            } catch (error) {
+                console.warn('Could not cancel matchmaking search.', error);
             }
-        }, 3000);
-    });
-
-    cancelCosmicBtn?.addEventListener('click', () => {
-        if (cosmicTimer) clearTimeout(cosmicTimer);
+        }
         cosmicOverlay.classList.add('hidden');
         cosmicOverlay.classList.remove('flex');
     });

@@ -154,7 +154,9 @@
     const localVideo = document.getElementById('local-video');
     const remoteVideo = document.getElementById('remote-video');
     let peer = null;
+    let signalingSocket = null;
     let lastSignalId = 0;
+    const processedSignalIds = new Set();
     let signalTimer = null;
     let localStream = null;
     let pendingCandidates = [];
@@ -178,6 +180,8 @@
     function leaveCallWithNotice(message, destination) {
         window.CallSpeechMonitor?.stop();
         if (signalTimer) clearInterval(signalTimer);
+        signalingSocket?.close();
+        signalingSocket = null;
         peer?.close();
         localStream?.getTracks().forEach(track => track.stop());
         window.CallPrivacy?.cleanup();
@@ -186,6 +190,11 @@
     }
 
     async function sendSignal(type, payload) {
+        await connectSignalingSocket();
+        if (signalingSocket?.readyState === WebSocket.OPEN) {
+            signalingSocket.send(JSON.stringify({type, payload}));
+            return;
+        }
         const response = await fetch(`/api/calls/${roomId}/signals/send/`, {
             method: 'POST',
             headers: {
@@ -268,6 +277,7 @@
                 }
             };
 
+            await connectSignalingSocket();
             if (isCaller) {
                 await peer.setLocalDescription(await peer.createOffer());
                 await sendSignal('offer', peer.localDescription.toJSON());
@@ -306,35 +316,91 @@
             const data = await response.json();
             for (const signal of data.signals) {
                 lastSignalId = Math.max(lastSignalId, signal.id);
-                if (window.CallPrivacy) {
-                    CallPrivacy.onPeerSignal(signal.type, signal.payload);
-                }
-                if (signal.type === 'contact_exchange_flagged') {
-                    leaveCallWithNotice(
-                        'The call ended because the live-call monitor detected suspected contact sharing. The other account has been suspended pending review.',
-                        '{% url "sex_call_hub" %}',
-                    );
-                    return;
-                }
-                if (signal.type === 'offer' && !peer.remoteDescription && !isCaller) {
-                    await peer.setRemoteDescription(new RTCSessionDescription(signal.payload));
-                    await flushCandidates();
-                    await peer.setLocalDescription(await peer.createAnswer());
-                    await sendSignal('answer', peer.localDescription.toJSON());
-                } else if (signal.type === 'answer' && isCaller && !peer.remoteDescription) {
-                    await peer.setRemoteDescription(new RTCSessionDescription(signal.payload));
-                    await flushCandidates();
-                } else if (signal.type === 'candidate') {
-                    const candidate = new RTCIceCandidate(signal.payload);
-                    if (peer.remoteDescription) await peer.addIceCandidate(candidate);
-                    else pendingCandidates.push(candidate);
-                } else if (signal.type === 'chat') {
-                    appendChatMessage(signal.payload.username || 'Partner', signal.payload.text || '');
-                }
+                await consumeSignal(signal);
             }
         } catch (error) {
             console.error('Call signaling poll failed.', error);
         }
+    }
+
+    async function consumeSignal(signal) {
+        if (signal.id) {
+            if (processedSignalIds.has(signal.id)) return;
+            processedSignalIds.add(signal.id);
+            if (processedSignalIds.size > 250) {
+                processedSignalIds.delete(processedSignalIds.values().next().value);
+            }
+        }
+        if (signal.type === 'call_accepted') return;
+        if (window.CallPrivacy) {
+            CallPrivacy.onPeerSignal(signal.type, signal.payload);
+        }
+        if (signal.type === 'contact_exchange_flagged') {
+            leaveCallWithNotice(
+                'The call ended because the live-call monitor detected suspected contact sharing. The other account has been suspended pending review.',
+                '{% url "sex_call_hub" %}',
+            );
+            return;
+        }
+        if (signal.type === 'offer' && !peer.remoteDescription && !isCaller) {
+            await peer.setRemoteDescription(new RTCSessionDescription(signal.payload));
+            await flushCandidates();
+            await peer.setLocalDescription(await peer.createAnswer());
+            await sendSignal('answer', peer.localDescription.toJSON());
+        } else if (signal.type === 'answer' && isCaller && !peer.remoteDescription) {
+            await peer.setRemoteDescription(new RTCSessionDescription(signal.payload));
+            await flushCandidates();
+        } else if (signal.type === 'candidate') {
+            const candidate = new RTCIceCandidate(signal.payload);
+            if (peer.remoteDescription) await peer.addIceCandidate(candidate);
+            else pendingCandidates.push(candidate);
+        } else if (signal.type === 'chat') {
+            appendChatMessage(signal.payload.username || 'Partner', signal.payload.text || '');
+        }
+    }
+
+    function connectSignalingSocket() {
+        if (!window.WebSocket) return Promise.resolve(false);
+        if (signalingSocket?.readyState === WebSocket.OPEN) return Promise.resolve(true);
+        if (signalingSocket?.readyState === WebSocket.CONNECTING) {
+            return new Promise(resolve => {
+                const timeout = window.setTimeout(() => resolve(false), 2000);
+                signalingSocket.addEventListener('open', () => {
+                    window.clearTimeout(timeout);
+                    resolve(true);
+                }, {once: true});
+                signalingSocket.addEventListener('error', () => {
+                    window.clearTimeout(timeout);
+                    resolve(false);
+                }, {once: true});
+            });
+        }
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        signalingSocket = new WebSocket(
+            `${protocol}//${window.location.host}/ws/calls/${roomId}/`,
+        );
+        signalingSocket.addEventListener('message', event => {
+            try {
+                const signal = JSON.parse(event.data);
+                if (signal.type && signal.payload) consumeSignal(signal);
+            } catch (error) {
+                console.warn('Could not read WebSocket call signal.', error);
+            }
+        });
+        signalingSocket.addEventListener('close', () => {
+            signalingSocket = null;
+        });
+        return new Promise(resolve => {
+            const timeout = window.setTimeout(() => resolve(false), 2000);
+            signalingSocket.addEventListener('open', () => {
+                window.clearTimeout(timeout);
+                resolve(true);
+            }, {once: true});
+            signalingSocket.addEventListener('error', () => {
+                window.clearTimeout(timeout);
+                resolve(false);
+            }, {once: true});
+        });
     }
 
     async function flushCandidates() {

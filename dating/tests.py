@@ -7,7 +7,10 @@ from decimal import Decimal
 from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import patch
+from uuid import UUID
 
+from asgiref.sync import async_to_sync
+from channels.testing import WebsocketCommunicator
 from django import forms
 from django.apps import apps
 from django.conf import settings
@@ -43,6 +46,7 @@ from .models import (
     ProfilePhoto,
     Referral,
     SiteConfiguration,
+    SexCallQueue,
     SubscriptionPlan,
     Swipe,
     Tag,
@@ -2062,20 +2066,149 @@ class DatingPlatformTests(TestCase):
 
     def test_quick_call_match_api(self):
         self.alice_profile.relationship_mode = 'SEX_CALL'
-        self.alice_profile.coin_balance = 50
+        self.alice_profile.coin_balance = 0
         self.alice_profile.save()
 
+        self.bob_profile.relationship_mode = 'SEX_CALL'
+        self.bob_profile.coin_balance = 0
         self.bob_profile.is_host_ready = True
         self.bob_profile.save()
 
         self.client.force_login(self.alice)
-        res = self.client.post(reverse('quick_call_match_api'), content_type='application/json')
-        self.assertEqual(res.status_code, 200)
-        data = res.json()
+        first_search = self.post_json(reverse('quick_call_match_api'), {})
+        self.assertEqual(first_search.status_code, 200)
+        self.assertEqual(first_search.json()['status'], 'waiting')
+        self.assertEqual(SexCallQueue.objects.count(), 1)
+
+        second_client = Client()
+        second_client.force_login(self.bob)
+        second_search = second_client.post(
+            reverse('quick_call_match_api'),
+            data='{}',
+            content_type='application/json',
+        )
+        self.assertEqual(second_search.status_code, 200)
+        data = second_search.json()
         self.assertEqual(data['status'], 'success')
-        self.assertTrue('room_id' in data)
-        self.assertEqual(data['call']['receiver_name'], 'bob')
-        self.assertEqual(data['host']['username'], 'bob')
+        self.assertEqual(data['call']['status'], 'connected')
+        self.assertEqual(data['call']['caller_name'], 'bob')
+        self.assertEqual(data['matched_user'], 'alice')
+        self.assertEqual(SexCallQueue.objects.count(), 0)
+
+        first_result = self.post_json(reverse('quick_call_match_api'), {})
+        self.assertEqual(first_result.json()['room_id'], data['room_id'])
+        room_url = reverse('call_room_page', args=[data['room_id']])
+        self.assertEqual(self.client.get(room_url).status_code, 200)
+        self.assertEqual(second_client.get(room_url).status_code, 200)
+
+        async def verify_websocket_offer():
+            from channels.routing import URLRouter
+
+            from .routing import websocket_urlpatterns
+
+            app = URLRouter(websocket_urlpatterns)
+            alice_socket = WebsocketCommunicator(app, f'/ws/calls/{data["room_id"]}/')
+            bob_socket = WebsocketCommunicator(app, f'/ws/calls/{data["room_id"]}/')
+            alice_socket.scope['user'] = self.alice
+            bob_socket.scope['user'] = self.bob
+            room_uuid = UUID(data['room_id'])
+            alice_socket.scope['url_route'] = {'kwargs': {'room_id': room_uuid}}
+            bob_socket.scope['url_route'] = {'kwargs': {'room_id': room_uuid}}
+            alice_connected, _ = await alice_socket.connect()
+            bob_connected, _ = await bob_socket.connect()
+            self.assertTrue(alice_connected)
+            self.assertTrue(bob_connected)
+            try:
+                acceptance = await alice_socket.receive_json_from()
+                bob_acceptance = await bob_socket.receive_json_from()
+                self.assertEqual(acceptance['type'], 'call_accepted')
+                self.assertEqual(bob_acceptance['type'], 'call_accepted')
+                await bob_socket.send_json_to({
+                    'type': 'offer',
+                    'payload': {'type': 'offer', 'sdp': 'test-offer'},
+                })
+                offer = await alice_socket.receive_json_from()
+                self.assertEqual(offer['type'], 'offer')
+                self.assertEqual(offer['payload']['sdp'], 'test-offer')
+                await alice_socket.send_json_to({
+                    'type': 'answer',
+                    'payload': {'type': 'answer', 'sdp': 'test-answer'},
+                })
+                answer = await bob_socket.receive_json_from()
+                self.assertEqual(answer['type'], 'answer')
+                self.assertEqual(answer['payload']['sdp'], 'test-answer')
+            finally:
+                await alice_socket.disconnect()
+                await bob_socket.disconnect()
+
+        async_to_sync(verify_websocket_offer)()
+
+    def test_sex_call_hosts_api_lists_all_online_sex_call_profiles(self):
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.save(update_fields=['relationship_mode'])
+        self.bob_profile.relationship_mode = 'SEX_CALL'
+        self.bob_profile.save(update_fields=['relationship_mode'])
+        third_user, third_profile = self.make_profile(
+            'third-sex-call-host',
+            mode='SEX_CALL',
+            gender='F',
+            preferred_gender='M',
+        )
+        dating_user, _ = self.make_profile(
+            'dating-only-profile',
+            mode='DATING',
+            gender='F',
+            preferred_gender='M',
+        )
+        offline_user, offline_profile = self.make_profile(
+            'offline-sex-call-host',
+            mode='SEX_CALL',
+            gender='F',
+            preferred_gender='M',
+        )
+        offline_profile.last_active = timezone.now() - timedelta(hours=1)
+        offline_profile.save(update_fields=['last_active'])
+
+        self.client.force_login(self.alice)
+        response = self.client.get(reverse('sex_call_hosts_api'))
+        self.assertEqual(response.status_code, 200)
+        host_ids = {host['id'] for host in response.json()['hosts']}
+        self.assertEqual(host_ids, {self.bob.pk, third_user.pk})
+        self.assertNotIn(self.alice.pk, host_ids)
+        self.assertNotIn(dating_user.pk, host_ids)
+        self.assertNotIn(offline_user.pk, host_ids)
+
+    def test_quick_call_matching_relaxes_gender_preference_after_five_seconds(self):
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.preferred_gender = 'F'
+        self.alice_profile.save(update_fields=['relationship_mode', 'preferred_gender'])
+        self.bob_profile.relationship_mode = 'SEX_CALL'
+        self.bob_profile.preferred_gender = 'M'
+        self.bob_profile.save(update_fields=['relationship_mode', 'preferred_gender'])
+        self.client.force_login(self.alice)
+        second_client = Client()
+        second_client.force_login(self.bob)
+
+        first_search = self.post_json(reverse('quick_call_match_api'), {})
+        self.assertEqual(first_search.json()['status'], 'waiting')
+        second_search = second_client.post(
+            reverse('quick_call_match_api'),
+            data='{}',
+            content_type='application/json',
+        )
+        self.assertEqual(second_search.json()['status'], 'waiting')
+
+        queued_search = SexCallQueue.objects.get(user=self.alice)
+        queued_search.created_at = timezone.now() - timedelta(seconds=6)
+        queued_search.save(update_fields=['created_at'])
+        flexible_match = second_client.post(
+            reverse('quick_call_match_api'),
+            data='{}',
+            content_type='application/json',
+        )
+        self.assertEqual(flexible_match.status_code, 200)
+        self.assertEqual(flexible_match.json()['status'], 'success')
+        self.assertEqual(flexible_match.json()['matched_user'], 'alice')
 
     def test_diamond_to_coin_conversion_flow(self):
         cfg = SiteConfiguration.get_solo()

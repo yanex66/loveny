@@ -12,6 +12,12 @@ def record_call_signal(room_id, user, signal_type, payload):
         if call.status not in ('ringing', 'connected', 'active'):
             return None, []
 
+        if (
+            signal_type == 'offer' and user.pk != call.caller_id
+            or signal_type == 'answer' and user.pk != call.receiver_id
+        ):
+            return None, []
+
         peer_id = call.receiver_id if user.pk == call.caller_id else call.caller_id
         if signal_type in ('face_verified', 'speech_monitor_ready'):
             if not call.signals.filter(sender=user, signal_type=signal_type).exists():

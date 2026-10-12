@@ -48,6 +48,7 @@ from .models import (
     Referral,
     RELATIONSHIP_MODE_CHOICES,
     SiteConfiguration,
+    SexCallQueue,
     SubscriptionPlan,
     Swipe,
     Tag,
@@ -2433,76 +2434,161 @@ def online_hosts_api(request):
 @login_required
 @require_POST
 def quick_call_match_api(request):
-    """Speed Match: Instantly pairs the caller with an available host or active user."""
+    """Join the active Sex Call queue and pair with another searching member."""
     caller_profile = Profile.objects.filter(user=request.user).first()
     if not caller_profile:
         return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
 
-    site_config = SiteConfiguration.get_solo()
-    min_coins = getattr(site_config, 'call_rate_per_minute', 20) or 20
-    if not _can_use_sex_call(caller_profile):
-        return JsonResponse({
-            'status': 'error',
-            'message': 'sex_call_pass_required',
-            'coin_balance': caller_profile.coin_balance if caller_profile else 0,
-            'required_coins': min_coins,
-            'subscribe_url': reverse('premium_landing'),
-        }, status=403)
+    try:
+        data = json.loads(request.body or '{}')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
 
-    candidates = _exclude_test_profiles(Profile.objects.filter(
-        age__gte=18
-    )).exclude(
-        user=request.user
-    ).select_related('user').prefetch_related('photos')
+    if data.get('action') == 'cancel':
+        SexCallQueue.objects.filter(user=request.user).delete()
+        return JsonResponse({'status': 'success', 'cancelled': True})
 
-    # Exclude busy users
-    busy_users = CallSession.objects.filter(
-        status__in=['ringing', 'connected']
-    ).values_list('caller_id', 'receiver_id')
-    busy_ids = set()
-    for c_id, r_id in busy_users:
-        busy_ids.add(c_id)
-        busy_ids.add(r_id)
-    if busy_ids:
-        candidates = candidates.exclude(user_id__in=busy_ids)
+    now = timezone.now()
+    queue_ttl = timedelta(seconds=75)
+    flexible_after = timedelta(seconds=5)
+    with transaction.atomic():
+        # Serialize queue claims so simultaneous searches cannot both claim the
+        # same waiting user on databases that support row-level locks.
+        SiteConfiguration.get_solo()
+        site_config = SiteConfiguration.objects.select_for_update().get(pk=1)
 
-    # Pick candidate (prefer host_ready, or random candidate)
-    chosen_profile = (
-        candidates.filter(is_host_ready=True).order_by('?').first()
-        or candidates.order_by('-last_active', '?').first()
-    )
+        caller_profile = Profile.objects.select_for_update().filter(
+            user=request.user,
+            relationship_mode='SEX_CALL',
+            age__gte=18,
+        ).first()
+        if not caller_profile or caller_profile.is_dnd:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'sex_call_profile_required',
+            }, status=403)
 
-    if not chosen_profile:
-        return JsonResponse({
-            'status': 'error',
-            'message': 'no_hosts_available',
-            'detail': 'No hosts are online right now. Please try again in a moment!',
-        }, status=404)
+        active_quick_call = CallSession.objects.filter(
+            Q(caller=request.user) | Q(receiver=request.user),
+            status__in=('connected', 'active'),
+            created_at__gte=now - queue_ttl,
+            signals__signal_type='call_accepted',
+            signals__payload__is_quick_match=True,
+        ).distinct().order_by('-created_at').first()
+        if active_quick_call:
+            return JsonResponse({
+                'status': 'success',
+                'room_id': str(active_quick_call.room_id),
+                'call': _call_payload(active_quick_call),
+                'matched_user': (
+                    active_quick_call.receiver
+                    if active_quick_call.caller_id == request.user.pk
+                    else active_quick_call.caller
+                ).username,
+            })
 
-    call = CallSession.objects.create(
-        caller=request.user,
-        receiver=chosen_profile.user,
-        rate_per_minute=site_config.call_rate_per_minute,
-        status='ringing',
-    )
+        queue, created = SexCallQueue.objects.get_or_create(user=request.user)
+        if not created and queue.last_ping_at < now - queue_ttl:
+            queue.created_at = now
+        queue.last_ping_at = now
+        queue.save(update_fields=('created_at', 'last_ping_at'))
+        caller_profile.last_active = now
+        caller_profile.save(update_fields=('last_active',))
 
-    CallSignal.objects.create(
-        call=call,
-        sender=request.user,
-        signal_type='call_invitation',
-        payload={
-            'caller_name': request.user.first_name or request.user.username,
-            'caller_avatar': _profile_payload(caller_profile).get('avatar', ''),
-            'rate_per_minute': site_config.call_rate_per_minute,
-            'is_quick_match': True,
-        },
-    )
+        busy_user_ids = set(
+            CallSession.objects.filter(status__in=('ringing', 'connected', 'active'))
+            .values_list('caller_id', flat=True)
+        ) | set(
+            CallSession.objects.filter(status__in=('ringing', 'connected', 'active'))
+            .values_list('receiver_id', flat=True)
+        )
+        waiting = list(
+            SexCallQueue.objects.filter(
+                last_ping_at__gte=now - queue_ttl,
+                user__is_active=True,
+                user__profile__relationship_mode='SEX_CALL',
+                user__profile__age__gte=18,
+                user__profile__is_dnd=False,
+                user__profile__last_active__gte=now - queue_ttl,
+            )
+            .exclude(user=request.user)
+            .exclude(user_id__in=busy_user_ids)
+            .select_related('user', 'user__profile')
+            .order_by('created_at', 'pk')
+        )
+
+        chosen_queue = None
+        for candidate_queue in waiting:
+            candidate_profile = candidate_queue.user.profile
+            mutually_preferred = (
+                caller_profile.preferred_gender == candidate_profile.gender
+                and candidate_profile.preferred_gender == caller_profile.gender
+            )
+            flexible_search = (
+                now - queue.created_at >= flexible_after
+                or now - candidate_queue.created_at >= flexible_after
+            )
+            if mutually_preferred or flexible_search:
+                chosen_queue = candidate_queue
+                break
+
+        if not chosen_queue:
+            return JsonResponse({
+                'status': 'waiting',
+                'message': 'searching_for_match',
+                'flexible_after_seconds': max(
+                    0,
+                    int((flexible_after - (now - queue.created_at)).total_seconds()),
+                ),
+            })
+
+        candidate_profile = chosen_queue.user.profile
+        call = CallSession.objects.create(
+            caller=request.user,
+            receiver=chosen_queue.user,
+            rate_per_minute=site_config.call_rate_per_minute,
+            status='connected',
+            started_at=now,
+            connected_at=now,
+        )
+        deposit = min(caller_profile.coin_balance, call.rate_per_minute)
+        if deposit:
+            caller_profile.coin_balance -= deposit
+            caller_profile.save(update_fields=('coin_balance',))
+            call.coins_spent = deposit
+            call.save(update_fields=('coins_spent',))
+            CoinTransaction.objects.create(
+                user=request.user,
+                amount=-deposit,
+                transaction_type='CALL_DEDUCTION',
+                call=call,
+                description=f'Minute 1 video call deposit ({deposit} coins)',
+            )
+
+        CallSignal.objects.create(
+            call=call,
+            sender=request.user,
+            signal_type='call_accepted',
+            payload={
+                'caller_id': request.user.pk,
+                'receiver_id': chosen_queue.user_id,
+                'rate_per_minute': call.rate_per_minute,
+                'is_quick_match': True,
+                'accepted': True,
+            },
+        )
+        SexCallQueue.objects.filter(
+            user_id__in=(request.user.pk, chosen_queue.user_id),
+        ).delete()
 
     return JsonResponse({
         'status': 'success',
         'room_id': str(call.room_id),
         'call': _call_payload(call),
-        'host': _profile_payload(chosen_profile),
+        'matched_user': chosen_queue.user.username,
+        'host': _profile_payload(candidate_profile),
     })
 
 
@@ -3653,17 +3739,17 @@ def sex_call_hosts_api(request):
     """
     current_profile = Profile.objects.filter(user=request.user).first()
     tab = request.GET.get('tab', 'hot').lower()
+    online_since = timezone.now() - timedelta(minutes=30)
     base_qs = _exclude_test_profiles(
-        Profile.objects.filter(user__is_active=True).exclude(user=request.user)
+        Profile.objects.filter(
+            user__is_active=True,
+            relationship_mode='SEX_CALL',
+            last_active__gte=online_since,
+        ).exclude(user=request.user)
     )
-    user_gender = getattr(current_profile, 'gender', None) if current_profile else None
-    target_gender = 'F' if user_gender == 'M' else ('M' if user_gender == 'F' else None)
-
-    if target_gender and base_qs.filter(gender=target_gender).exists():
-        base_qs = base_qs.filter(gender=target_gender)
     hosts_list = list(
         base_qs.select_related('user').prefetch_related('photos')
-        .order_by('-is_host_ready', '-last_active')[:50]
+        .order_by('-is_host_ready', '-last_active')
     )
 
     if tab == 'nearby' and current_profile and current_profile.latitude and current_profile.longitude:
@@ -3677,7 +3763,7 @@ def sex_call_hosts_api(request):
 
     site_config = SiteConfiguration.get_solo()
     data = []
-    for h in hosts_list[:40]:
+    for h in hosts_list:
         payload = _profile_payload(h)
         loc = (h.location.strip() if h.location else '') or 'Lekki, Lagos'
         data.append({
@@ -3686,10 +3772,7 @@ def sex_call_hosts_api(request):
             'age': h.age or 22,
             'location': loc,
             'avatar_url': payload['image_url'],
-            'is_online': h.is_host_ready or (
-                h.last_active
-                and (timezone.now() - h.last_active).total_seconds() < 1800
-            ),
+            'is_online': h.last_active >= online_since,
             'rate_per_minute': site_config.call_rate_per_minute,
             'is_verified': h.is_verified,
             'is_vip': h.is_vip,
