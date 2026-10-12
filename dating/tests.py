@@ -2741,6 +2741,67 @@ class DatingPlatformTests(TestCase):
                 1,
             )
 
+    def test_mode_switch_checkout_rejects_mismatched_paystack_key_environments(self):
+        self.client.force_login(self.alice)
+        with override_settings(
+            PAYSTACK_PUBLIC_KEY='pk_live_public_test',
+            PAYSTACK_SECRET_KEY='sk_test_secret_test',
+        ):
+            response = self.post_json(
+                reverse('create_mode_switch_payment_intent_api'),
+                {'target_mode': 'HOOKUP'},
+            )
+            settings_response = self.client.get(reverse('settings'))
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()['message'], 'payments_unavailable')
+        self.assertEqual(ModeSwitchPaymentIntent.objects.count(), 0)
+        self.assertNotContains(
+            settings_response,
+            'UNLOCK MODE SWITCHING (₦200)',
+        )
+        self.assertContains(
+            settings_response,
+            'temporarily unavailable because Paystack payments are not configured',
+        )
+
+    def test_paystack_authorization_errors_explain_configuration_problem(self):
+        from urllib.error import HTTPError
+
+        self.client.force_login(self.alice)
+        with override_settings(
+            PAYSTACK_PUBLIC_KEY='pk_live_public_test',
+            PAYSTACK_SECRET_KEY='sk_live_secret_test',
+        ):
+            intent_response = self.post_json(
+                reverse('create_mode_switch_payment_intent_api'),
+                {'target_mode': 'HOOKUP'},
+            )
+            reference = intent_response.json()['reference']
+            with patch(
+                'dating.views.urlopen',
+                side_effect=HTTPError(
+                    'https://api.paystack.co/transaction/verify/test',
+                    401,
+                    'Unauthorized',
+                    {},
+                    None,
+                ),
+            ):
+                response = self.post_json(
+                    reverse('switch_profile_mode_api'),
+                    {'reference': reference},
+                )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            response.json()['message'],
+            'Payment verification is misconfigured. Please contact support before retrying.',
+        )
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.relationship_mode, 'DATING')
+        self.assertFalse(self.alice_profile.has_paid_mode_switch_fee)
+
     def test_mode_switch_payment_intent_can_be_cancelled_and_cannot_be_used_afterward(self):
         self.client.force_login(self.alice)
         with override_settings(

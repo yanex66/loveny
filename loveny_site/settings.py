@@ -290,9 +290,8 @@ LOGOUT_REDIRECT_URL = '/'
 PAYSTACK_PUBLIC_KEY = os.environ.get(
     'PAYSTACK_PUBLIC_KEY',
     'pk_live_6fd34253cf04d94620e50e8c547b5259d052c121',
-)
-# Add your real secret key here to process payments!
-PAYSTACK_SECRET_KEY = os.environ.get('PAYSTACK_SECRET_KEY', 'sk_live_PUT_YOUR_REAL_SECRET_KEY_HERE')
+).strip()
+PAYSTACK_SECRET_KEY = os.environ.get('PAYSTACK_SECRET_KEY', '').strip()
 
 # FLUTTERWAVE KEYS
 FLUTTERWAVE_PUBLIC_KEY = os.environ.get(

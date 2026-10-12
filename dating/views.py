@@ -92,6 +92,20 @@ MESSAGE_RATE_LIMIT = 30
 logger = logging.getLogger(__name__)
 
 
+def _paystack_keys_configured():
+    public_key = getattr(settings, 'PAYSTACK_PUBLIC_KEY', '').strip()
+    secret_key = getattr(settings, 'PAYSTACK_SECRET_KEY', '').strip()
+    public_mode = next(
+        (mode for mode in ('live', 'test') if public_key.startswith(f'pk_{mode}_')),
+        None,
+    )
+    secret_mode = next(
+        (mode for mode in ('live', 'test') if secret_key.startswith(f'sk_{mode}_')),
+        None,
+    )
+    return bool(public_mode and public_mode == secret_mode)
+
+
 def _subscription_details(profile, product):
     prefix = {'DATING': 'dating', 'HOOKUP': 'hookup', 'SEX_CALL': 'sex_call'}[product]
     return (
@@ -3562,10 +3576,7 @@ def settings_view(request):
         'mode_switch_required': request.GET.get('mode_switch_required') == '1',
         'requested_mode': requested_mode,
         'mode_switch_modes': RELATIONSHIP_MODE_CHOICES,
-        'mode_switch_payments_enabled': bool(
-            getattr(settings, 'PAYSTACK_PUBLIC_KEY', '')
-            and getattr(settings, 'PAYSTACK_SECRET_KEY', '')
-        ),
+        'mode_switch_payments_enabled': _paystack_keys_configured(),
     })
 
 def privacy(request): return render(request, 'dating/privacy.html')
@@ -4142,7 +4153,7 @@ def hookup_initialize_payment_api(request, match_id):
 
 def _verify_paystack_reference(reference):
     secret = getattr(settings, 'PAYSTACK_SECRET_KEY', '')
-    if not secret or 'PUT_YOUR_REAL_SECRET_KEY_HERE' in secret:
+    if not _paystack_keys_configured():
         return None, 'Payment verification is not configured.', 503
     verify_request = Request(
         f'https://api.paystack.co/transaction/verify/{quote(reference)}',
@@ -4153,6 +4164,12 @@ def _verify_paystack_reference(reference):
             return json.loads(response.read().decode('utf-8')), None, None
     except HTTPError as exc:
         logger.warning('Paystack verification returned HTTP %s.', exc.code)
+        if exc.code in (401, 403):
+            return (
+                None,
+                'Payment verification is misconfigured. Please contact support before retrying.',
+                502,
+            )
         return None, 'Paystack could not verify this payment.', 502
     except (URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         logger.warning('Paystack verification failed: %s', exc)
@@ -4462,15 +4479,9 @@ def create_mode_switch_payment_intent_api(request):
             'target_mode': target_mode,
         })
 
-    public_key = getattr(settings, 'PAYSTACK_PUBLIC_KEY', '')
-    secret_key = getattr(settings, 'PAYSTACK_SECRET_KEY', '')
-    if (
-        not public_key
-        or not secret_key
-        or 'put_your_real' in public_key.lower()
-        or 'put_your_real' in secret_key.lower()
-        or 'dummy' in public_key.lower()
-    ):
+    public_key = getattr(settings, 'PAYSTACK_PUBLIC_KEY', '').strip()
+    if not _paystack_keys_configured():
+        logger.error('Mode-switch payment requested with missing or mismatched Paystack keys.')
         return JsonResponse({'status': 'error', 'message': 'payments_unavailable'}, status=503)
 
     try:
