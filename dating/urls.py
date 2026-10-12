@@ -11,6 +11,7 @@ urlpatterns = [
     path('create-profile/', views.create_profile, name='create_profile'),
     path('profile/', views.profile_detail, name='profile'),
     path('profile/me/', views.profile_detail, name='profile_me'),
+    path('me/', views.profile_detail, name='me_alias'),
     path('profile/edit/', views.edit_profile, name='edit_profile'),
     path('account/delete/', views.delete_account, name='delete_account'),
     
@@ -67,6 +68,7 @@ urlpatterns = [
     path('api/get_profiles/', views.get_profiles_json, name='get_profiles_json'),
     path('action/', views.swipe_action, name='swipe_action'),
     path('matches/', views.match_list, name='match_list'),
+    path('match/', views.match_list, name='match_alias'),
     path('messages/', views.messages_inbox, name='messages_inbox'),
     path('chats/', views.messages_inbox, name='chats'),
     path('matches/<int:match_id>/chat/', views.chat_room, name='chat_room'),
@@ -84,6 +86,7 @@ urlpatterns = [
     path('premium/success/', views.premium_success, name='premium_success'),
     path('premium/verify/', views.verify_payment, name='verify_payment'),
     path('contact/', views.contact, name='contact'),
+    path('support/', views.contact, name='support_alias'),
     path('swipe/rewind/', views.rewind_last_swipe, name='rewind_swipe'),
 
     # Hookup Mode & Dual-Fiat Paystack Handshake URLs
@@ -96,6 +99,11 @@ urlpatterns = [
     path('api/hookup/chat/<uuid:match_id>/messages/', views.hookup_messages_api, name='hookup_messages_api'),
     path('api/hookup/chat/<uuid:match_id>/send/', views.hookup_send_message_api, name='hookup_send_message_api'),
     path('api/notifications/global/', views.global_notifications_api, name='global_notifications_api'),
+    path(
+        'api/notifications/global/ack/',
+        views.acknowledge_notifications_api,
+        name='acknowledge_notifications_api',
+    ),
     path('api/report/', views.report_user_api, name='report_user_api'),
     path('payments/paystack/webhook/', views.paystack_webhook_api, name='paystack_webhook'),
 

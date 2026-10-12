@@ -86,6 +86,7 @@
                  data-intent-url="{% url 'create_mode_switch_payment_intent_api' %}"
                  data-cancel-url="{% url 'cancel_mode_switch_payment_intent_api' %}"
                  data-verify-url="{% url 'switch_profile_mode_api' %}"
+                 data-requested-mode="{{ requested_mode }}"
                  data-switching-unlocked="{{ mode_switch_unlocked|yesno:'true,false' }}">
             <h2 class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 ml-1">Change connection mode</h2>
             <div class="soft-card rounded-3xl p-5 sm:p-7">
@@ -94,32 +95,48 @@
                         Your current mode was kept. Pay the one-time unlock below to switch modes.
                     </p>
                 {% endif %}
-                <p class="text-sm text-slate-600 leading-relaxed">
-                    {% if mode_switch_unlocked %}
-                        Your account has permanent mode switching. You can switch between Dating, Hookup, and Sex Call at no extra cost.
-                    {% else %}
-                        Pay a one-time fee of
-                        <strong class="text-slate-900">₦{{ mode_switch_fee|floatformat:0 }}</strong>
-                        to permanently unlock switching between Dating, Hookup, and Sex Call.
-                    {% endif %}
-                    Your saved profile details and photos for each mode are preserved.
-                </p>
-                <label for="mode-switch-target" class="block mt-5 mb-2 text-xs font-bold text-pink-700 uppercase tracking-widest">Switch to</label>
-                <select id="mode-switch-target" class="w-full rounded-xl border border-pink-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800">
-                    {% for mode_value, mode_label in mode_switch_modes %}
-                        {% if mode_value != profile.relationship_mode %}
-                            <option value="{{ mode_value }}" {% if mode_value == requested_mode %}selected{% endif %}>{{ mode_label }}</option>
-                        {% endif %}
-                    {% endfor %}
-                </select>
-                {% if mode_switch_unlocked or mode_switch_payments_enabled %}
+                {% if profile.has_unlocked_mode_switching %}
+                    <p class="text-sm text-slate-600 leading-relaxed">
+                        Your account has permanent mode switching. You can switch between Dating, Hookup, and Sex Call at no extra cost. Your saved profile details and photos for each mode are preserved.
+                    </p>
+                    <label for="mode-switch-target" class="block mt-5 mb-2 text-xs font-bold text-pink-700 uppercase tracking-widest">Switch to</label>
+                    <select id="mode-switch-target" class="w-full rounded-xl border border-pink-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800">
+                        {% for mode_value, mode_label in mode_switch_modes %}
+                            {% if mode_value != profile.relationship_mode %}
+                                <option value="{{ mode_value }}" {% if mode_value == requested_mode %}selected{% endif %}>{{ mode_label }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
                     <button type="button" id="mode-switch-pay-button" class="w-full mt-4 py-4 brand-gradient text-white font-black uppercase tracking-widest rounded-2xl shadow-lg transition-transform hover:scale-[1.01]">
-                        {% if mode_switch_unlocked %}Switch mode{% else %}Pay once and unlock switching{% endif %}
+                        Switch Mode
                     </button>
                 {% else %}
-                    <p class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                        The one-time switching unlock is temporarily unavailable because Paystack payments are not configured.
-                    </p>
+                    <!-- Paywall Card: SWITCH TO dropdown is hidden until fee is paid -->
+                    <div class="rounded-2xl border border-amber-300/80 bg-gradient-to-br from-amber-50 via-rose-50 to-orange-50 p-5 shadow-inner">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-400 text-xl shadow-md">🔒</span>
+                            <div>
+                                <h3 class="text-sm font-black uppercase tracking-wide text-slate-900">Unlock Mode Switching</h3>
+                                <span class="text-[11px] font-bold uppercase tracking-wider text-amber-700">One-Time Lifetime Fee</span>
+                            </div>
+                        </div>
+                        <p class="text-sm text-slate-700 leading-relaxed font-medium">
+                            Pay a one-time fee of <strong class="text-slate-950 font-black">₦{{ mode_switch_fee|floatformat:0 }}</strong> to permanently unlock switching between Dating, Hookup, and Sex Call.
+                        </p>
+                        <p class="mt-2 text-xs text-slate-500 leading-relaxed">
+                            Your saved photos, bio, preferences, and chats for each mode will remain completely preserved and independent.
+                        </p>
+                    </div>
+
+                    {% if mode_switch_payments_enabled %}
+                        <button type="button" id="mode-switch-pay-button" class="w-full mt-4 py-4 brand-gradient text-white font-black uppercase tracking-widest rounded-2xl shadow-lg transition-transform hover:scale-[1.01]">
+                            UNLOCK MODE SWITCHING (₦{{ mode_switch_fee|floatformat:0 }})
+                        </button>
+                    {% else %}
+                        <p class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                            The one-time switching unlock is temporarily unavailable because Paystack payments are not configured.
+                        </p>
+                    {% endif %}
                 {% endif %}
                 <p id="mode-switch-status" class="mt-3 min-h-5 text-center text-xs font-semibold" role="status" aria-live="polite"></p>
             </div>
@@ -291,7 +308,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const button = document.getElementById('mode-switch-pay-button');
     const targetSelect = document.getElementById('mode-switch-target');
     const status = document.getElementById('mode-switch-status');
-    if (!panel || !button || !targetSelect || !status) return;
+    if (!panel || !button || !status) return;
 
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
     let pendingReference = null;
@@ -361,6 +378,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         setStatus('Preparing secure payment…');
+        const selectedMode = targetSelect
+            ? targetSelect.value
+            : panel.dataset.requestedMode;
         try {
             const intentResponse = await fetch(panel.dataset.intentUrl, {
                 method: 'POST',
@@ -368,7 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken,
                 },
-                body: JSON.stringify({ target_mode: targetSelect.value }),
+                body: JSON.stringify({ target_mode: selectedMode }),
             });
             const intent = await intentResponse.json();
             if (!intentResponse.ok || intent.status !== 'success') {
@@ -403,7 +423,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 metadata: {
                     product: 'MODE_SWITCH',
                     user_id: {{ request.user.pk }},
-                    target_mode: targetSelect.value,
+                    target_mode: intent.target_mode || selectedMode,
                 },
                 callback: async (payment) => {
                     paymentCompleted = true;

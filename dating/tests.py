@@ -624,6 +624,17 @@ class DatingPlatformTests(TestCase):
         self.assertRedirects(response, reverse('create_profile'))
         self.assertEqual(self.client.session['active_connection_mode'], 'SEX_CALL')
         self.assertContains(self.client.get(reverse('create_profile')), 'Sex Call')
+        new_profile = Profile.objects.get(user__username='newmember')
+        self.assertEqual(new_profile.relationship_mode, 'SEX_CALL')
+        self.assertEqual(new_profile.free_trial_mode, 'SEX_CALL')
+        self.assertTrue(new_profile.has_free_trial_access('SEX_CALL'))
+        self.assertTrue(new_profile.has_claimed_welcome)
+        self.assertTrue(
+            CoinTransaction.objects.filter(
+                user=new_profile.user,
+                transaction_type='WELCOME_BONUS',
+            ).exists()
+        )
 
         self.client.logout()
         # Attempting login without connection mode fails
@@ -665,6 +676,18 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(self.alice_profile.relationship_mode, 'HOOKUP')
         self.assertEqual(self.client.session['active_connection_mode'], 'HOOKUP')
 
+    def test_primary_routes_render_for_an_authenticated_member(self):
+        self.client.force_login(self.alice)
+
+        for route in ('/', '/match/', '/chats/', '/me/', '/settings/', '/support/'):
+            with self.subTest(route=route):
+                response = self.client.get(route)
+                self.assertEqual(
+                    response.status_code,
+                    200,
+                    f'{route} returned {response.status_code}',
+                )
+
     def test_login_cannot_change_mode_before_one_time_unlock(self):
         response = self.client.post(reverse('login'), {
             'email': 'alice@example.com',
@@ -680,6 +703,8 @@ class DatingPlatformTests(TestCase):
         settings_response = self.client.get(response.url)
         self.assertContains(settings_response, 'Your current mode was kept.')
         self.assertContains(settings_response, 'Pay a one-time fee')
+        self.assertNotContains(settings_response, '<select id="mode-switch-target"')
+        self.assertContains(settings_response, 'data-requested-mode="HOOKUP"')
 
     def test_referral_rewards_are_idempotent_and_award_hookup_milestones(self):
         config = SiteConfiguration.get_solo()
@@ -727,6 +752,12 @@ class DatingPlatformTests(TestCase):
         })
         self.assertRedirects(response, reverse('create_profile'))
         referred_user = User.objects.get(username='referredmember')
+        trial_profile = Profile.objects.get(user=referred_user)
+        self.assertEqual(trial_profile.relationship_mode, 'HOOKUP')
+        self.assertEqual(trial_profile.free_trial_mode, 'HOOKUP')
+        self.assertTrue(trial_profile.has_free_trial_access('HOOKUP'))
+        self.assertTrue(trial_profile.has_claimed_welcome)
+        trial_expiry = trial_profile.free_trial_expires_at
         self.assertTrue(Referral.objects.filter(
             referrer=self.alice,
             referred_user=referred_user,
@@ -744,10 +775,11 @@ class DatingPlatformTests(TestCase):
             'relationship_mode': 'HOOKUP',
         })
         self.assertRedirects(response, reverse('swipe_card'))
-        trial_profile = Profile.objects.get(user=referred_user)
+        trial_profile.refresh_from_db()
         self.assertEqual(trial_profile.free_trial_mode, 'HOOKUP')
         self.assertTrue(trial_profile.has_free_trial_access('HOOKUP'))
         self.assertFalse(trial_profile.has_free_trial_access('DATING'))
+        self.assertEqual(trial_profile.free_trial_expires_at, trial_expiry)
 
     def test_free_trial_access_expires_and_is_mode_specific(self):
         self.alice_profile.free_trial_mode = 'HOOKUP'
@@ -1231,7 +1263,7 @@ class DatingPlatformTests(TestCase):
                     html=False,
                 )
 
-    def test_empty_messages_uses_active_session_mode_for_bottom_navigation(self):
+    def test_empty_messages_uses_profile_mode_for_bottom_navigation(self):
         self.client.force_login(self.alice)
         session = self.client.session
         session['active_connection_mode'] = 'HOOKUP'
@@ -1239,11 +1271,11 @@ class DatingPlatformTests(TestCase):
 
         response = self.client.get(reverse('messages_inbox'))
 
-        self.assertEqual(response.context['active_connection_mode'], 'HOOKUP')
-        self.assertContains(response, 'Explore Hookups')
+        self.assertEqual(response.context['active_connection_mode'], 'DATING')
+        self.assertContains(response, 'Explore Matches')
         self.assertContains(
             response,
-            f'<a href="{reverse("hookup_discovery")}" class="bottom-tab',
+            f'<a href="{reverse("swipe_card")}" class="bottom-tab',
             html=False,
         )
 
@@ -2566,7 +2598,7 @@ class DatingPlatformTests(TestCase):
             {'text': 'Text me on 08012345678 please'}
         )
         self.assertEqual(blocked_res.status_code, 400)
-        self.assertEqual(blocked_res.json()['message'], 'prohibited_content')
+        self.assertEqual(blocked_res.json()['message'], 'Sharing contact details off-platform is strictly prohibited.')
 
         self.alice.profile.refresh_from_db()
         self.assertEqual(self.alice.profile.off_platform_attempts, initial_attempts + 1)
@@ -3006,7 +3038,7 @@ class DatingPlatformTests(TestCase):
             {'text': 'My whatsapp is 08012345678'}
         )
         self.assertEqual(leak_msg_res.status_code, 400)
-        self.assertEqual(leak_msg_res.json()['message'], 'prohibited_content')
+        self.assertEqual(leak_msg_res.json()['message'], 'Sharing contact details off-platform is strictly prohibited.')
 
     def test_referral_free_hookup_connection_is_consumed_and_restored_on_decline(self):
         self.alice_profile.relationship_mode = 'HOOKUP'
@@ -3069,8 +3101,8 @@ class DatingPlatformTests(TestCase):
         self.alice_profile.refresh_from_db()
         self.assertEqual(self.alice_profile.relationship_mode, 'DATING')
 
-    def test_dating_recipient_can_review_existing_hookup_invitation_without_mode_change(self):
-        match = HookupMatch.objects.create(
+    def test_dating_recipient_cannot_open_hookup_inbox_or_receive_hookup_invitation(self):
+        HookupMatch.objects.create(
             initiator=self.bob,
             target=self.alice,
             status='pending',
@@ -3079,14 +3111,11 @@ class DatingPlatformTests(TestCase):
 
         response = self.client.get(reverse('hookup_discovery'))
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Your Dating mode has not been changed.')
-        self.assertEqual(
-            [str(request.pk) for request in response.context['pending_incoming']],
-            [str(match.pk)],
-        )
+        self.assertRedirects(response, reverse('settings'))
         self.alice_profile.refresh_from_db()
         self.assertEqual(self.alice_profile.relationship_mode, 'DATING')
+        notifications = self.client.get(reverse('global_notifications_api')).json()
+        self.assertEqual(notifications['incoming_hookup_requests'], [])
 
     def test_hookup_request_requires_both_profiles_in_hookup_mode_and_notifies_recipient(self):
         self.client.force_login(self.alice)
@@ -3141,6 +3170,100 @@ class DatingPlatformTests(TestCase):
             [str(match.pk) for match in inbox.context['pending_incoming']],
             [match_id],
         )
+
+    def test_notifications_are_mode_scoped_and_acknowledged_server_side(self):
+        self.alice_profile.relationship_mode = 'HOOKUP'
+        self.alice_profile.save(update_fields=['relationship_mode'])
+        self.bob_profile.relationship_mode = 'HOOKUP'
+        self.bob_profile.save(update_fields=['relationship_mode'])
+        hookup_request = HookupMatch.objects.create(
+            initiator=self.bob,
+            target=self.alice,
+            status='pending',
+        )
+
+        self.client.force_login(self.alice)
+        notifications_url = reverse('global_notifications_api')
+        response = self.client.get(notifications_url)
+        self.assertEqual(
+            response.json()['incoming_hookup_requests'],
+            [{
+                'id': str(hookup_request.pk),
+                'initiator_name': self.bob.username,
+            }],
+        )
+
+        ack_url = reverse('acknowledge_notifications_api')
+        ack_response = self.post_json(ack_url, {
+            'hookup_request_ids': [str(hookup_request.pk)],
+        })
+        self.assertEqual(ack_response.status_code, 200)
+        hookup_request.refresh_from_db()
+        self.assertIsNotNone(hookup_request.target_notification_delivered_at)
+        self.assertEqual(
+            self.client.get(notifications_url).json()['incoming_hookup_requests'],
+            [],
+        )
+
+        self.bob_profile.relationship_mode = 'DATING'
+        self.bob_profile.save(update_fields=['relationship_mode'])
+        undelivered_request = HookupMatch.objects.create(
+            initiator=self.bob,
+            target=self.alice,
+            status='pending',
+        )
+        self.assertNotIn(
+            str(undelivered_request.pk),
+            {
+                item['id']
+                for item in self.client.get(notifications_url).json()['incoming_hookup_requests']
+            },
+        )
+
+        self.alice_profile.relationship_mode = 'DATING'
+        self.alice_profile.save(update_fields=['relationship_mode'])
+        self.client.force_login(self.alice)
+        dating_match = Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            mode='DATING',
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+        conversation = Conversation.objects.create()
+        conversation.participants.add(self.alice, self.bob)
+        ChatMessage.objects.create(
+            conversation=conversation,
+            sender=self.alice,
+            text='Earlier message',
+        )
+        message = ChatMessage.objects.create(
+            conversation=conversation,
+            sender=self.bob,
+            text='Dating message',
+        )
+
+        visible = self.client.get(
+            notifications_url,
+            {'last_id': message.pk - 1},
+        ).json()
+        self.assertEqual([row['id'] for row in visible['new_messages']], [message.pk])
+        message_ack = self.post_json(ack_url, {'message_ids': [message.pk]})
+        self.assertEqual(message_ack.status_code, 200)
+        self.assertEqual(message_ack.json()['messages_acknowledged'], 1)
+        redelivered = self.client.get(
+            notifications_url,
+            {'last_id': message.pk - 1},
+        ).json()
+        self.assertEqual(redelivered['new_messages'], [])
+
+        self.alice_profile.relationship_mode = 'HOOKUP'
+        self.alice_profile.save(update_fields=['relationship_mode'])
+        isolated = self.client.get(
+            notifications_url,
+            {'last_id': message.pk - 1},
+        ).json()
+        self.assertEqual(isolated['new_messages'], [])
+        self.assertEqual(isolated['unread_count'], 0)
 
     def test_hookup_payment_api_requires_a_verified_paystack_transaction(self):
         match = HookupMatch.objects.create(

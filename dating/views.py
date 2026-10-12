@@ -749,10 +749,7 @@ def messages_inbox(request):
     if not viewer_profile:
         return redirect('create_profile')
 
-    matches = Match.objects.filter(
-        Q(user1=request.user) | Q(user2=request.user),
-        expires_at__gt=timezone.now(),
-    ).order_by('-created_at')
+    matches = _active_mode_matches_for_user(request.user, viewer_profile)
 
     for m in matches:
         _get_or_create_conversation(m)
@@ -760,12 +757,16 @@ def messages_inbox(request):
     conversations = (
         Conversation.objects
         .filter(participants=request.user)
+        .filter(participants__in=_match_partner_ids(matches, request.user.pk))
+        .distinct()
         .prefetch_related('participants', 'messages')
         .order_by('-updated_at')
     )
 
     threads = []
     for conv in conversations:
+        if conv.participants.count() != 2:
+            continue
         other_user = conv.participants.exclude(id=request.user.id).first()
         if not other_user:
             continue
@@ -2656,20 +2657,64 @@ def _get_active_match(match_id, user):
 def _get_or_create_conversation(match):
     with transaction.atomic():
         locked_match = Match.objects.select_for_update().get(pk=match.pk)
-        conversation = (
+        conversations = (
             Conversation.objects
             .filter(participants=locked_match.user1_id)
             .filter(participants=locked_match.user2_id)
-            .annotate(participant_count=Count('participants', distinct=True))
-            .filter(participant_count=2)
-            .first()
+            .distinct()
+            .prefetch_related('participants')
         )
-        if conversation:
-            return conversation
+        for conversation in conversations:
+            if conversation.participants.count() == 2:
+                return conversation
 
         conversation = Conversation.objects.create()
         conversation.participants.add(locked_match.user1_id, locked_match.user2_id)
         return conversation
+
+
+def _active_mode_matches_for_user(user, profile=None):
+    profile = profile or Profile.objects.filter(user=user).first()
+    if not profile:
+        return Match.objects.none()
+
+    mode = profile.relationship_mode
+    return Match.objects.filter(
+        Q(user1=user, user2__profile__relationship_mode=mode)
+        | Q(user2=user, user1__profile__relationship_mode=mode),
+        mode=mode,
+        expires_at__gt=timezone.now(),
+    )
+
+
+def _match_partner_ids(matches, user_id):
+    return {
+        match.user2_id if match.user1_id == user_id else match.user1_id
+        for match in matches
+    }
+
+
+def _active_mode_conversations_for_user(user, profile=None):
+    partner_ids = _match_partner_ids(
+        _active_mode_matches_for_user(user, profile),
+        user.pk,
+    )
+    if not partner_ids:
+        return Conversation.objects.none()
+
+    candidates = (
+        Conversation.objects
+        .filter(participants=user)
+        .filter(participants__in=partner_ids)
+        .distinct()
+        .prefetch_related('participants')
+    )
+    conversation_ids = [
+        conversation.pk
+        for conversation in candidates
+        if conversation.participants.count() == 2
+    ]
+    return Conversation.objects.filter(pk__in=conversation_ids)
 
 
 def _get_active_conversation(conversation_id, user):
@@ -2683,9 +2728,8 @@ def _get_active_conversation(conversation_id, user):
     other_user = next((participant for participant in participants if participant.pk != user.pk), None)
     if not other_user:
         raise Http404
-    match = Match.objects.filter(
+    match = _active_mode_matches_for_user(user).filter(
         Q(user1=user, user2=other_user) | Q(user1=other_user, user2=user),
-        expires_at__gt=timezone.now(),
     ).first()
     if not match:
         raise Http404
@@ -3160,22 +3204,21 @@ def conversation_send_api(request, conversation_id):
 @login_required
 @require_GET
 def conversations_api(request):
-    active_matches = Match.objects.filter(
-        Q(user1=request.user) | Q(user2=request.user),
-        expires_at__gt=timezone.now(),
-    ).values_list('user1_id', 'user2_id')
-    active_partner_ids = {
-        user2_id if user1_id == request.user.pk else user1_id
-        for user1_id, user2_id in active_matches
-    }
+    own_profile = Profile.objects.filter(user=request.user, age__gte=18).first()
+    if not own_profile:
+        return JsonResponse({'conversations': []})
+
+    active_partner_ids = _match_partner_ids(
+        _active_mode_matches_for_user(request.user, own_profile),
+        request.user.pk,
+    )
     adult_partner_ids = set(
         Profile.objects.filter(
             user_id__in=active_partner_ids,
             age__gte=18,
         ).values_list('user_id', flat=True)
     )
-    own_profile = Profile.objects.filter(user=request.user, age__gte=18).exists()
-    if not own_profile or not adult_partner_ids:
+    if not adult_partner_ids:
         return JsonResponse({'conversations': []})
 
     unread_messages = (
@@ -3195,6 +3238,7 @@ def conversations_api(request):
         Conversation.objects
         .filter(participants=request.user)
         .filter(participants__in=adult_partner_ids)
+        .distinct()
         .annotate(
             unread_count=Subquery(unread_messages, output_field=IntegerField()),
             last_message_id=Subquery(latest_messages.values('pk')[:1]),
@@ -3299,7 +3343,36 @@ def signup(request):
     form = SignUpForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         mode = form.cleaned_data['relationship_mode']
-        user = form.save()
+        with transaction.atomic():
+            user = form.save()
+            site_config = SiteConfiguration.get_solo()
+            profile = Profile.objects.create(
+                user=user,
+                relationship_mode=mode,
+                has_claimed_welcome=True,
+                coin_balance=site_config.welcome_bonus_coins,
+            )
+            if site_config.free_trial_enabled:
+                now = timezone.now()
+                profile.free_trial_mode = mode
+                profile.free_trial_expires_at = now + timedelta(
+                    hours=site_config.free_trial_duration_hours,
+                )
+                profile.dating_premium_tier = 'GOLD'
+                profile.dating_premium_expiry = now + timedelta(days=1)
+                profile.save(update_fields=[
+                    'free_trial_mode',
+                    'free_trial_expires_at',
+                    'dating_premium_tier',
+                    'dating_premium_expiry',
+                ])
+            if site_config.welcome_bonus_coins:
+                CoinTransaction.objects.create(
+                    user=user,
+                    amount=site_config.welcome_bonus_coins,
+                    transaction_type='WELCOME_BONUS',
+                    description='Newcomer Joining Reward',
+                )
         referrer_id = request.session.pop('pending_referrer_id', None)
         if not referrer_id:
             posted_referral = request.POST.get('ref', '').strip()
@@ -3430,19 +3503,19 @@ def create_profile(request):
             current_profile = Profile.objects.get(user=request.user)
             _apply_profile_mode_switch(current_profile, chosen_mode, request.user)
         p.relationship_mode = chosen_mode
-        if not p.free_trial_expires_at:
-            trial_config = SiteConfiguration.get_solo()
-            trial_window_start = timezone.now() - timedelta(
+        trial_config = SiteConfiguration.get_solo()
+        if not p.free_trial_expires_at and trial_config.free_trial_enabled:
+            p.free_trial_mode = chosen_mode
+            p.free_trial_expires_at = timezone.now() + timedelta(
                 hours=trial_config.free_trial_duration_hours,
             )
-            if (
-                trial_config.free_trial_enabled
-                and request.user.date_joined >= trial_window_start
-            ):
-                p.free_trial_mode = chosen_mode
-                p.free_trial_expires_at = timezone.now() + timedelta(
-                    hours=trial_config.free_trial_duration_hours,
-                )
+            if not p.dating_premium_expiry or p.dating_premium_expiry < timezone.now():
+                p.dating_premium_tier = 'GOLD'
+                p.dating_premium_expiry = timezone.now() + timedelta(days=1)
+        if not p.has_claimed_welcome:
+            welcome_coins = trial_config.welcome_bonus_coins
+            p.coin_balance = max(p.coin_balance, welcome_coins)
+            p.has_claimed_welcome = True
         p.save()
         form.save_m2m()
         request.session['active_connection_mode'] = p.relationship_mode
@@ -3798,14 +3871,19 @@ def hookup_discovery_view(request):
     if not profile:
         return redirect('create_profile')
 
+    is_hookup_mode = profile.relationship_mode == 'HOOKUP'
+    if not is_hookup_mode:
+        return redirect('settings')
+
     pending_incoming = list(
-        HookupMatch.objects.filter(target=request.user, status='pending')
+        HookupMatch.objects.filter(
+            target=request.user,
+            status='pending',
+            initiator__profile__relationship_mode='HOOKUP',
+        )
         .select_related('initiator', 'initiator__profile')
         .prefetch_related('initiator__profile__photos')
     )
-    is_hookup_mode = profile.relationship_mode == 'HOOKUP'
-    if not is_hookup_mode and not pending_incoming:
-        return redirect('settings')
 
     now = timezone.now()
 
@@ -3841,7 +3919,11 @@ def hookup_discovery_view(request):
 
     # Outgoing pending requests
     pending_outgoing = list(
-        HookupMatch.objects.filter(initiator=request.user, status='pending')
+        HookupMatch.objects.filter(
+            initiator=request.user,
+            status='pending',
+            target__profile__relationship_mode='HOOKUP',
+        )
         .select_related('target', 'target__profile')
         .prefetch_related('target__profile__photos')
     )
@@ -3850,7 +3932,9 @@ def hookup_discovery_view(request):
     accepted_matches = list(
         HookupMatch.objects.filter(
             Q(initiator=request.user) | Q(target=request.user),
-            status='accepted'
+            status='accepted',
+            initiator__profile__relationship_mode='HOOKUP',
+            target__profile__relationship_mode='HOOKUP',
         ).select_related('initiator', 'target', 'initiator__profile', 'target__profile')
     )
     for m in accepted_matches:
@@ -3863,6 +3947,8 @@ def hookup_discovery_view(request):
         HookupMatch.objects.filter(
             Q(initiator=request.user) | Q(target=request.user),
             status='unlocked',
+            initiator__profile__relationship_mode='HOOKUP',
+            target__profile__relationship_mode='HOOKUP',
         ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
         .select_related('initiator', 'target', 'initiator__profile', 'target__profile')
     )
@@ -3932,9 +4018,15 @@ def hookup_request_api(request):
         })
 
     with transaction.atomic():
-        initiator_profile = Profile.objects.select_for_update().get(user=request.user)
-        if initiator_profile.relationship_mode != 'HOOKUP':
+        profiles = Profile.objects.select_for_update().filter(
+            user_id__in=(request.user.pk, target_user.pk),
+        ).in_bulk(field_name='user_id')
+        initiator_profile = profiles.get(request.user.pk)
+        target_profile = profiles.get(target_user.pk)
+        if not initiator_profile or initiator_profile.relationship_mode != 'HOOKUP':
             return JsonResponse({'status': 'error', 'message': 'hookup_mode_required'}, status=403)
+        if not target_profile or target_profile.relationship_mode != 'HOOKUP':
+            return JsonResponse({'status': 'error', 'message': 'target_not_in_hookup_mode'}, status=400)
         referral_free = initiator_profile.hookup_free_connections > 0
         if referral_free:
             initiator_profile.hookup_free_connections -= 1
@@ -3970,6 +4062,14 @@ def hookup_respond_api(request, match_id):
     match = get_object_or_404(HookupMatch, pk=match_id)
     if request.user.pk != match.target_id:
         return HttpResponseForbidden("Not authorized")
+    if not Profile.objects.filter(
+        user_id=match.target_id,
+        relationship_mode='HOOKUP',
+    ).exists() or not Profile.objects.filter(
+        user_id=match.initiator_id,
+        relationship_mode='HOOKUP',
+    ).exists():
+        return JsonResponse({'status': 'error', 'message': 'hookup_mode_required'}, status=403)
     if match.status != 'pending':
         return JsonResponse({'status': 'error', 'message': 'request_not_pending'}, status=409)
 
@@ -4344,14 +4444,16 @@ def create_mode_switch_payment_intent_api(request):
     if not isinstance(data, dict):
         return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
 
-    target_mode = data.get('target_mode')
-    if target_mode not in dict(RELATIONSHIP_MODE_CHOICES):
-        return JsonResponse({'status': 'error', 'message': 'invalid_mode'}, status=400)
     try:
         profile = Profile.objects.get(user=request.user)
     except Profile.DoesNotExist:
         return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
-    if profile.relationship_mode == target_mode:
+
+    target_mode = data.get('target_mode')
+    if not target_mode or target_mode not in dict(RELATIONSHIP_MODE_CHOICES):
+        # Default to another mode if not provided
+        target_mode = 'HOOKUP' if profile.relationship_mode == 'DATING' else 'DATING'
+    if profile.relationship_mode == target_mode and profile.has_paid_mode_switch_fee:
         return JsonResponse({'status': 'error', 'message': 'already_in_mode'}, status=400)
     if profile.has_paid_mode_switch_fee:
         return JsonResponse({
@@ -4569,64 +4671,144 @@ def blocked_users_view(request):
 @login_required
 @require_GET
 def global_notifications_api(request):
+    last_id_str = request.GET.get('last_id', '0')
     try:
-        last_id_str = request.GET.get('last_id', '0')
-        last_id = int(last_id_str) if last_id_str.isdigit() else 0
-        
-        # Only return new messages if last_id > 0, otherwise just find max_id
-        if last_id > 0:
-            new_messages = ChatMessage.objects.filter(
-                conversation__participants=request.user,
-                id__gt=last_id
-            ).exclude(sender=request.user).order_by('id')[:10]
-        else:
-            new_messages = []
-        
-        messages_data = []
-        for msg in new_messages:
-            messages_data.append({
-                'id': msg.id,
-                'text': msg.text,
-                'message_type': msg.message_type,
-                'sender_name': msg.sender.first_name or msg.sender.username,
-                'sender_avatar': _profile_payload(msg.sender.profile).get('image_url') if hasattr(msg.sender, 'profile') else None,
-                'conversation_url': reverse('conversation_room', args=[msg.conversation.id])
-            })
-            
-        unread_count = ChatMessage.objects.filter(
-            conversation__participants=request.user
-        ).exclude(sender=request.user).exclude(read_by=request.user).count()
-        
-        max_id = last_id
-        if messages_data:
-            max_id = messages_data[-1]['id']
-        elif last_id == 0:
-            latest_msg = ChatMessage.objects.filter(
-                conversation__participants=request.user
-            ).order_by('-id').first()
-            if latest_msg:
-                max_id = latest_msg.id
-            
-        profile = request.user.profile if hasattr(request.user, 'profile') else None
-        coin_balance = profile.coin_balance if profile else 0
-        diamond_balance = profile.earned_diamonds if profile else 0
+        last_id = max(0, int(last_id_str))
+    except (TypeError, ValueError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_cursor'}, status=400)
+
+    profile = Profile.objects.filter(user=request.user).first()
+    user_mode = profile.relationship_mode if profile else 'DATING'
+    active_conversations = _active_mode_conversations_for_user(request.user, profile)
+
+    new_messages = []
+    if last_id > 0:
+        new_messages = list(
+            ChatMessage.objects.filter(
+                conversation__in=active_conversations,
+                id__gt=last_id,
+            )
+            .exclude(sender=request.user)
+            .exclude(notification_delivered_to=request.user)
+            .select_related('sender', 'conversation')
+            .order_by('id')[:10]
+        )
+
+    messages_data = [{
+        'id': msg.id,
+        'text': msg.text,
+        'message_type': msg.message_type,
+        'sender_name': msg.sender.first_name or msg.sender.username,
+        'sender_avatar': (
+            _profile_payload(msg.sender.profile).get('image_url')
+            if hasattr(msg.sender, 'profile') else None
+        ),
+        'conversation_url': reverse('conversation_room', args=[msg.conversation_id]),
+    } for msg in new_messages]
+
+    unread_count = ChatMessage.objects.filter(
+        conversation__in=active_conversations,
+    ).exclude(sender=request.user).exclude(read_by=request.user).count()
+
+    max_id = last_id
+    if messages_data:
+        max_id = messages_data[-1]['id']
+    elif last_id == 0:
+        latest_message = ChatMessage.objects.filter(
+            conversation__in=active_conversations,
+        ).order_by('-id').first()
+        if latest_message:
+            max_id = latest_message.id
+
+    incoming_hookup_requests = []
+    if profile and user_mode == 'HOOKUP':
         incoming_hookup_requests = list(
-            HookupMatch.objects.filter(target=request.user, status='pending')
+            HookupMatch.objects.filter(
+                target=request.user,
+                target_notification_delivered_at__isnull=True,
+                status='pending',
+                initiator__profile__relationship_mode='HOOKUP',
+            )
             .select_related('initiator')
             .order_by('-created_at')[:5]
         )
-            
-        return JsonResponse({
-            'status': 'success',
-            'unread_count': unread_count,
-            'new_messages': messages_data,
-            'last_id': max_id,
-            'coin_balance': coin_balance,
-            'diamond_balance': diamond_balance,
-            'incoming_hookup_requests': [{
-                'id': str(match.pk),
-                'initiator_name': match.initiator.first_name or match.initiator.username,
-            } for match in incoming_hookup_requests],
-        })
-    except Exception as e:
-        return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+    return JsonResponse({
+        'status': 'success',
+        'unread_count': unread_count,
+        'new_messages': messages_data,
+        'last_id': max_id,
+        'coin_balance': profile.coin_balance if profile else 0,
+        'diamond_balance': profile.earned_diamonds if profile else 0,
+        'user_mode': user_mode,
+        'incoming_hookup_requests': [{
+            'id': str(match.pk),
+            'initiator_name': match.initiator.first_name or match.initiator.username,
+        } for match in incoming_hookup_requests],
+    })
+
+
+@login_required
+@require_POST
+def acknowledge_notifications_api(request):
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
+
+    message_ids = data.get('message_ids', [])
+    hookup_request_ids = data.get('hookup_request_ids', [])
+    if (
+        not isinstance(message_ids, list)
+        or not isinstance(hookup_request_ids, list)
+        or len(message_ids) > 100
+        or len(hookup_request_ids) > 100
+    ):
+        return JsonResponse({'status': 'error', 'message': 'invalid_notification_ids'}, status=400)
+
+    try:
+        parsed_message_ids = {int(message_id) for message_id in message_ids}
+    except (TypeError, ValueError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_message_ids'}, status=400)
+    if any(message_id < 1 for message_id in parsed_message_ids):
+        return JsonResponse({'status': 'error', 'message': 'invalid_message_ids'}, status=400)
+
+    try:
+        parsed_hookup_ids = {uuid.UUID(str(request_id)) for request_id in hookup_request_ids}
+    except (TypeError, ValueError, AttributeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_hookup_request_ids'}, status=400)
+
+    profile = Profile.objects.filter(user=request.user).first()
+    active_conversations = _active_mode_conversations_for_user(request.user, profile)
+    messages = ChatMessage.objects.filter(
+        pk__in=parsed_message_ids,
+        conversation__in=active_conversations,
+    ).exclude(sender=request.user)
+    eligible_message_ids = list(messages.values_list('pk', flat=True))
+    message_through = ChatMessage.notification_delivered_to.through
+    with transaction.atomic():
+        message_through.objects.bulk_create(
+            [
+                message_through(chatmessage_id=message_id, user_id=request.user.pk)
+                for message_id in eligible_message_ids
+            ],
+            ignore_conflicts=True,
+        )
+
+        hookup_requests_updated = 0
+        if profile and profile.relationship_mode == 'HOOKUP' and parsed_hookup_ids:
+            hookup_requests_updated = HookupMatch.objects.filter(
+                pk__in=parsed_hookup_ids,
+                target=request.user,
+                target_notification_delivered_at__isnull=True,
+                status='pending',
+                initiator__profile__relationship_mode='HOOKUP',
+            ).update(target_notification_delivered_at=timezone.now())
+
+    return JsonResponse({
+        'status': 'success',
+        'messages_acknowledged': len(eligible_message_ids),
+        'hookup_requests_acknowledged': hookup_requests_updated,
+    })

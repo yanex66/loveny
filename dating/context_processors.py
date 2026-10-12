@@ -42,8 +42,9 @@ def site_configuration_context(request):
             profile = user.profile
         except Profile.DoesNotExist:
             profile = None
-        if active_mode not in {'DATING', 'HOOKUP', 'SEX_CALL'}:
-            active_mode = profile.relationship_mode if profile else 'DATING'
+        active_mode = profile.relationship_mode if profile else (
+            active_mode if active_mode in {'DATING', 'HOOKUP', 'SEX_CALL'} else 'DATING'
+        )
         ctx['active_connection_mode'] = active_mode
         if profile:
             today = timezone.localdate()
@@ -76,6 +77,15 @@ def site_configuration_context(request):
                 else:
                     cycle_day = 1
 
+            hookup_requests_count = 0
+            if active_mode == 'HOOKUP':
+                from .models import HookupMatch
+                hookup_requests_count = HookupMatch.objects.filter(
+                    target=request.user,
+                    status='pending',
+                    initiator__profile__relationship_mode='HOOKUP',
+                ).count()
+
             ctx.update({
                 'user_has_claimed_welcome': has_claimed_welcome,
                 'user_has_checked_in_today': has_checked_in_today,
@@ -86,6 +96,7 @@ def site_configuration_context(request):
                 'user_free_trial_active': profile.has_free_trial_access(),
                 'user_free_trial_mode': profile.get_free_trial_mode_display(),
                 'user_free_trial_expires_at': profile.free_trial_expires_at,
+                'hookup_requests_unread_count': hookup_requests_count,
             })
 
     return ctx

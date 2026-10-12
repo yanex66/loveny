@@ -676,12 +676,37 @@
             </a>
             {% endif %}
 
+            {% if active_connection_mode == 'HOOKUP' %}
+            <a href="{% url 'hookup_discovery' %}#inbox-title" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'hookup_discovery' and '#inbox-title' in request.get_full_path %}nav-active{% endif %}">
+                <div class="relative">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm6 12H6v-1.4c0-2 4-3.1 6-3.1s6 1.1 6 3.1V18z"/>
+                    </svg>
+                    {% if hookup_requests_unread_count > 0 %}
+                    <span class="absolute -top-1 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-pink-500 text-[9px] font-black text-white shadow-[0_0_8px_rgba(236,72,153,0.8)] animate-pulse">
+                        {{ hookup_requests_unread_count }}
+                    </span>
+                    {% endif %}
+                </div>
+                <span class="text-[8px] font-black mt-1.5 tracking-[0.2em] uppercase">Requests</span>
+            </a>
+            {% elif active_connection_mode == 'SEX_CALL' %}
+            <a href="{% url 'sex_call_hub' %}" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'sex_call_hub' %}nav-active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14v-4z" />
+                    <path d="M4 6a2 2 0 00-2 2v8a2 2 0 002 2h9a2 2 0 002-2V8a2 2 0 00-2-2H4z" />
+                </svg>
+                <span class="text-[8px] font-black mt-1.5 tracking-[0.2em] uppercase">Hosts</span>
+            </a>
+            {% else %}
+            <!-- Dating Mode -->
             <a href="{% url 'match_list' %}" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'match_list' %}nav-active{% endif %}">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
                     <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" />
                 </svg>
                 <span class="text-[8px] font-black mt-1.5 tracking-[0.2em] uppercase">Match</span>
             </a>
+            {% endif %}
 
             <a href="{% url 'messages_inbox' %}" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'messages_inbox' or request.resolver_match.url_name == 'chats' or request.resolver_match.url_name == 'chat_room' or request.resolver_match.url_name == 'conversation_room' %}nav-active{% endif %}">
                 <div class="relative">
@@ -738,7 +763,6 @@
             }
 
             let lastNotificationId = 0;
-            let knownHookupRequestIds = new Set();
             const toastContainer = document.getElementById('global-toast-container');
             const chatNavIcon = document.querySelector('a[href="/messages/"]');
 
@@ -793,6 +817,48 @@
                 }
             }
 
+            // Client-side deduplication via sessionStorage
+            function getSeenNotificationIds() {
+                try {
+                    const raw = sessionStorage.getItem('loveny_seen_notifications');
+                    return raw ? new Set(JSON.parse(raw)) : new Set();
+                } catch(e) {
+                    return new Set();
+                }
+            }
+            function markNotificationSeen(id) {
+                try {
+                    const seen = getSeenNotificationIds();
+                    seen.add(String(id));
+                    // Keep max 100 IDs in session cache
+                    const arr = Array.from(seen).slice(-100);
+                    sessionStorage.setItem('loveny_seen_notifications', JSON.stringify(arr));
+                } catch(e) {}
+            }
+
+            function acknowledgeNotifications(messageIds, hookupRequestIds) {
+                if (!messageIds.length && !hookupRequestIds.length) return;
+                const token = document.cookie.split('; ')
+                    .find(item => item.startsWith('csrftoken='))
+                    ?.split('=').slice(1).join('=');
+                fetch("{% url 'acknowledge_notifications_api' %}", {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': token ? decodeURIComponent(token) : '',
+                    },
+                    body: JSON.stringify({
+                        message_ids: messageIds,
+                        hookup_request_ids: hookupRequestIds,
+                    }),
+                }).then(response => {
+                    if (!response.ok) {
+                        console.warn('Notification acknowledgement failed.', response.status);
+                    }
+                }).catch(error => console.warn('Notification acknowledgement failed.', error));
+            }
+
             async function pollNotifications() {
                 try {
                     const res = await fetch(`/api/notifications/global/?last_id=${lastNotificationId}`);
@@ -807,43 +873,57 @@
                             if (storeModalCoins) storeModalCoins.textContent = data.coin_balance;
                         }
 
+                        const seenIds = getSeenNotificationIds();
+                        const messagesToAcknowledge = [];
+
                         if (data.new_messages && data.new_messages.length > 0) {
                             let shouldReloadInbox = false;
                             
                             data.new_messages.forEach(msg => {
-                                const currentPath = window.location.pathname;
-                                if (currentPath !== msg.conversation_url) {
-                                    let text = msg.message_type === 'gift' ? 'Sent you a gift 🎁' : msg.text;
-                                    if (msg.message_type === 'image') text = 'Sent you an image 📷';
-                                    if (msg.message_type === 'sticker') text = 'Sent a sticker';
-                                    showToast(msg.sender_name, text, msg.sender_avatar, msg.conversation_url);
-                                    
-                                    if (currentPath === '/messages/' || currentPath === '/chats/') {
-                                        shouldReloadInbox = true;
+                                const msgKey = `msg_${msg.id}`;
+                                messagesToAcknowledge.push(msg.id);
+                                if (!seenIds.has(msgKey)) {
+                                    markNotificationSeen(msgKey);
+                                    const currentPath = window.location.pathname;
+                                    if (currentPath !== msg.conversation_url) {
+                                        let text = msg.message_type === 'gift' ? 'Sent you a gift 🎁' : msg.text;
+                                        if (msg.message_type === 'image') text = 'Sent you an image 📷';
+                                        if (msg.message_type === 'sticker') text = 'Sent a sticker';
+                                        showToast(msg.sender_name, text, msg.sender_avatar, msg.conversation_url);
+
+                                        if (currentPath === '/messages/' || currentPath === '/chats/') {
+                                            shouldReloadInbox = true;
+                                        }
                                     }
                                 }
                             });
+                            acknowledgeNotifications(messagesToAcknowledge, []);
                             
                             if (shouldReloadInbox) {
                                 setTimeout(() => window.location.reload(), 1500);
                             }
                         }
 
+                        // Mode-isolated Hookup Requests with client-side deduplication
                         const hookupRequests = data.incoming_hookup_requests || [];
-                        const currentRequestIds = new Set(hookupRequests.map(request => request.id));
-                        const newRequest = hookupRequests.find(request => !knownHookupRequestIds.has(request.id));
-                        if (newRequest) {
-                            showToast(
-                                newRequest.initiator_name,
-                                'Sent you a Hookup connection request.',
-                                null,
-                                "{% url 'hookup_discovery' %}"
-                            );
-                            if (window.location.pathname === "{% url 'hookup_discovery' %}") {
-                                setTimeout(() => window.location.reload(), 1500);
+                        const hookupRequestsToAcknowledge = [];
+                        hookupRequests.forEach(request => {
+                            const notifKey = `hookup_req_${request.id}`;
+                            hookupRequestsToAcknowledge.push(request.id);
+                            if (!seenIds.has(notifKey)) {
+                                markNotificationSeen(notifKey);
+                                showToast(
+                                    request.initiator_name,
+                                    'Sent you a Hookup connection request.',
+                                    null,
+                                    "{% url 'hookup_discovery' %}"
+                                );
+                                if (window.location.pathname === "{% url 'hookup_discovery' %}") {
+                                    setTimeout(() => window.location.reload(), 1500);
+                                }
                             }
-                        }
-                        knownHookupRequestIds = currentRequestIds;
+                        });
+                        acknowledgeNotifications([], hookupRequestsToAcknowledge);
                         
                         updateChatIndicator(data.unread_count);
                         
@@ -855,7 +935,8 @@
             }
 
             {% if user.is_authenticated %}
-                setInterval(pollNotifications, 5000);
+                // Polling interval set to 25 seconds to eliminate buzzing loops
+                setInterval(pollNotifications, 25000);
                 pollNotifications();
             {% endif %}
         });

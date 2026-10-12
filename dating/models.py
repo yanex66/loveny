@@ -137,6 +137,10 @@ class Profile(models.Model):
         return self.coin_balance >= config.min_coins_for_video_call
 
     @property
+    def has_unlocked_mode_switching(self):
+        return bool(self.has_paid_mode_switch_fee)
+
+    @property
     def is_dating_premium(self):
         return bool(
             (
@@ -305,6 +309,11 @@ class ChatMessage(models.Model):
     read_by = models.ManyToManyField(
         User,
         related_name='read_chat_messages',
+        blank=True,
+    )
+    notification_delivered_to = models.ManyToManyField(
+        User,
+        related_name='delivered_chat_notifications',
         blank=True,
     )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -770,6 +779,7 @@ class HookupMatch(models.Model):
         on_delete=models.CASCADE,
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    target_notification_delivered_at = models.DateTimeField(null=True, blank=True)
     initiator_paid = models.BooleanField(default=False)
     target_paid = models.BooleanField(default=False)
     initiator_referral_free = models.BooleanField(
