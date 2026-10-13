@@ -179,7 +179,7 @@
                     <!-- Name & Location Info -->
                     <div class="absolute inset-x-0 bottom-2.5 px-2.5">
                         <div class="text-sm font-black text-white leading-tight drop-shadow-md flex items-center gap-1">
-                            {{ candidate.user.first_name|default:candidate.user.username }}
+                            {{ candidate.display_name }}
                             <!-- Verified Badge -->
                             <svg class="h-3.5 w-3.5 text-blue-400 drop-shadow-sm" viewBox="0 0 24 24" fill="currentColor"><path d="M10.134 1.349C11.236.427 12.764.427 13.866 1.349l1.821 1.523c.36.301.83.45 1.306.417l2.368-.16c1.436-.098 2.686.974 2.84 2.404l.255 2.36c.05.474.248.917.553 1.24l1.621 1.716c.983 1.04.983 2.583 0 3.623l-1.621 1.716c-.305.323-.503.766-.553 1.24l-.255 2.36c-.154 1.43-1.404 2.502-2.84 2.404l-2.368-.16c-.476-.032-.946.116-1.306.417l-1.821 1.523c-1.102.922-2.63.922-3.732 0l-1.821-1.523c-.36-.301-.83-.45-1.306-.417l-2.368.16c-1.436.098-2.686-.974-2.84-2.404l-.255-2.36c-.05-.474-.248-.917-.553-1.24L1.442 13.81c-.983-1.04-.983-2.583 0-3.623l1.621-1.716c.305-.323.503-.766.553-1.24l.255-2.36c.154-1.43 1.404-2.502 2.84-2.404l2.368.16c.476.032.946-.116 1.306-.417l1.821-1.523zm-1.182 14.394l6.06-6.06a1.05 1.05 0 00-1.485-1.485L8.212 13.5l-2.273-2.273a1.05 1.05 0 00-1.485 1.485l3.015 3.015a1.05 1.05 0 001.483 0z"/></svg>
                             {% if candidate.age %}<span class="text-pink-300 font-bold text-xs">{{ candidate.age }}</span>{% endif %}
@@ -195,7 +195,7 @@
 
                 <!-- Connect Action Button -->
                 <div class="p-2.5">
-                    <button type="button" onclick="sendHookupRequest({{ candidate.user.pk }}, '{{ candidate.user.first_name|default:candidate.user.username|escapejs }}')" class="w-full rounded-xl bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 py-2 text-[11px] font-black uppercase tracking-wider text-white shadow-md shadow-pink-500/20 active:scale-95 transition hover:brightness-110">
+                    <button type="button" onclick="sendHookupRequest({{ candidate.user.pk }}, '{{ candidate.display_name|escapejs }}')" class="w-full rounded-xl bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 py-2 text-[11px] font-black uppercase tracking-wider text-white shadow-md shadow-pink-500/20 active:scale-95 transition hover:brightness-110">
                         ⚡ Meet Today
                     </button>
                 </div>

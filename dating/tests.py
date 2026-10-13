@@ -466,6 +466,29 @@ class DatingPlatformTests(TestCase):
         )
         self.assertNotIn(far_profile, get_profile_batch(self.alice))
 
+    def test_hookup_discovery_uses_first_name_or_username_for_display(self):
+        self.alice_profile.relationship_mode = 'HOOKUP'
+        self.alice_profile.save(update_fields=['relationship_mode'])
+        self.bob_profile.relationship_mode = 'HOOKUP'
+        self.bob_profile.save(update_fields=['relationship_mode'])
+        self.client.force_login(self.alice)
+
+        response = self.client.get(reverse('hookup_discovery'))
+
+        self.assertContains(response, f"sendHookupRequest({self.bob.pk}, 'bob')")
+        self.assertContains(response, 'bob')
+
+        self.bob.first_name = 'Member'
+        self.bob.save(update_fields=['first_name'])
+        response = self.client.get(reverse('hookup_discovery'))
+        self.assertContains(response, f"sendHookupRequest({self.bob.pk}, 'bob')")
+
+        self.bob.first_name = 'Bobby'
+        self.bob.save(update_fields=['first_name'])
+        response = self.client.get(reverse('hookup_discovery'))
+        self.assertContains(response, f"sendHookupRequest({self.bob.pk}, 'Bobby')")
+        self.assertContains(response, 'Bobby')
+
     def test_sex_call_mode_is_available_in_creation_settings_and_discovery(self):
         mode_choices = Profile._meta.get_field('relationship_mode').choices
         self.assertEqual(
@@ -1188,6 +1211,8 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(profile.min_age_pref, 18)
         self.assertEqual(profile.max_age_pref, 50)
         self.assertEqual(profile.max_distance_km, 100)
+        new_user.refresh_from_db()
+        self.assertEqual(new_user.first_name, '')
 
     def test_incomplete_profile_cannot_bypass_mode_switch_unlock(self):
         new_user = User.objects.create_user(
@@ -2488,6 +2513,8 @@ class DatingPlatformTests(TestCase):
         self.assertContains(response, 'Nearby')
         self.assertContains(response, 'cosmic-match-overlay')
         self.assertContains(response, 'diamond-exchange-modal')
+        self.assertContains(response, 'window.lovenyStartVideoCall(receiverId)')
+        self.assertNotContains(response, 'window.location.href = `/call/${targetRoomId}/`')
         self.assertContains(response, '200') # coin balance
         self.assertContains(response, '80') # diamond balance
 
@@ -2697,6 +2724,7 @@ class DatingPlatformTests(TestCase):
         self.assertContains(res, 'Gifts Received')
         self.assertContains(res, 'Languages Spoken')
         self.assertContains(res, 'Call Rate')
+        self.assertContains(res, 'window.lovenyStartVideoCall(receiverId)')
 
     def test_daily_checkin_api_and_me_hub_view(self):
         self.alice_profile.coin_balance = 20
@@ -2749,6 +2777,7 @@ class DatingPlatformTests(TestCase):
         self.assertContains(res, 'Hello, how are you?')
         self.assertContains(res, 'Photo')
         self.assertContains(res, 'Video Call')
+        self.assertContains(res, 'window.lovenyStartVideoCall(receiverId)')
         self.assertContains(res, 'Real-person Verified')
 
         # Test sending image message via conversation_send_api

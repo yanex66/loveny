@@ -667,36 +667,12 @@
     };
 
     // Direct Video Call Trigger
-    window.startDirectVideoCall = async function(receiverId, receiverName) {
-        try {
-            const res = await fetch("/api/calls/initiate/", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '',
-                },
-                body: JSON.stringify({ receiver_id: receiverId }),
-            });
-            const data = await res.json();
-
-            if (!res.ok) {
-                if (data.message === 'insufficient_coins' || data.message === 'sex_call_pass_required') {
-                    openTopupModal();
-                } else {
-                    alert(data.detail || data.message || 'Unable to initiate call');
-                }
-                return;
-            }
-
-            const roomId = data.room_id || (data.call && data.call.room_id);
-            if (roomId) {
-                window.location.href = `/call/${roomId}/`;
-            } else if (window.lovenyStartVideoCall) {
-                window.lovenyStartVideoCall(receiverId);
-            }
-        } catch (err) {
-            alert('Call error: ' + err.message);
+    window.startDirectVideoCall = function(receiverId) {
+        if (window.lovenyStartVideoCall) {
+            window.lovenyStartVideoCall(receiverId);
+            return;
         }
+        alert('Video calling is unavailable. Please refresh and try again.');
     };
 
     // STICKER DRAWER HANDLING

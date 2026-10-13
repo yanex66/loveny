@@ -4039,6 +4039,13 @@ def hookup_discovery_view(request):
             candidates_qs.select_related('user').prefetch_related('photos')
             .order_by('-last_active')[:30]
         )
+        for candidate in available_candidates:
+            first_name = candidate.user.first_name.strip()
+            candidate.display_name = (
+                first_name
+                if first_name and first_name.casefold() != 'member'
+                else candidate.user.username
+            )
     else:
         available_candidates = []
 

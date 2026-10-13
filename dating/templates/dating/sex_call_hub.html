@@ -337,35 +337,12 @@
     }
 
     // Direct Video Call Trigger
-    window.startDirectCall = async (receiverId, receiverName) => {
-        try {
-            const res = await fetch("/api/calls/initiate/", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken(),
-                },
-                body: JSON.stringify({ receiver_id: receiverId }),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                if (data.message === 'insufficient_coins' || data.message === 'sex_call_pass_required') {
-                    window.location.href = "{% url 'coin_shop' %}";
-                } else {
-                    alert(data.detail || data.message || 'Unable to initiate call');
-                }
-                return;
-            }
-
-            const targetRoomId = data.room_id || (data.call && data.call.room_id);
-            if (targetRoomId) {
-                window.location.href = `/call/${targetRoomId}/`;
-            } else if (window.lovenyStartVideoCall) {
-                window.lovenyStartVideoCall(receiverId);
-            }
-        } catch (err) {
-            alert('Call initiation error: ' + err.message);
+    window.startDirectCall = receiverId => {
+        if (window.lovenyStartVideoCall) {
+            window.lovenyStartVideoCall(receiverId);
+            return;
         }
+        alert('Video calling is unavailable. Please refresh and try again.');
     };
 
     // Cosmic Random Match Logic

@@ -468,41 +468,15 @@
     };
 
     // Action 3: Instant Video Call (📹)
-    window.startDirectCall = async (receiverId, receiverName) => {
+    window.startDirectCall = receiverId => {
         const btn = document.getElementById('instant-call-btn');
-        btn.classList.add('opacity-75');
-
-        try {
-            const res = await fetch("/api/calls/initiate/", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': CSRF_TOKEN,
-                },
-                body: JSON.stringify({ receiver_id: receiverId }),
-            });
-            const data = await res.json();
-            btn.classList.remove('opacity-75');
-
-            if (!res.ok) {
-                if (data.message === 'insufficient_coins' || data.message === 'sex_call_pass_required') {
-                    window.location.href = "{% url 'coin_shop' %}";
-                } else {
-                    alert(data.detail || data.message || 'Unable to initiate call');
-                }
-                return;
-            }
-
-            const targetRoomId = data.room_id || (data.call && data.call.room_id);
-            if (targetRoomId) {
-                window.location.href = `/call/${targetRoomId}/`;
-            } else if (window.lovenyStartVideoCall) {
-                window.lovenyStartVideoCall(receiverId);
-            }
-        } catch (err) {
-            btn.classList.remove('opacity-75');
-            alert('Call initiation error: ' + err.message);
+        if (!window.lovenyStartVideoCall) {
+            alert('Video calling is unavailable. Please refresh and try again.');
+            return;
         }
+        btn.classList.add('opacity-75');
+        window.lovenyStartVideoCall(receiverId)
+            .finally(() => btn.classList.remove('opacity-75'));
     };
 
     window.shareProfile = () => {

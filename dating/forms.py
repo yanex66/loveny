@@ -256,10 +256,12 @@ class ProfileForm(forms.ModelForm):
         }
 
     def clean_name(self):
-        val = self.cleaned_data.get('name')
+        val = (self.cleaned_data.get('name') or '').strip()
+        if val:
+            return val
         if not val and self.instance and hasattr(self.instance, 'user') and self.instance.user:
-            return self.instance.user.first_name or self.instance.user.username or 'Member'
-        return (val or 'Member').strip()
+            return self.instance.user.first_name or self.instance.user.username
+        return ''
 
     def clean_min_age_pref(self):
         val = self.cleaned_data.get('min_age_pref')
