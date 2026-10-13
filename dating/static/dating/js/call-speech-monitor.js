@@ -13,8 +13,38 @@
     let detectionEnabled = true;
     let submitting = false;
     let startupTimer = null;
+    let restartTimer = null;
+    let consecutiveErrors = 0;
     let rejectStartup = null;
     const seenTranscripts = new Set();
+    const maxRestartAttempts = 4;
+
+    function failMonitoring(message) {
+        if (startupTimer !== null) {
+            window.clearTimeout(startupTimer);
+            startupTimer = null;
+            const reject = rejectStartup;
+            rejectStartup = null;
+            if (reject) reject(new Error(message));
+            return;
+        }
+        stop();
+        onUnavailable(message);
+    }
+
+    function scheduleRestart(message) {
+        if (!active || paused || submitting || restartTimer !== null) return;
+        consecutiveErrors += 1;
+        if (consecutiveErrors > maxRestartAttempts) {
+            failMonitoring(message);
+            return;
+        }
+        const delay = Math.min(1000 * (2 ** (consecutiveErrors - 1)), 8000);
+        restartTimer = window.setTimeout(() => {
+            restartTimer = null;
+            startRecognition();
+        }, delay);
+    }
 
     function hasContactExchangeIndicators(text) {
         const normalized = text.toLowerCase();
@@ -35,7 +65,9 @@
             recognition.start();
         } catch (error) {
             if (error.name !== 'InvalidStateError') {
-                onUnavailable('Speech monitoring could not start. The call was ended to keep monitoring active.');
+                scheduleRestart(
+                    'Speech monitoring could not restart after several attempts. The call was ended to keep monitoring active.',
+                );
             }
         }
     }
@@ -44,7 +76,10 @@
         active = false;
         paused = false;
         window.clearTimeout(startupTimer);
+        window.clearTimeout(restartTimer);
         startupTimer = null;
+        restartTimer = null;
+        consecutiveErrors = 0;
         if (rejectStartup) {
             rejectStartup(new Error('Live-call speech monitoring stopped before it became ready.'));
             rejectStartup = null;
@@ -137,8 +172,8 @@
                 rejectStartup = reject;
                 startupTimer = window.setTimeout(() => {
                     rejectStartup = null;
-                    reject(new Error('Speech monitoring did not start. The call was ended.'));
-                }, 8000);
+                    reject(new Error('Speech monitoring did not start after several attempts. The call was ended.'));
+                }, 15000);
                 recognition.onstart = () => {
                     window.clearTimeout(startupTimer);
                     startupTimer = null;
@@ -151,6 +186,7 @@
                 for (let index = event.resultIndex; index < event.results.length; index += 1) {
                     const result = event.results[index];
                     if (!result.isFinal) continue;
+                    consecutiveErrors = 0;
                     const transcript = result[0]?.transcript?.trim();
                     if (
                         detectionEnabled
@@ -168,24 +204,22 @@
                 if (!active || paused || event.error === 'no-speech' || event.error === 'aborted') {
                     return;
                 }
-                if (startupTimer !== null) {
-                    window.clearTimeout(startupTimer);
-                    startupTimer = null;
-                    const reject = rejectStartup;
-                    rejectStartup = null;
-                    reject(new Error(
-                        'Live-call speech monitoring could not start. The call was ended.',
-                    ));
+                if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                    failMonitoring(
+                        'Live-call speech monitoring permission was denied. The call was ended.',
+                    );
                     return;
                 }
-                stop();
-                onUnavailable(
-                    'Live-call speech monitoring stopped unexpectedly. The call was ended.',
+                scheduleRestart(
+                    'Live-call speech monitoring stopped unexpectedly after several restart attempts. The call was ended.',
                 );
             };
             recognition.onend = () => {
-                if (active && !paused && !submitting) {
-                    window.setTimeout(startRecognition, 350);
+                if (active && !paused && !submitting && restartTimer === null) {
+                    restartTimer = window.setTimeout(() => {
+                        restartTimer = null;
+                        startRecognition();
+                    }, 350);
                 }
             };
             startRecognition();

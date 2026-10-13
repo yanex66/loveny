@@ -268,13 +268,15 @@
                 CallPrivacy.init(roomId, String(currentUserId));
                 CallPrivacy.startFaceVerification(localStream);
             }
-            await window.CallSpeechMonitor.start(roomId, csrfToken(), {
+            window.CallSpeechMonitor.start(roomId, csrfToken(), {
                 waitForConnection: true,
                 onFlagged: result => leaveCallWithNotice(
                     result.message,
                     result.login_url || '{% url "login" %}',
                 ),
                 onUnavailable: message => {
+                    if (callTerminating) return;
+                    callTerminating = true;
                     fetch(`/api/calls/${roomId}/end/`, {
                         method: 'POST',
                         headers: {'X-CSRFToken': csrfToken()},
@@ -285,6 +287,18 @@
                             '{% url "sex_call_hub" %}',
                         ));
                 },
+            }).catch(error => {
+                if (callTerminating) return;
+                callTerminating = true;
+                fetch(`/api/calls/${roomId}/end/`, {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': csrfToken()},
+                })
+                    .catch(endError => console.error('Could not end an unmonitored call.', endError))
+                    .finally(() => leaveCallWithNotice(
+                        error.message || 'Speech monitoring could not start. The call was ended.',
+                        '{% url "sex_call_hub" %}',
+                    ));
             });
 
             peer = new RTCPeerConnection({

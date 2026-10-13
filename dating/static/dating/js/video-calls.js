@@ -129,8 +129,6 @@
                 stopRingtone();
                 return;
             }
-            if (!window.CallSpeechMonitor?.requestConsent()) return;
-
             try {
                 const now = ctx.currentTime;
                 const osc1 = ctx.createOscillator();
@@ -923,7 +921,8 @@
             window.CallPrivacy.init(activeCall.room_id, config.dataset.userId);
             window.CallPrivacy.startFaceVerification(localStream);
         }
-        await window.CallSpeechMonitor.start(
+        const monitoredRoomId = activeCall.room_id;
+        window.CallSpeechMonitor.start(
             activeCall.room_id,
             csrfToken(),
             {
@@ -934,7 +933,8 @@
                     window.location.assign(result.login_url || '/accounts/login/');
                 },
                 onUnavailable: message => {
-                    const roomId = activeCall && activeCall.room_id;
+                    if (!activeCall || activeCall.room_id !== monitoredRoomId) return;
+                    const roomId = monitoredRoomId;
                     closeRoom();
                     if (roomId) {
                         api(`${apiPrefix}${roomId}/end/`, {method: 'POST', body: '{}'})
@@ -943,7 +943,14 @@
                     toast(message, true);
                 },
             },
-        );
+        ).catch(error => {
+            if (!activeCall || activeCall.room_id !== monitoredRoomId) return;
+            const roomId = monitoredRoomId;
+            closeRoom();
+            api(`${apiPrefix}${roomId}/end/`, {method: 'POST', body: '{}'})
+                .catch(cleanupError => console.warn('Could not end an unmonitored call.', cleanupError));
+            toast(error.message || 'Live-call speech monitoring could not start. The call was ended.', true);
+        });
         peer = new RTCPeerConnection({
             iceServers: [
                 {urls: 'stun:stun.l.google.com:19302'},
@@ -993,6 +1000,7 @@
     }
 
     async function initiateCall(receiverId) {
+        if (!window.CallSpeechMonitor?.requestConsent()) return;
         try {
             const response = await api(config.dataset.initiateUrl, {
                 method: 'POST',
@@ -1268,7 +1276,7 @@
             console.warn('Could not check for incoming calls.', error);
         }
     }
-    window.setInterval(checkIncomingCalls, 3500);
+    window.setInterval(checkIncomingCalls, 2000);
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
