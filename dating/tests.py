@@ -1074,6 +1074,20 @@ class DatingPlatformTests(TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertContains(response, 'Unable to deliver the reset email due to a mail server connection issue.')
 
+    def test_authenticated_activity_refreshes_online_presence(self):
+        self.alice_profile.last_active = timezone.now() - timedelta(hours=1)
+        self.alice_profile.save(update_fields=['last_active'])
+        self.client.force_login(self.alice)
+
+        response = self.client.get(reverse('settings'))
+
+        self.assertEqual(response.status_code, 200)
+        self.alice_profile.refresh_from_db()
+        self.assertGreaterEqual(
+            self.alice_profile.last_active,
+            timezone.now() - timedelta(minutes=1),
+        )
+
     def test_direct_interest_creates_match_after_reciprocal_like(self):
         self.client.force_login(self.alice)
         response = self.post_json(reverse('swipe_action'), {
@@ -2282,6 +2296,79 @@ class DatingPlatformTests(TestCase):
             self.alice_profile.earned_diamonds,
         )
 
+    def test_call_diamond_ring_and_car_gifts_use_catalog_slugs_and_prices(self):
+        Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+        GiftItem.objects.update_or_create(
+            slug='ring',
+            defaults={
+                'name': 'Diamond Ring',
+                'icon': '💍',
+                'coin_cost': 100,
+                'is_active': True,
+                'order': 6,
+            },
+        )
+        GiftItem.objects.update_or_create(
+            slug='car',
+            defaults={
+                'name': 'Supercar',
+                'icon': '🏎️',
+                'coin_cost': 500,
+                'is_active': True,
+                'order': 5,
+            },
+        )
+        self.alice_profile.coin_balance = 1000
+        self.bob_profile.earned_diamonds = 0
+        self.alice_profile.save(update_fields=['coin_balance'])
+        self.bob_profile.save(update_fields=['earned_diamonds'])
+
+        self.client.force_login(self.alice)
+        init_res = self.post_json(reverse('call_initiate_api'), {'receiver_id': self.bob.pk})
+        room_id = init_res.json()['call']['room_id']
+        self.client.force_login(self.bob)
+        self.post_json(reverse('call_respond_api', args=[room_id]), {'action': 'accept'})
+
+        self.client.force_login(self.alice)
+        call_page = self.client.get(reverse('call_room_page', args=[room_id]))
+        self.assertContains(call_page, 'data-gift="ring" data-cost="100"')
+        self.assertContains(call_page, 'data-gift="car" data-cost="500"')
+        self.assertNotContains(call_page, 'data-gift="diamond"')
+        self.assertNotContains(call_page, 'data-gift="sports_car"')
+
+        for gift_type, cost in (('ring', 100), ('car', 500)):
+            gift_res = self.post_json(
+                reverse('call_gift_api', args=[room_id]),
+                {'gift_type': gift_type},
+            )
+            self.assertEqual(gift_res.status_code, 200)
+            self.assertEqual(gift_res.json()['gift']['coins'], cost)
+
+        self.alice_profile.refresh_from_db()
+        self.bob_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.coin_balance, 380)
+        self.assertEqual(self.bob_profile.earned_diamonds, 420)
+        self.assertTrue(
+            CallGift.objects.filter(
+                sender=self.alice,
+                receiver=self.bob,
+                gift_type='ring',
+                coins_cost=100,
+            ).exists()
+        )
+        self.assertTrue(
+            CallGift.objects.filter(
+                sender=self.alice,
+                receiver=self.bob,
+                gift_type='car',
+                coins_cost=500,
+            ).exists()
+        )
+
     def test_stale_calls_stop_marking_users_busy_and_disabled_billing_still_heartbeats(self):
         now = timezone.now()
         self.alice_profile.relationship_mode = 'SEX_CALL'
@@ -2839,8 +2926,16 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(res_alice.status_code, 403)
         call.status = 'connected'
         call.save(update_fields=['status'])
-        res_alice = self.client.get(reverse('call_room_page', args=[call.room_id]))
-        self.assertEqual(res_alice.status_code, 200)
+        with tempfile.TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            avatar = ProfilePhoto.objects.create(
+                user=self.bob,
+                profile=self.bob_profile,
+                image=ContentFile(b'avatar', name='bob-avatar.jpg'),
+                is_main=True,
+            )
+            res_alice = self.client.get(reverse('call_room_page', args=[call.room_id]))
+            self.assertEqual(res_alice.status_code, 200)
+            self.assertContains(res_alice, f'src="{avatar.image.url}"')
         self.assertContains(res_alice, 'floating-chat-container')
         self.assertContains(res_alice, 'local-video')
         self.assertContains(res_alice, 'remote-video')
@@ -2863,6 +2958,107 @@ class DatingPlatformTests(TestCase):
         self.client.force_login(charlie_user)
         res_charlie = self.client.get(reverse('call_room_page', args=[call.room_id]))
         self.assertEqual(res_charlie.status_code, 403)
+
+    def test_live_call_follow_back_signal_persists_reciprocal_connection(self):
+        call = CallSession.objects.create(
+            caller=self.alice,
+            receiver=self.bob,
+            status='connected',
+        )
+        self.client.force_login(self.alice)
+        first_follow = self.post_json(
+            reverse('call_follow_api', args=[call.room_id]),
+            {},
+        )
+        self.assertEqual(first_follow.status_code, 200)
+        self.assertTrue(first_follow.json()['is_following'])
+        self.assertFalse(first_follow.json()['is_matched'])
+        self.assertContains(
+            self.client.get(reverse('call_room_page', args=[call.room_id])),
+            'Following',
+        )
+
+        self.client.force_login(self.bob)
+        self.assertContains(
+            self.client.get(reverse('call_room_page', args=[call.room_id])),
+            'Follow Back',
+        )
+        follow_back = self.post_json(
+            reverse('call_follow_api', args=[call.room_id]),
+            {},
+        )
+        self.assertEqual(follow_back.status_code, 200)
+        self.assertTrue(follow_back.json()['is_matched'])
+        self.assertTrue(Match.objects.filter(
+            Q(user1=self.alice, user2=self.bob)
+            | Q(user1=self.bob, user2=self.alice),
+            expires_at__gt=timezone.now(),
+        ).exists())
+
+        self.client.force_login(self.alice)
+        self.assertContains(
+            self.client.get(reverse('call_room_page', args=[call.room_id])),
+            'Connected',
+        )
+
+    def test_live_call_chat_blocks_contact_details(self):
+        call = CallSession.objects.create(
+            caller=self.alice,
+            receiver=self.bob,
+            status='connected',
+        )
+        self.client.force_login(self.alice)
+
+        blocked = self.post_json(
+            reverse('call_signal_send_api', args=[call.room_id]),
+            {
+                'type': 'chat',
+                'payload': {
+                    'text': 'My number is 0803437682674',
+                    'username': self.alice.username,
+                },
+            },
+        )
+
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn('contact details', blocked.json()['message'])
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.off_platform_attempts, 1)
+        self.assertFalse(call.signals.filter(signal_type='chat').exists())
+
+        allowed = self.post_json(
+            reverse('call_signal_send_api', args=[call.room_id]),
+            {
+                'type': 'chat',
+                'payload': {
+                    'text': 'Hello, nice to meet you.',
+                    'username': self.alice.username,
+                },
+            },
+        )
+        self.assertEqual(allowed.status_code, 201)
+        self.assertTrue(call.signals.filter(signal_type='chat').exists())
+
+    def test_live_call_speech_moderation_detects_spoken_number_words(self):
+        call = CallSession.objects.create(
+            caller=self.alice,
+            receiver=self.bob,
+            status='connected',
+            started_at=timezone.now(),
+        )
+        self.client.force_login(self.alice)
+
+        response = self.post_json(
+            reverse('call_moderation_flag_api', args=[call.room_id]),
+            {
+                'transcript':
+                    'My number is zero eight zero three four three seven six eight two six seven four',
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['status'], 'suspended')
+        self.assertFalse(User.objects.get(pk=self.alice.pk).is_active)
 
     def test_coin_checkout_page_renders_packages_and_closed_loop_rules(self):
         self.client.force_login(self.alice)

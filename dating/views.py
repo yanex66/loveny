@@ -292,15 +292,7 @@ def get_profile_batch(user, limit=10):
 
 def _profile_payload(profile):
     photo = profile.photos.filter(is_main=True).first() or profile.photos.first()
-    media_url = ''
-    if photo and photo.image:
-        try:
-            media_url = photo.image.url
-        except Exception:
-            pass
-    if not media_url:
-        username = profile.user.username if profile.user else 'user'
-        media_url = f"https://api.dicebear.com/7.x/avataaars/svg?seed={username}"
+    media_url = _profile_avatar_url(profile)
     bio = profile.bio or ''
     config = SiteConfiguration.get_solo()
     return {
@@ -1327,16 +1319,30 @@ def _call_participants(call, user):
     return call
 
 
+def _profile_avatar_url(profile):
+    if profile:
+        photo = profile.photos.filter(is_main=True).first() or profile.photos.first()
+        if photo and photo.image:
+            try:
+                if photo.image.storage.exists(photo.image.name):
+                    return photo.image.url
+            except (OSError, ValueError):
+                logger.warning(
+                    'Could not resolve avatar image for user %s.',
+                    profile.user_id,
+                    exc_info=True,
+                )
+        username = profile.user.username if profile.user else 'user'
+    else:
+        username = 'user'
+    return f"https://api.dicebear.com/7.x/avataaars/svg?seed={quote(username)}"
+
+
 def _call_payload(call):
     caller_profile = Profile.objects.filter(user_id=call.caller_id).first()
     receiver_profile = Profile.objects.filter(user_id=call.receiver_id).first()
-    caller_photo = (
-        caller_profile.photos.filter(is_main=True).first() or caller_profile.photos.first()
-        if caller_profile else None
-    )
-    photo_url = ''
-    if caller_photo and caller_photo.image and caller_photo.image.storage.exists(caller_photo.image.name):
-        photo_url = caller_photo.image.url
+    caller_photo_url = _profile_avatar_url(caller_profile)
+    receiver_photo_url = _profile_avatar_url(receiver_profile)
 
     caller_coins = caller_profile.coin_balance if caller_profile else 0
     balance_gating_enabled = settings.SEX_CALL_BALANCE_GATING_ENABLED
@@ -1360,9 +1366,25 @@ def _call_payload(call):
         'status': call.status,
         'caller_id': call.caller_id,
         'caller_name': call.caller.first_name or call.caller.username,
-        'caller_photo': photo_url,
+        'caller_photo': caller_photo_url,
+        'caller_follows_receiver': Swipe.objects.filter(
+            swiper_id=call.caller_id,
+            swiped_id=call.receiver_id,
+            type='LIKE',
+        ).exists(),
         'receiver_id': call.receiver_id,
         'receiver_name': call.receiver.first_name or call.receiver.username,
+        'receiver_photo': receiver_photo_url,
+        'receiver_follows_caller': Swipe.objects.filter(
+            swiper_id=call.receiver_id,
+            swiped_id=call.caller_id,
+            type='LIKE',
+        ).exists(),
+        'is_matched': Match.objects.filter(
+            Q(user1_id=call.caller_id, user2_id=call.receiver_id)
+            | Q(user1_id=call.receiver_id, user2_id=call.caller_id),
+            expires_at__gt=timezone.now(),
+        ).exists(),
         'rate_per_minute': rate,
         'caller_coins': caller_coins,
         'receiver_diamonds': receiver_profile.earned_diamonds if receiver_profile else 0,
@@ -1906,6 +1928,27 @@ def call_signal_send_api(request, room_id):
     _call_participants(call, request.user)
     if call.status not in ('ringing', 'connected', 'active'):
         return JsonResponse({'status': 'error', 'message': 'call_not_active'}, status=409)
+    if signal_type == 'chat':
+        text = payload.get('text')
+        if not isinstance(text, str) or not text.strip() or len(text) > 140:
+            return JsonResponse(
+                {'status': 'error', 'message': 'invalid_call_message'},
+                status=400,
+            )
+        is_contact_leak, _ = ContentFilter.inspect(text)
+        if is_contact_leak:
+            Profile.objects.filter(user=request.user).update(
+                off_platform_attempts=F('off_platform_attempts') + 1,
+            )
+            logger.warning(
+                'Off-platform contact leak blocked in call chat: user=%s call=%s',
+                request.user.pk,
+                call.room_id,
+            )
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Sharing contact details outside LOVENY is not allowed.',
+            }, status=400)
     if signal_type == 'offer' and request.user.pk != call.caller_id:
         return JsonResponse({'status': 'error', 'message': 'caller_must_send_offer'}, status=403)
     if signal_type == 'answer' and (
@@ -4017,6 +4060,96 @@ def sex_call_hosts_api(request):
 
 
 @login_required
+@require_POST
+def call_follow_api(request, room_id):
+    call = get_object_or_404(CallSession, room_id=room_id)
+    _call_participants(call, request.user)
+    if call.status not in ('connected', 'active'):
+        return JsonResponse({'status': 'error', 'message': 'call_not_active'}, status=409)
+
+    other_user_id = (
+        call.receiver_id if request.user.pk == call.caller_id else call.caller_id
+    )
+    now = timezone.now()
+    with transaction.atomic():
+        Swipe.objects.update_or_create(
+            swiper=request.user,
+            swiped_id=other_user_id,
+            defaults={
+                'type': 'LIKE',
+                'mode': 'SEX_CALL',
+                'is_direct': True,
+            },
+        )
+        is_followed_by = Swipe.objects.filter(
+            swiper_id=other_user_id,
+            swiped=request.user,
+            type='LIKE',
+        ).exists()
+        is_matched = Match.objects.filter(
+            Q(user1_id=request.user.pk, user2_id=other_user_id)
+            | Q(user1_id=other_user_id, user2_id=request.user.pk),
+            expires_at__gt=now,
+        ).exists()
+        if is_followed_by and not is_matched:
+            user1_id, user2_id = sorted((request.user.pk, other_user_id))
+            match, _ = Match.objects.get_or_create(
+                user1_id=user1_id,
+                user2_id=user2_id,
+                defaults={
+                    'mode': 'SEX_CALL',
+                    'expires_at': now + timedelta(days=365),
+                },
+            )
+            if match.expires_at <= now:
+                match.expires_at = now + timedelta(days=365)
+                match.save(update_fields=['expires_at'])
+            is_matched = True
+
+        signal, events = record_call_signal(
+            call.room_id,
+            request.user,
+            'follow',
+            {
+                'action': 'follow_back' if is_followed_by else 'follow',
+                'is_matched': is_matched,
+            },
+        )
+        if signal is None:
+            return JsonResponse(
+                {'status': 'error', 'message': 'call_not_active'},
+                status=409,
+            )
+
+    channel_layer = get_channel_layer()
+    if channel_layer:
+        for event in events:
+            try:
+                async_to_sync(channel_layer.group_send)(
+                    f'call_{call.room_id.hex}',
+                    {
+                        'type': 'call.event',
+                        'recipient_id': event['recipient_id'],
+                        'signal_type': event['type'],
+                        'payload': event['payload'],
+                        'signal_id': signal.pk,
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    'Could not broadcast follow state for call %s; polling can deliver it.',
+                    call.room_id,
+                )
+
+    return JsonResponse({
+        'status': 'success',
+        'is_following': True,
+        'is_followed_by': is_followed_by,
+        'is_matched': is_matched,
+    })
+
+
+@login_required
 def call_room_page(request, room_id):
     """
     Dedicated 1-on-1 In-Call Video Room (/call/<room_id>/):
@@ -4032,6 +4165,38 @@ def call_room_page(request, room_id):
     other_profile = Profile.objects.filter(user=other_user).first()
     current_profile = Profile.objects.filter(user=request.user).first()
     site_config = SiteConfiguration.get_solo()
+    call_gifts = list(GiftItem.objects.filter(is_active=True).order_by('order', 'coin_cost'))
+    if not call_gifts:
+        call_gifts = [
+            {
+                'slug': gift_type,
+                'name': name,
+                'icon': icon,
+                'coin_cost': CallGift.GIFT_PRICES[gift_type],
+            }
+            for gift_type, name, icon in (
+                ('rose', 'Rose', '🌹'),
+                ('kiss', 'Kiss', '💋'),
+                ('champagne', 'Champagne', '🥂'),
+                ('crown', 'Crown', '👑'),
+                ('car', 'Supercar', '🏎️'),
+            )
+        ]
+    is_following = Swipe.objects.filter(
+        swiper=request.user,
+        swiped=other_user,
+        type='LIKE',
+    ).exists()
+    is_followed_by = Swipe.objects.filter(
+        swiper=other_user,
+        swiped=request.user,
+        type='LIKE',
+    ).exists()
+    is_matched = Match.objects.filter(
+        Q(user1=request.user, user2=other_user)
+        | Q(user1=other_user, user2=request.user),
+        expires_at__gt=timezone.now(),
+    ).exists()
 
     other_payload = _profile_payload(other_profile) if other_profile else {
         'image_url': f"https://api.dicebear.com/7.x/avataaars/svg?seed={other_user.username}",
@@ -4046,10 +4211,14 @@ def call_room_page(request, room_id):
         'other_profile': other_profile,
         'other_avatar': other_payload.get('image_url', ''),
         'other_age': getattr(other_profile, 'age', 22) if other_profile else 22,
+        'is_following': is_following,
+        'is_followed_by': is_followed_by,
+        'is_matched': is_matched,
         'current_profile': current_profile,
         'user_coin_balance': current_profile.coin_balance if current_profile else 0,
         'user_earned_diamonds': current_profile.earned_diamonds if current_profile else 0,
         'site_config': site_config,
+        'call_gifts': call_gifts,
         'rate_per_minute': getattr(call, 'rate_per_minute', site_config.call_rate_per_minute),
         'is_caller': request.user == call.caller,
     })

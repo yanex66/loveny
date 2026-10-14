@@ -1,6 +1,30 @@
+from datetime import timedelta
+
+from django.db.models import Q
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
+
 from dating.models import SiteConfiguration
+from dating.models import Profile
+
+
+class ProfileActivityMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        user = request.user
+        if (
+            user.is_authenticated
+            and not request.path.startswith(('/static/', '/media/'))
+        ):
+            now = timezone.now()
+            Profile.objects.filter(user_id=user.pk).filter(
+                Q(last_active__lt=now - timedelta(minutes=2))
+                | Q(last_active__isnull=True)
+            ).update(last_active=now)
+        return self.get_response(request)
 
 class MaintenanceModeMiddleware:
     def __init__(self, get_response):
@@ -26,4 +50,3 @@ class MaintenanceModeMiddleware:
         
         response = self.get_response(request)
         return response
-

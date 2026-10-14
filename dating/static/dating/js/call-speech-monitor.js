@@ -50,6 +50,18 @@
         const normalized = text.toLowerCase();
         const digits = normalized.replace(/\D/g, '');
         if (digits.length >= 7) return true;
+        if (/\bmy\s+(?:phone\s+)?number\s+is\b/i.test(text)) return true;
+        const numberWords = new Set([
+            'zero', 'oh', 'o', 'one', 'two', 'three', 'four', 'five',
+            'six', 'seven', 'eight', 'nine',
+        ]);
+        let consecutiveNumberWords = 0;
+        for (const word of normalized.match(/\b[a-z]+\b/g) || []) {
+            consecutiveNumberWords = numberWords.has(word)
+                ? consecutiveNumberWords + 1
+                : 0;
+            if (consecutiveNumberWords >= 7) return true;
+        }
         if (/\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b|\b(?:https?:\/\/|www\.)\S+/i.test(text)) {
             return true;
         }

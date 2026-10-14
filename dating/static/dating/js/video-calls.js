@@ -26,6 +26,10 @@
     const closeCallGiftDrawer = document.getElementById('close-call-gift-drawer');
     const toggleGiftsBtn = document.getElementById('toggle-gifts');
     const callHudFollowBtn = document.getElementById('call-hud-follow-btn');
+    const callHudFollowIcon = document.getElementById('call-hud-follow-icon');
+    const callHudFollowLabel = document.getElementById('call-hud-follow-label');
+    const callRemoteHostAvatar = document.getElementById('call-remote-host-avatar');
+    const callRemoteHostTitle = document.getElementById('call-remote-host-title');
 
     // Elements - Picture-in-Picture (PiP)
     const callMinimizeBtn = document.getElementById('call-minimize-btn');
@@ -713,14 +717,54 @@
             exitPipMode();
         }
         if (feedback) feedback.textContent = message;
-        if (callHudFollowBtn) {
-            callHudFollowBtn.disabled = false;
-            document.getElementById('call-hud-follow-icon').textContent = '+';
-            document.getElementById('call-hud-follow-label').textContent = 'Follow';
+        if (activeCall) {
+            const isCurrentUserCaller =
+                Number(activeCall.caller_id) === Number(config.dataset.userId);
+            const otherName = isCurrentUserCaller
+                ? activeCall.receiver_name
+                : activeCall.caller_name;
+            const otherPhoto = isCurrentUserCaller
+                ? activeCall.receiver_photo
+                : activeCall.caller_photo;
+            if (callRemoteHostTitle) callRemoteHostTitle.textContent = otherName || 'Call partner';
+            if (callRemoteHostAvatar) {
+                callRemoteHostAvatar.onerror = () => {
+                    callRemoteHostAvatar.onerror = null;
+                    callRemoteHostAvatar.src =
+                        `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(otherName || 'user')}`;
+                };
+                callRemoteHostAvatar.src = otherPhoto ||
+                    `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(otherName || 'user')}`;
+            }
+            renderCallFollowState(
+                isCurrentUserCaller
+                    ? activeCall.caller_follows_receiver
+                    : activeCall.receiver_follows_caller,
+                isCurrentUserCaller
+                    ? activeCall.receiver_follows_caller
+                    : activeCall.caller_follows_receiver,
+                activeCall.is_matched,
+            );
         }
         updateWalletUI();
         if (callTimerDisplay) callTimerDisplay.textContent = '00:00';
         if (pipTimerDisplay) pipTimerDisplay.textContent = '00:00';
+    }
+
+    function renderCallFollowState(isFollowing, isFollowedBy, isMatched) {
+        if (!callHudFollowBtn || !callHudFollowIcon || !callHudFollowLabel) return;
+        callHudFollowBtn.dataset.isFollowing = String(Boolean(isFollowing));
+        callHudFollowBtn.dataset.isFollowedBy = String(Boolean(isFollowedBy));
+        callHudFollowBtn.dataset.isMatched = String(Boolean(isMatched));
+        callHudFollowLabel.textContent = isMatched
+            ? 'Connected'
+            : isFollowing
+                ? 'Following'
+                : isFollowedBy
+                    ? 'Follow Back'
+                    : 'Follow';
+        callHudFollowIcon.textContent = isMatched ? '♥' : isFollowing ? '✓' : '+';
+        callHudFollowBtn.disabled = Boolean(isMatched || isFollowing);
     }
 
     function enterPipMode() {
@@ -838,6 +882,19 @@
         if (signal.type === 'contact_exchange_flagged') {
             closeRoom();
             toast('The call ended because the live-call monitor detected suspected contact sharing. The other account has been suspended pending review.', true);
+            return;
+        }
+        if (signal.type === 'follow') {
+            renderCallFollowState(
+                callHudFollowBtn?.dataset.isFollowing === 'true',
+                true,
+                Boolean(signal.payload?.is_matched),
+            );
+            toast(
+                signal.payload?.is_matched
+                    ? 'You are now connected.'
+                    : 'Your call partner followed you. Follow back to connect.',
+            );
             return;
         }
         // In-call Gift Signal handling
@@ -1314,14 +1371,27 @@
     if (callHudFollowBtn) {
         callHudFollowBtn.addEventListener('click', async () => {
             if (!activeCall) return;
-            const targetId = Number(activeCall.caller_id) === Number(config.dataset.userId)
-                ? activeCall.receiver_id
-                : activeCall.caller_id;
             callHudFollowBtn.disabled = true;
             try {
-                await api(`/api/connect/${targetId}/`, {method: 'POST'});
-                document.getElementById('call-hud-follow-icon').textContent = '♥';
-                document.getElementById('call-hud-follow-label').textContent = 'Connected';
+                const result = await api(
+                    `${apiPrefix}${activeCall.room_id}/follow/`,
+                    {method: 'POST', body: '{}'},
+                );
+                const isCurrentUserCaller =
+                    Number(activeCall.caller_id) === Number(config.dataset.userId);
+                if (isCurrentUserCaller) {
+                    activeCall.caller_follows_receiver = result.is_following;
+                    activeCall.receiver_follows_caller = result.is_followed_by;
+                } else {
+                    activeCall.receiver_follows_caller = result.is_following;
+                    activeCall.caller_follows_receiver = result.is_followed_by;
+                }
+                activeCall.is_matched = result.is_matched;
+                renderCallFollowState(
+                    result.is_following,
+                    result.is_followed_by,
+                    result.is_matched,
+                );
             } catch (error) {
                 toast(error.message || 'Could not connect with this member.');
                 callHudFollowBtn.disabled = false;

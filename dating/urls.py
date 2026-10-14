@@ -78,6 +78,11 @@ urlpatterns = [
     
     path('users/<int:pk>/', views.public_profile, name='public_profile'),
     path('api/connect/<int:user_id>/', views.quick_connect_api, name='quick_connect_api'),
+    path(
+        'api/calls/<uuid:room_id>/follow/',
+        views.call_follow_api,
+        name='call_follow_api',
+    ),
     path('api/say-hi/<int:user_id>/', views.quick_say_hi_api, name='quick_say_hi_api'),
 
     path('premium/', views.premium_landing, name='premium_landing'),
