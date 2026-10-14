@@ -16,7 +16,6 @@
         captureLocked: false,
         peerPaused: false,
         _unblurTimeout: null,
-        _driftAnimationId: null,
         _faceAnimationId: null,
         _socket: null,
         _faceDetector: null,
@@ -41,7 +40,6 @@
             this.setupInteractionGuards();
             this.setupTabFocusGuard();
             this.setupNativeCaptureObserver();
-            this.setupWatermarkCanvas();
             this.setupHandshakeOverlay();
             this.connectSignalingSocket();
         },
@@ -76,20 +74,6 @@
                 .privacy-clear {
                     filter: none !important;
                     transition: filter 0.5s ease-in !important;
-                }
-                #watermark-canvas {
-                    position: absolute;
-                    inset: 0;
-                    width: 100%;
-                    height: 100%;
-                    pointer-events: none;
-                    z-index: 15;
-                }
-                #remote-watermark-layer {
-                    position: absolute;
-                    inset: 0;
-                    z-index: 10;
-                    pointer-events: none;
                 }
                 #call-privacy-blur-card,
                 #face-handshake-overlay {
@@ -294,77 +278,6 @@
             }
         },
 
-        setupWatermarkCanvas() {
-            const remote = this.getRemoteVideo();
-            const container = remote?.parentElement || this.getContainer();
-            let layer = document.getElementById('remote-watermark-layer');
-            if (!layer && remote?.parentNode) {
-                layer = document.createElement('div');
-                layer.id = 'remote-watermark-layer';
-                remote.parentNode.insertBefore(layer, remote);
-                layer.appendChild(remote);
-                this._watermarkLayer = layer;
-                this._remoteParent = layer.parentElement;
-            }
-            const drawingArea = layer || container;
-            let canvas = document.getElementById('watermark-canvas');
-            if (!canvas) {
-                canvas = document.createElement('canvas');
-                canvas.id = 'watermark-canvas';
-                drawingArea.appendChild(canvas);
-            }
-            const context = canvas.getContext('2d');
-            if (!context) {
-                console.error('[CallPrivacy] Could not create the forensic watermark canvas.');
-                return;
-            }
-
-            const resize = () => {
-                const bounds = drawingArea.getBoundingClientRect();
-                const scale = window.devicePixelRatio || 1;
-                canvas.width = Math.max(1, Math.round(bounds.width * scale));
-                canvas.height = Math.max(1, Math.round(bounds.height * scale));
-                context.setTransform(scale, 0, 0, scale, 0, 0);
-            };
-            this.listen(window, 'resize', resize);
-            resize();
-
-            let startTime = performance.now();
-            const render = now => {
-                if (!this.active) return;
-                const bounds = drawingArea.getBoundingClientRect();
-                const scale = window.devicePixelRatio || 1;
-                const width = bounds.width;
-                const height = bounds.height;
-                if (canvas.width !== Math.round(width * scale) ||
-                    canvas.height !== Math.round(height * scale)) resize();
-                context.clearRect(0, 0, width, height);
-                const cycle = ((now - startTime) % 9000) / 9000;
-                const driftX = Math.sin(cycle * Math.PI * 2) * 24;
-                const driftY = Math.cos(cycle * Math.PI * 2) * 16;
-                const timestamp = `${new Date().toISOString().replace('T', ' ').slice(0, 19)} UTC`;
-                const label = `VIEWER: ${this.viewerId} | CALL: ${this.callId} | ${timestamp}`;
-
-                context.save();
-                context.font = 'bold 11px monospace';
-                context.fillStyle = 'rgba(255, 255, 255, 0.22)';
-                context.shadowColor = 'rgba(0, 0, 0, 0.35)';
-                context.shadowBlur = 3;
-                for (let x = -260 + driftX; x < width + 260; x += 260) {
-                    for (let y = -140 + driftY; y < height + 140; y += 140) {
-                        context.save();
-                        context.translate(x, y);
-                        context.rotate(-18 * Math.PI / 180);
-                        context.fillText(label, 0, 0);
-                        context.restore();
-                    }
-                }
-                context.restore();
-                this._driftAnimationId = requestAnimationFrame(render);
-            };
-            this._driftAnimationId = requestAnimationFrame(render);
-        },
-
         setupHandshakeOverlay() {
             const container = this.getContainer();
             let overlay = document.getElementById('face-handshake-overlay');
@@ -528,7 +441,6 @@
 
         cleanup() {
             this.active = false;
-            cancelAnimationFrame(this._driftAnimationId);
             cancelAnimationFrame(this._faceAnimationId);
             clearTimeout(this._unblurTimeout);
             this._listeners.forEach(({target, eventName, handler, options}) => {
@@ -545,14 +457,7 @@
             }
             this._pendingRemoteStream = null;
             this.onFeedsUnlocked = null;
-            const remote = this.getRemoteVideo();
-            if (this._watermarkLayer && remote && this._remoteParent) {
-                this._remoteParent.insertBefore(remote, this._watermarkLayer);
-                this._watermarkLayer.remove();
-                this._watermarkLayer = null;
-                this._remoteParent = null;
-            }
-            ['watermark-canvas', 'remote-watermark-layer', 'call-privacy-blur-card', 'face-handshake-overlay'].forEach(id => {
+            ['call-privacy-blur-card', 'face-handshake-overlay'].forEach(id => {
                 document.getElementById(id)?.remove();
             });
         },
