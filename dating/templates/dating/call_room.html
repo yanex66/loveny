@@ -217,8 +217,8 @@
         peer?.close();
         localStream?.getTracks().forEach(track => track.stop());
         window.CallPrivacy?.cleanup();
-        window.alert(message);
-        window.location.replace(destination);
+        window.lovenyToast(message, 'info');
+        window.setTimeout(() => window.location.replace(destination), 700);
     }
 
     async function sendSignal(type, payload) {
@@ -602,7 +602,7 @@
                 });
                 const data = await res.json();
                 if (!res.ok) {
-                    alert(data.message || 'Gift failed');
+                    window.lovenyToast(data.message || 'Gift failed.', 'error');
                     return;
                 }
                 giftDrawer.classList.add('hidden');

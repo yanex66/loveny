@@ -360,13 +360,13 @@
 
     document.getElementById('add-photo-btn').addEventListener('click', (e) => {
         const remaining = MEDIA_LIMIT - (CURRENT_COUNT + dt.items.length);
-        if (remaining <= 0) { alert("Media limit reached!"); e.preventDefault(); return; }
+        if (remaining <= 0) { window.lovenyToast("Media limit reached!", 'error'); e.preventDefault(); return; }
         fileInput.click(); e.preventDefault();
     });
 
     fileInput.addEventListener('change', function() {
         const remaining = MEDIA_LIMIT - (CURRENT_COUNT + dt.items.length);
-        if (this.files.length > remaining) { alert(`Limit exceeded. Only ${remaining} slots left.`); this.files = dt.files; return; }
+        if (this.files.length > remaining) { window.lovenyToast(`Limit exceeded. Only ${remaining} slots left.`, 'error'); this.files = dt.files; return; }
         for (let i = 0; i < this.files.length; i++) { dt.items.add(this.files[i]); }
         this.files = dt.files;
         renderPreviews();

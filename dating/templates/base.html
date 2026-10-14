@@ -683,7 +683,7 @@
             {% endif %}
 
             {% if active_connection_mode == 'HOOKUP' %}
-            <a href="{% url 'hookup_discovery' %}#inbox-title" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'hookup_discovery' and '#inbox-title' in request.get_full_path %}nav-active{% endif %}">
+            <a href="{% url 'hookup_discovery' %}#inbox-title" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'hookup_discovery' %}nav-active{% endif %}">
                 <div class="relative">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm6 12H6v-1.4c0-2 4-3.1 6-3.1s6 1.1 6 3.1V18z"/>
@@ -747,6 +747,131 @@
 
     <!-- Global Notification & Toast -->
     <div id="global-toast-container" class="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none"></div>
+    <div id="action-toast-container" class="fixed right-4 top-4 z-[10000] flex w-[calc(100%-2rem)] max-w-sm flex-col gap-2 pointer-events-none"></div>
+    <div id="loveny-dialog-root"></div>
+    <script>
+        (() => {
+            const toastContainer = document.getElementById('action-toast-container');
+
+            window.lovenyToast = (message, type = 'info') => {
+                const toast = document.createElement('div');
+                const styles = {
+                    success: 'border-emerald-300/30 bg-emerald-950/95 text-emerald-50',
+                    error: 'border-rose-300/30 bg-rose-950/95 text-rose-50',
+                    info: 'border-pink-300/30 bg-slate-950/95 text-white',
+                };
+                toast.className = `pointer-events-auto flex items-start gap-3 rounded-2xl border p-4 text-sm font-semibold shadow-2xl backdrop-blur-xl transition-all ${styles[type] || styles.info}`;
+                toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+                const icon = document.createElement('span');
+                icon.className = 'text-base font-black';
+                icon.textContent = type === 'success' ? '✓' : type === 'error' ? '!' : '♥';
+                const text = document.createElement('span');
+                text.className = 'min-w-0 flex-1';
+                text.textContent = String(message || '');
+                const close = document.createElement('button');
+                close.type = 'button';
+                close.className = 'ml-auto shrink-0 text-white/60 hover:text-white';
+                close.setAttribute('aria-label', 'Dismiss notification');
+                close.textContent = '×';
+                close.addEventListener('click', () => toast.remove());
+                toast.append(icon, text, close);
+                toastContainer.appendChild(toast);
+                window.setTimeout(() => toast.remove(), 5000);
+            };
+
+            window.lovenyConfirm = message => showDialog({
+                title: 'Please confirm',
+                message,
+                confirmLabel: 'Continue',
+            }).then(value => value === true);
+
+            window.lovenyPrompt = ({title, message, choices = []}) => showDialog({
+                title,
+                message,
+                confirmLabel: 'Submit',
+                choices,
+                includeDetails: true,
+            });
+
+            function showDialog({title, message, confirmLabel, choices = [], includeDetails = false}) {
+                return new Promise(resolve => {
+                    const overlay = document.createElement('div');
+                    overlay.className = 'fixed inset-0 z-[11000] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm';
+                    overlay.setAttribute('role', 'presentation');
+                    const panel = document.createElement('section');
+                    panel.className = 'w-full max-w-md rounded-3xl border border-pink-200/20 bg-slate-950 p-6 text-white shadow-2xl';
+                    panel.setAttribute('role', 'dialog');
+                    panel.setAttribute('aria-modal', 'true');
+                    const heading = document.createElement('h2');
+                    heading.className = 'text-lg font-black text-pink-200';
+                    heading.textContent = title || 'LOVENY';
+                    const description = document.createElement('p');
+                    description.className = 'mt-2 text-sm leading-relaxed text-white/75';
+                    description.textContent = message || '';
+                    panel.append(heading, description);
+
+                    let select = null;
+                    let details = null;
+                    if (choices.length) {
+                        select = document.createElement('select');
+                        select.className = 'mt-4 w-full rounded-xl border border-white/15 bg-slate-900 px-4 py-3 text-sm text-white';
+                        choices.forEach(choice => {
+                            const option = document.createElement('option');
+                            option.value = choice.value;
+                            option.textContent = choice.label;
+                            select.appendChild(option);
+                        });
+                        panel.appendChild(select);
+                    }
+                    if (includeDetails) {
+                        details = document.createElement('textarea');
+                        details.className = 'mt-3 min-h-24 w-full rounded-xl border border-white/15 bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-white/40';
+                        details.maxLength = 1000;
+                        details.placeholder = 'Additional details (optional)';
+                        panel.appendChild(details);
+                    }
+
+                    const actions = document.createElement('div');
+                    actions.className = 'mt-5 flex gap-3';
+                    const cancel = document.createElement('button');
+                    cancel.type = 'button';
+                    cancel.className = 'flex-1 rounded-xl border border-white/15 px-4 py-3 text-sm font-bold text-white/75 hover:bg-white/5';
+                    cancel.textContent = 'Cancel';
+                    const confirm = document.createElement('button');
+                    confirm.type = 'button';
+                    confirm.className = 'flex-1 rounded-xl bg-gradient-to-r from-pink-600 to-violet-600 px-4 py-3 text-sm font-black text-white';
+                    confirm.textContent = confirmLabel || 'OK';
+                    actions.append(cancel, confirm);
+                    panel.appendChild(actions);
+                    overlay.appendChild(panel);
+                    document.getElementById('loveny-dialog-root').appendChild(overlay);
+
+                    let settled = false;
+                    const finish = value => {
+                        if (settled) return;
+                        settled = true;
+                        document.removeEventListener('keydown', onKeydown);
+                        overlay.remove();
+                        resolve(value);
+                    };
+                    const onKeydown = event => {
+                        if (event.key === 'Escape') finish(null);
+                    };
+                    cancel.addEventListener('click', () => finish(null));
+                    confirm.addEventListener('click', () => finish(
+                        choices.length
+                            ? {reason: select.value, details: details ? details.value.trim() : ''}
+                            : true
+                    ));
+                    overlay.addEventListener('click', event => {
+                        if (event.target === overlay) finish(null);
+                    });
+                    document.addEventListener('keydown', onKeydown);
+                    (select || confirm).focus();
+                });
+            }
+        })();
+    </script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const trialCountdown = document.getElementById('free-trial-countdown');

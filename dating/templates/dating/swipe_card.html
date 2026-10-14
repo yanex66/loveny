@@ -259,16 +259,14 @@
         });
 
         // --- NEW: ONLINE INDICATOR HTML ---
-        let onlineBadge = '';
-        if (profile.is_online) {
-            onlineBadge = `
+        const presenceLabel = profile.is_online ? 'ONLINE' : formatLastSeen(profile.last_seen);
+        const onlineBadge = `
             <div class="absolute top-4 right-4 z-10">
-                <div class="bg-green-500/90 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-lg backdrop-blur-md flex items-center gap-2 border border-white/20">
-                    <span class="w-2 h-2 bg-white rounded-full animate-pulse shadow-[0_0_10px_rgba(255,255,255,0.8)]"></span>
-                    ONLINE
+                <div class="${profile.is_online ? 'bg-green-500/90' : 'bg-slate-900/75'} text-white text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-lg backdrop-blur-md flex items-center gap-2 border border-white/20">
+                    <span class="w-2 h-2 ${profile.is_online ? 'bg-white animate-pulse shadow-[0_0_10px_rgba(255,255,255,0.8)]' : 'bg-slate-300'} rounded-full"></span>
+                    ${escapeHTML(presenceLabel)}
                 </div>
             </div>`;
-        }
 
         const verifiedBadge = profile.is_verified
             ? '<span class="ml-2 rounded-full bg-blue-500/80 px-2 py-1 text-[9px] font-black uppercase">Verified</span>'
@@ -381,6 +379,18 @@
         })[char]);
     }
 
+    function formatLastSeen(isoTimestamp) {
+        if (!isoTimestamp) return 'OFFLINE';
+        const elapsedMinutes = Math.max(
+            1,
+            Math.floor((Date.now() - new Date(isoTimestamp).getTime()) / 60000)
+        );
+        if (elapsedMinutes < 60) return `OFFLINE ${elapsedMinutes}M AGO`;
+        const elapsedHours = Math.floor(elapsedMinutes / 60);
+        if (elapsedHours < 24) return `OFFLINE ${elapsedHours}H AGO`;
+        return `OFFLINE ${Math.floor(elapsedHours / 24)}D AGO`;
+    }
+
     async function performSwipe(action, targetId, targetUsername) {
         if (!targetId) return;
         try {
@@ -396,12 +406,12 @@
             }
             loadNextProfile();
             } else if (data.message === 'limit_reached_likes') {
-                if(confirm("Daily Like Limit Reached (100). Upgrade to Premium for Unlimited Likes?")) {
+                if (await window.lovenyConfirm('Daily like limit reached. Upgrade to Premium for unlimited likes?')) {
                     window.location.href = PREMIUM_URL;
                 }
                 restoreCurrentCard();
             } else {
-                alert(data.message === 'already_swiped' ? 'This profile has already been actioned.' : 'Unable to save that action. Please try again.');
+                window.lovenyToast(data.message === 'already_swiped' ? 'This profile has already been actioned.' : 'Unable to save that action. Please try again.', 'error');
                 restoreCurrentCard();
             }
         } catch (err) {
@@ -423,18 +433,18 @@
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
         })
         .then(res => res.json())
-        .then(data => {
+        .then(async data => {
             if(data.status === 'success') {
                 profileQueue.unshift(data.profile);
                 renderNextCard(); 
             } else if (data.message === 'premium_required') {
-                if(confirm("Rewind is a Premium feature. Upgrade now?")) {
+                if (await window.lovenyConfirm('Rewind is a Premium feature. Upgrade now?')) {
                     window.location.href = PREMIUM_URL;
                 }
             } else if (data.message === 'limit_reached') {
-                alert("You can only rewind your last action! Swipe again to enable rewind.");
+                window.lovenyToast('You can only rewind your last action! Swipe again to enable rewind.', 'info');
             } else if (data.message === 'no_swipes') {
-                alert("Nothing to rewind!");
+                window.lovenyToast('Nothing to rewind!', 'info');
             }
         });
     }

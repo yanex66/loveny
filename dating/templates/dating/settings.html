@@ -330,7 +330,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         pendingReference = null;
         setStatus('Mode switched successfully. Refreshing settings…');
-        window.location.reload();
+        window.lovenyToast('Mode switched successfully!', 'success');
+        window.setTimeout(() => window.location.reload(), 900);
     };
 
     const switchWithoutPayment = async (targetMode) => {
@@ -347,7 +348,8 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error(result.message || 'Could not switch mode.');
         }
         setStatus('Mode switched successfully. Refreshing settings…');
-        window.location.reload();
+        window.lovenyToast('Mode switched successfully!', 'success');
+        window.setTimeout(() => window.location.reload(), 900);
     };
 
     button.addEventListener('click', async () => {

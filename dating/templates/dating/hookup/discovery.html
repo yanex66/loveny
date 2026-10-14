@@ -70,7 +70,6 @@
     {% endif %}
 
     <!-- SECTION: Match Inbox (Pending & Payment Stage) -->
-    {% if pending_incoming or accepted_matches %}
     <section class="mb-6" aria-labelledby="inbox-title">
         <h2 id="inbox-title" class="text-xs font-black uppercase tracking-wider text-amber-300 mb-2.5 flex items-center gap-1.5">
             <span>📫 Match Inbox & Escrow</span>
@@ -139,9 +138,13 @@
                 {% endif %}
             </div>
             {% endfor %}
+            {% if not pending_incoming and not accepted_matches %}
+            <p class="rounded-2xl border border-purple-500/20 bg-purple-950/30 p-4 text-center text-xs text-purple-200/70">
+                No requests yet. Incoming Hookup requests will appear here.
+            </p>
+            {% endif %}
         </div>
     </section>
-    {% endif %}
 
     <!-- SECTION: Discovery Profiles Grid -->
     <section aria-labelledby="tonight-grid-title">
@@ -184,7 +187,10 @@
                             <svg class="h-3.5 w-3.5 text-blue-400 drop-shadow-sm" viewBox="0 0 24 24" fill="currentColor"><path d="M10.134 1.349C11.236.427 12.764.427 13.866 1.349l1.821 1.523c.36.301.83.45 1.306.417l2.368-.16c1.436-.098 2.686.974 2.84 2.404l.255 2.36c.05.474.248.917.553 1.24l1.621 1.716c.983 1.04.983 2.583 0 3.623l-1.621 1.716c-.305.323-.503.766-.553 1.24l-.255 2.36c-.154 1.43-1.404 2.502-2.84 2.404l-2.368-.16c-.476-.032-.946.116-1.306.417l-1.821 1.523c-1.102.922-2.63.922-3.732 0l-1.821-1.523c-.36-.301-.83-.45-1.306-.417l-2.368.16c-1.436.098-2.686-.974-2.84-2.404l-.255-2.36c-.05-.474-.248-.917-.553-1.24L1.442 13.81c-.983-1.04-.983-2.583 0-3.623l1.621-1.716c.305-.323.503-.766.553-1.24l.255-2.36c.154-1.43 1.404-2.502 2.84-2.404l2.368.16c.476.032.946-.116 1.306-.417l1.821-1.523zm-1.182 14.394l6.06-6.06a1.05 1.05 0 00-1.485-1.485L8.212 13.5l-2.273-2.273a1.05 1.05 0 00-1.485 1.485l3.015 3.015a1.05 1.05 0 001.483 0z"/></svg>
                             {% if candidate.age %}<span class="text-pink-300 font-bold text-xs">{{ candidate.age }}</span>{% endif %}
                             <!-- Online Indicator -->
-                            <span class="inline-block h-2 w-2 rounded-full bg-emerald-400 border border-black shadow-[0_0_4px_rgba(52,211,153,0.8)] ml-auto relative top-[-1px]"></span>
+                            <span class="ml-auto inline-flex items-center gap-1 text-[9px] font-bold {% if candidate.is_online %}text-emerald-300{% else %}text-slate-300{% endif %}">
+                                <span class="inline-block h-2 w-2 rounded-full {% if candidate.is_online %}bg-emerald-400 shadow-[0_0_4px_rgba(52,211,153,0.8)]{% else %}bg-slate-400{% endif %}"></span>
+                                {% if candidate.is_online %}Online{% elif candidate.last_active %}Offline {{ candidate.last_active|timesince }} ago{% else %}Offline{% endif %}
+                            </span>
                         </div>
                         <div class="text-[10px] text-purple-200/90 font-medium truncate flex items-center gap-1 mt-0.5">
                             <span>📍</span>
@@ -224,8 +230,17 @@
     }
 
     window.reportUser = async (targetId) => {
-        const reason = prompt("Report this user? Please enter a reason (spam, harassment, fake, etc):");
-        if (!reason) return;
+        const report = await window.lovenyPrompt({
+            title: 'Report this member',
+            message: 'Choose a reason and add details for our safety team.',
+            choices: [
+                {value: 'spam', label: 'Spam or scam'},
+                {value: 'harassment', label: 'Harassment or abuse'},
+                {value: 'fake', label: 'Fake or misleading profile'},
+                {value: 'other', label: 'Other safety concern'},
+            ],
+        });
+        if (!report) return;
         
         try {
             const res = await fetch('/api/report/', {
@@ -234,17 +249,17 @@
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken(),
                 },
-                body: JSON.stringify({ target_id: targetId, reason: reason }),
+                body: JSON.stringify({target_id: targetId, reason: report.reason, details: report.details}),
             });
             if (res.ok) {
-                alert("User has been reported and blocked. They will no longer appear in your feed.");
-                location.reload();
+                window.lovenyToast('Report submitted. This member is blocked from your feed.', 'success');
+                window.setTimeout(() => location.reload(), 900);
             } else {
                 const data = await res.json();
-                alert(data.message || 'Could not report user');
+                window.lovenyToast(data.message || 'Could not report this member.', 'error');
             }
         } catch (err) {
-            console.error(err);
+            window.lovenyToast('Could not submit your report. Please try again.', 'error');
         }
     };
 
@@ -263,23 +278,22 @@
                 const rewardNotice = data.referral_reward_used
                     ? ' Your referral reward covered your connection fee; they will still need to pay their share after accepting.'
                     : '';
-                alert(`⚡ Request sent to ${name}! They can accept or decline it from their Hookup inbox.${rewardNotice}`);
-                location.reload();
+                window.lovenyToast(`⚡ Request sent to ${name}! They can accept or decline it from their Hookup inbox.${rewardNotice}`, 'success');
+                window.setTimeout(() => location.reload(), 900);
             } else if (res.ok && data.status === 'exists') {
                 if (data.request_direction === 'incoming') {
-                    alert(`⚡ ${name} has already sent you a request. Open your Hookup inbox to respond.`);
+                    window.lovenyToast(`⚡ ${name} has already sent you a request. Open your Hookup inbox to respond.`, 'info');
                 } else if (data.match_status === 'pending') {
-                    alert(`⚡ You have already sent ${name} a request. It is waiting in their Hookup inbox.`);
+                    window.lovenyToast(`⚡ You have already sent ${name} a request. It is waiting in their Hookup inbox.`, 'info');
                 } else {
-                    alert(`⚡ A connection with ${name} is already ${data.match_status}.`);
+                    window.lovenyToast(`⚡ A connection with ${name} is already ${data.match_status}.`, 'info');
                 }
-                location.reload();
+                window.setTimeout(() => location.reload(), 900);
             } else {
-                alert(data.message || 'Could not send request');
+                window.lovenyToast(data.message || 'Could not send request.', 'error');
             }
         } catch (err) {
-            console.error(err);
-            alert('Network error. Please try again.');
+            window.lovenyToast('Network error. Please try again.', 'error');
         }
     };
 
@@ -297,10 +311,10 @@
             if (res.ok) {
                 location.reload();
             } else {
-                alert(data.message || 'Failed to update request');
+                window.lovenyToast(data.message || 'Failed to update request.', 'error');
             }
         } catch (err) {
-            console.error(err);
+            window.lovenyToast('Could not update the request. Please try again.', 'error');
         }
     };
 
@@ -327,7 +341,7 @@
             });
             const initData = await res.json();
             if (!res.ok) {
-                alert(initData.message || 'Failed to initialize payment');
+                window.lovenyToast(initData.message || 'Failed to initialize payment.', 'error');
                 return;
             }
 
@@ -337,7 +351,7 @@
                 initData.public_key.includes('PUT_YOUR_REAL_PUBLIC_KEY_HERE') ||
                 initData.public_key === 'pk_test_dummy'
             ) {
-                alert('Paystack checkout is not configured. Please contact support.');
+                window.lovenyToast('Paystack checkout is not configured. Please contact support.', 'error');
                 return;
             }
 
@@ -352,8 +366,7 @@
             });
             handler.openIframe();
         } catch (err) {
-            console.error(err);
-            alert('Failed to initiate escrow checkout.');
+            window.lovenyToast('Failed to initiate escrow checkout.', 'error');
         }
     };
 
@@ -370,17 +383,17 @@
             const data = await res.json();
             if (res.ok) {
                 if (data.is_unlocked) {
-                    alert('🎉 Both partners paid! Your 24-hour chat room is now unlocked!');
-                    window.location.href = `/hookup/chat/${matchId}/`;
+                    window.lovenyToast('🎉 Both partners paid! Your 24-hour chat room is now unlocked!', 'success');
+                    window.setTimeout(() => window.location.href = `/hookup/chat/${matchId}/`, 900);
                 } else {
-                    alert('✅ Your connection fee is deposited in escrow! Awaiting partner payment to unlock.');
-                    location.reload();
+                    window.lovenyToast('✅ Your connection fee is deposited in escrow! Awaiting partner payment to unlock.', 'success');
+                    window.setTimeout(() => location.reload(), 900);
                 }
             } else {
-                alert(data.message || 'Payment verification failed');
+                window.lovenyToast(data.message || 'Payment verification failed.', 'error');
             }
         } catch (err) {
-            console.error(err);
+            window.lovenyToast('Could not verify the payment. Please retry.', 'error');
         }
     }
 })();

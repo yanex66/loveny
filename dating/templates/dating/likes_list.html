@@ -143,14 +143,14 @@
             });
             const data = await response.json();
             if (response.ok && data.status === 'success') {
-                alert("It's a Match! Added to your Matches tab.");
+                window.lovenyToast("It's a Match! Added to your Matches tab.", 'success');
                 window.location.reload(); // Reload to remove them from "Likes" list
             } else {
-                alert(data.message || 'Could not create the match.');
+                window.lovenyToast(data.message || 'Could not create the match.', 'error');
             }
         } catch (error) {
             console.error('Quick match failed:', error);
-            alert('Could not reach the server. Please try again.');
+            window.lovenyToast('Could not reach the server. Please try again.', 'error');
         }
     }
 </script>

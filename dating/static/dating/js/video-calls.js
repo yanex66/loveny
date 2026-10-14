@@ -952,7 +952,7 @@
                 waitForConnection: true,
                 onFlagged: result => {
                     closeRoom();
-                    window.alert(result.message);
+                    window.lovenyToast(result.message, 'error');
                     window.location.assign(result.login_url || '/accounts/login/');
                 },
                 onUnavailable: message => {

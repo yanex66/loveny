@@ -625,11 +625,11 @@
                     appendMessage(data.message);
                     chatStatus.textContent = '';
                 } else {
-                    alert(data.message || 'Failed to upload photo');
+                    window.lovenyToast(data.message || 'Failed to upload photo.', 'error');
                     chatStatus.textContent = '';
                 }
             } catch (err) {
-                alert('Upload error: ' + err.message);
+                window.lovenyToast('Upload error: ' + err.message, 'error');
                 chatStatus.textContent = '';
             } finally {
                 photoInput.value = '';
@@ -654,14 +654,14 @@
     });
 
     window.reportHost = function() {
-        alert('Thank you. Host has been flagged for investigation by our safety team.');
+        window.lovenyToast('Thank you. The host has been flagged for investigation by our safety team.', 'success');
         const menu = document.getElementById('chat-dropdown-menu');
         if (menu) menu.classList.add('hidden');
     };
 
-    window.blockHost = function() {
-        if (confirm(`Block ${OTHER_USERNAME}? You will no longer receive calls or messages.`)) {
-            alert(`${OTHER_USERNAME} has been blocked.`);
+    window.blockHost = async function() {
+        if (await window.lovenyConfirm(`Block ${OTHER_USERNAME}? You will no longer receive calls or messages.`)) {
+            window.lovenyToast(`${OTHER_USERNAME} has been blocked.`, 'success');
             window.location.href = "{% url 'match_list' %}";
         }
     };
@@ -672,7 +672,7 @@
             window.lovenyStartVideoCall(receiverId);
             return;
         }
-        alert('Video calling is unavailable. Please refresh and try again.');
+        window.lovenyToast('Video calling is unavailable. Please refresh and try again.', 'error');
     };
 
     // STICKER DRAWER HANDLING
@@ -802,7 +802,7 @@
                 return;
             }
 
-            if (!confirm(`Send ${giftName} for ${giftCoins} coins to ${OTHER_USERNAME}?`)) return;
+            if (!await window.lovenyConfirm(`Send ${giftName} for ${giftCoins} coins to ${OTHER_USERNAME}?`)) return;
 
             btn.disabled = true;
             try {
@@ -824,7 +824,7 @@
                         giftDrawer.classList.add('hidden');
                         openTopupModal();
                     } else {
-                        alert(data.detail || data.message || 'Failed to send gift.');
+                        window.lovenyToast(data.detail || data.message || 'Failed to send gift.', 'error');
                     }
                     return;
                 }
@@ -836,7 +836,7 @@
                 giftDrawer.classList.add('hidden');
                 triggerCelebration();
             } catch (err) {
-                alert('Network error sending gift. Please check connection.');
+                window.lovenyToast('Network error sending gift. Please check connection.', 'error');
             } finally {
                 btn.disabled = false;
             }

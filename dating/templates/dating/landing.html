@@ -39,7 +39,7 @@
             </div>
 
             <div class="mt-10 flex flex-col items-center justify-center gap-4">
-                <a href="{% url 'signup' %}" class="brand-gradient inline-flex items-center justify-center gap-3 rounded-2xl px-8 py-4 text-base font-black uppercase tracking-wider text-white shadow-xl shadow-pink-300/40 transition hover:-translate-y-1 hover:shadow-pink-300/60">
+                <a href="{% if user.is_authenticated %}{% url 'swipe_card' %}{% else %}{% url 'account_login' %}?welcome=1{% endif %}" class="brand-gradient inline-flex items-center justify-center gap-3 rounded-2xl px-8 py-4 text-base font-black uppercase tracking-wider text-white shadow-xl shadow-pink-300/40 transition hover:-translate-y-1 hover:shadow-pink-300/60">
                     Find your people
                     <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14m-6-6 6 6-6 6"/></svg>
                 </a>

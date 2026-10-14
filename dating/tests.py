@@ -491,6 +491,16 @@ class DatingPlatformTests(TestCase):
         self.assertContains(response, f"sendHookupRequest({self.bob.pk}, 'Bobby')")
         self.assertContains(response, 'Bobby')
 
+        self.bob_profile.last_active = timezone.now() - timedelta(minutes=20)
+        self.bob_profile.save(update_fields=['last_active'])
+        response = self.client.get(reverse('hookup_discovery'))
+        candidate = next(
+            candidate for candidate in response.context['candidates']
+            if candidate.user_id == self.bob.pk
+        )
+        self.assertFalse(candidate.is_online)
+        self.assertContains(response, 'Offline')
+
     def test_sex_call_mode_is_available_in_creation_settings_and_discovery(self):
         mode_choices = Profile._meta.get_field('relationship_mode').choices
         self.assertEqual(
@@ -735,6 +745,12 @@ class DatingPlatformTests(TestCase):
         self.assertRedirects(response, f"{reverse('edit_profile')}?saved=1")
         self.alice.refresh_from_db()
         self.assertEqual(self.alice.first_name, 'Alice Newname')
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(self.alice_profile.age, 26)
+        self.assertEqual(self.alice_profile.preferred_gender, 'M')
+        self.assertEqual(self.alice_profile.location, 'Lagos')
+        self.assertEqual(self.alice_profile.bio, 'A little about me.')
+        self.assertEqual(self.alice_profile.first_date_idea, 'Coffee and a walk.')
 
         # Test editing without gender in POST data (gracefully falls back to existing instance.gender)
         response2 = self.client.post(reverse('edit_profile'), {
@@ -1080,6 +1096,7 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(match.mode, 'DATING')
         match_page = self.client.get(reverse('match_list'))
         self.assertContains(match_page, 'Open private chat')
+        self.assertContains(match_page, 'Unmatch')
         self.assertNotContains(match_page, 'Open WhatsApp')
         self.assertNotContains(match_page, self.bob_profile.whatsapp_number)
 
@@ -1332,6 +1349,18 @@ class DatingPlatformTests(TestCase):
         ticket = SupportTicket.objects.get(user=self.alice)
         self.assertEqual(ticket.status, 'open')
         self.assertEqual(ticket.messages.filter(is_auto_reply=True).count(), 1)
+
+    def test_logged_out_find_people_cta_opens_login_with_welcome_message(self):
+        landing = self.client.get(reverse('index'))
+        self.assertEqual(landing.status_code, 200)
+        self.assertContains(
+            landing,
+            f'href="{reverse("account_login")}?welcome=1"',
+        )
+
+        login = self.client.get(reverse('login'), {'welcome': '1'})
+        self.assertEqual(login.status_code, 200)
+        self.assertContains(login, 'Welcome to LOVENY. Log in to find your people.')
 
     def test_create_profile_submission_defaults_preferences_and_mode(self):
         new_user = User.objects.create_user(
@@ -2253,6 +2282,49 @@ class DatingPlatformTests(TestCase):
             self.alice_profile.earned_diamonds,
         )
 
+    def test_stale_calls_stop_marking_users_busy_and_disabled_billing_still_heartbeats(self):
+        now = timezone.now()
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.save(update_fields=['relationship_mode'])
+        self.bob_profile.relationship_mode = 'SEX_CALL'
+        self.bob_profile.last_active = now
+        self.bob_profile.save(update_fields=['relationship_mode', 'last_active'])
+        stale_call = CallSession.objects.create(
+            caller=self.alice,
+            receiver=self.bob,
+            status='connected',
+            started_at=now - timedelta(minutes=2),
+            connected_at=now - timedelta(minutes=2),
+            last_heartbeat_at=now - timedelta(seconds=46),
+        )
+
+        self.client.force_login(self.alice)
+        hosts_response = self.client.get(reverse('sex_call_hosts_api'))
+        bob_host = next(
+            host for host in hosts_response.json()['hosts']
+            if host['id'] == self.bob.pk
+        )
+        self.assertFalse(bob_host['is_busy'])
+        stale_call.refresh_from_db()
+        self.assertEqual(stale_call.status, 'ended')
+
+        active_call = CallSession.objects.create(
+            caller=self.alice,
+            receiver=self.bob,
+            status='connected',
+            started_at=now,
+            connected_at=now,
+            last_heartbeat_at=now - timedelta(seconds=10),
+        )
+        with self.settings(SEX_CALL_BALANCE_GATING_ENABLED=False):
+            response = self.post_json(
+                reverse('call_heartbeat_api', args=[active_call.room_id]),
+                {'duration_seconds': 10},
+            )
+        self.assertEqual(response.status_code, 200)
+        active_call.refresh_from_db()
+        self.assertGreaterEqual(active_call.last_heartbeat_at, now)
+
     def test_call_heartbeat_auto_ends_when_coins_depleted(self):
         Match.objects.create(
             user1=self.alice,
@@ -2446,7 +2518,7 @@ class DatingPlatformTests(TestCase):
 
         async_to_sync(verify_websocket_offer)()
 
-    def test_sex_call_hosts_api_lists_all_online_sex_call_profiles(self):
+    def test_sex_call_hosts_api_lists_recent_sex_call_profiles_with_presence(self):
         self.alice_profile.relationship_mode = 'SEX_CALL'
         self.alice_profile.save(update_fields=['relationship_mode'])
         self.bob_profile.relationship_mode = 'SEX_CALL'
@@ -2476,10 +2548,15 @@ class DatingPlatformTests(TestCase):
         response = self.client.get(reverse('sex_call_hosts_api'))
         self.assertEqual(response.status_code, 200)
         host_ids = {host['id'] for host in response.json()['hosts']}
-        self.assertEqual(host_ids, {self.bob.pk, third_user.pk})
+        self.assertEqual(host_ids, {self.bob.pk, third_user.pk, offline_user.pk})
         self.assertNotIn(self.alice.pk, host_ids)
         self.assertNotIn(dating_user.pk, host_ids)
-        self.assertNotIn(offline_user.pk, host_ids)
+        offline_host = next(
+            host for host in response.json()['hosts']
+            if host['id'] == offline_user.pk
+        )
+        self.assertFalse(offline_host['is_online'])
+        self.assertIsNotNone(offline_host['last_seen'])
 
     def test_quick_call_matching_relaxes_gender_preference_after_five_seconds(self):
         self.alice_profile.relationship_mode = 'SEX_CALL'
@@ -2716,6 +2793,8 @@ class DatingPlatformTests(TestCase):
         self.assertContains(response, 'Hot')
         self.assertContains(response, 'Nearby')
         self.assertContains(response, 'cosmic-match-overlay')
+        self.assertContains(response, 'radar-preferred-gender')
+        self.assertContains(response, 'playRadarCue')
         self.assertContains(response, 'diamond-exchange-modal')
         self.assertContains(response, 'window.lovenyStartVideoCall(receiverId)')
         self.assertNotContains(response, 'window.location.href = `/call/${targetRoomId}/`')
@@ -2967,6 +3046,17 @@ class DatingPlatformTests(TestCase):
         self.assertIsNotNone(conv)
         self.assertTrue(conv.messages.filter(sender=self.alice).exists())
 
+        disconnect_res = self.client.post(
+            reverse('quick_connect_api', args=[target_user.pk])
+        )
+        self.assertEqual(disconnect_res.status_code, 200)
+        self.assertFalse(disconnect_res.json()['is_matched'])
+        self.assertFalse(Match.objects.filter(
+            Q(user1=self.alice, user2=target_user)
+            | Q(user2=self.alice, user1=target_user),
+            expires_at__gt=timezone.now(),
+        ).exists())
+
     def test_public_profile_view_chamet_standards(self):
         target_user, target_profile = self.make_profile('host_bella', mode='SEX_CALL', age=22)
         # Add 3 photos
@@ -2982,9 +3072,11 @@ class DatingPlatformTests(TestCase):
         self.assertContains(res, 'Match')
         self.assertContains(res, 'Identity Gallery')
         self.assertContains(res, 'Voice Intro')
-        self.assertContains(res, 'Gifts Received')
+        self.assertNotContains(res, 'Gifts Received')
         self.assertContains(res, 'Languages Spoken')
         self.assertContains(res, 'Call Rate')
+        self.assertContains(res, 'lovenyPrompt')
+        self.assertNotContains(res, 'window.prompt')
         self.assertContains(res, 'window.lovenyStartVideoCall(receiverId)')
 
     def test_daily_checkin_api_and_me_hub_view(self):

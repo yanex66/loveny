@@ -297,16 +297,6 @@
             </a>
         </div>
 
-        <!-- 5. Log Out Action -->
-        <div class="pt-2 text-center">
-            <form action="{% url 'delete_account' %}" method="post" class="inline">
-                {% csrf_token %}
-            </form>
-            <a href="{% url 'login' %}?logout=1" class="text-xs font-bold text-white/40 hover:text-rose-400 transition">
-                Sign Out of LOVENY
-            </a>
-        </div>
-
     </div>
 </main>
 

@@ -146,6 +146,14 @@
         <h2 id="cosmic-header" class="text-3xl sm:text-4xl font-black uppercase tracking-widest bg-gradient-to-r from-pink-400 via-rose-300 to-amber-200 bg-clip-text text-transparent mt-1 drop-shadow-lg">
             MATCHING
         </h2>
+        <label for="radar-preferred-gender" class="mt-3 inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-white/70">
+            Match with
+            <select id="radar-preferred-gender" class="rounded-full border border-white/20 bg-slate-900 px-3 py-1.5 text-[10px] font-bold text-white focus:border-pink-400 focus:outline-none">
+                <option value="E">Everyone</option>
+                <option value="M" {% if profile.preferred_gender == 'M' %}selected{% endif %}>Men</option>
+                <option value="F" {% if profile.preferred_gender == 'F' %}selected{% endif %}>Women</option>
+            </select>
+        </label>
         <p id="cosmic-status-label" class="text-xs font-semibold text-pink-200/80 tracking-wide mt-2 animate-pulse flex items-center justify-center gap-2">
             <span class="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
             <span>Searching for open hosts...</span>
@@ -237,6 +245,15 @@
 
 {% block extra_scripts %}
 <script>
+function formatLastSeen(isoTimestamp) {
+    if (!isoTimestamp) return 'Offline';
+    const minutes = Math.max(1, Math.floor((Date.now() - new Date(isoTimestamp).getTime()) / 60000));
+    if (minutes < 60) return `Offline ${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `Offline ${hours}h ago`;
+    return `Offline ${Math.floor(hours / 24)}d ago`;
+}
+
 (() => {
     let currentTab = 'hot';
 
@@ -303,8 +320,9 @@
 
                     <!-- Top Status Badges -->
                     <div class="absolute top-2.5 left-2.5 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 backdrop-blur-md border border-white/10 text-[10px] font-extrabold text-white">
-                        <span class="h-2 w-2 rounded-full ${h.is_busy ? 'bg-amber-400' : (h.is_online ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400')}"></span>
-                        <span>${h.is_busy ? 'Busy' : (h.is_online ? 'Online' : 'Away')}</span>
+                        <span class="h-2 w-2 rounded-full ${h.is_online ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}"></span>
+                        <span>${h.is_online ? 'Online' : formatLastSeen(h.last_seen)}</span>
+                        ${h.is_busy ? '<span class="ml-1 rounded-full bg-amber-400/20 px-1.5 py-0.5 text-amber-200">Busy</span>' : ''}
                     </div>
 
                     <!-- Bottom Info & Call Button -->
@@ -320,8 +338,8 @@
                     </div>
 
                     <!-- Floating Round Video Call Action Button -->
-                    <button type="button" onclick="event.stopPropagation(); connectHost(${h.id}, this)" class="absolute bottom-3 right-16 rounded-full border border-white/25 bg-black/65 px-3 py-2 text-[9px] font-black uppercase tracking-wide text-white shadow-lg hover:bg-pink-600 active:scale-95 transition" title="Connect with ${h.username}">
-                        Connect
+                    <button type="button" data-connected="${h.is_connected}" onclick="event.stopPropagation(); connectHost(${h.id}, this)" class="absolute bottom-3 right-16 rounded-full border border-white/25 ${h.is_connected ? 'bg-emerald-600' : 'bg-black/65'} px-3 py-2 text-[9px] font-black uppercase tracking-wide text-white shadow-lg hover:bg-pink-600 active:scale-95 transition" title="${h.is_connected ? 'Disconnect from ' : 'Connect with '}${h.username}">
+                        ${h.is_connected ? 'Connected' : 'Connect'}
                     </button>
                     <button type="button" ${h.is_busy ? 'disabled' : ''} onclick="event.stopPropagation(); startDirectCall(${h.id}, '${h.username}')" class="absolute bottom-3 right-3 h-11 w-11 rounded-full ${h.is_busy ? 'bg-slate-600 cursor-not-allowed' : 'bg-gradient-to-tr from-orange-500 via-rose-500 to-pink-500 hover:scale-110 active:scale-90'} flex items-center justify-center text-white shadow-xl shadow-pink-500/40 transition-all duration-200" title="${h.is_busy ? 'This member is busy' : 'Call ' + h.username}">
                         <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
@@ -345,7 +363,7 @@
             window.lovenyStartVideoCall(receiverId);
             return;
         }
-        alert('Video calling is unavailable. Please refresh and try again.');
+        window.lovenyToast('Video calling is unavailable. Please refresh and try again.', 'error');
     };
 
     window.connectHost = async (userId, button) => {
@@ -357,11 +375,15 @@
             });
             const result = await response.json();
             if (!response.ok) throw new Error(result.message || 'Could not connect with this host.');
-            button.textContent = 'Connected';
-            button.classList.add('bg-emerald-600');
+            button.dataset.connected = String(result.is_matched);
+            button.textContent = result.is_matched ? 'Connected' : 'Connect';
+            button.classList.toggle('bg-emerald-600', result.is_matched);
+            button.classList.toggle('bg-black/65', !result.is_matched);
+            button.title = `${result.is_matched ? 'Disconnect from ' : 'Connect with '}${userId}`;
+            window.lovenyToast(result.message, 'success');
         } catch (error) {
             button.disabled = false;
-            window.alert(error.message || 'Could not connect with this host.');
+            window.lovenyToast(error.message || 'Could not connect with this host.', 'error');
         }
     };
 
@@ -370,15 +392,50 @@
     const startCosmicBtn = document.getElementById('start-cosmic-match-btn');
     const cancelCosmicBtn = document.getElementById('cancel-cosmic-match-btn');
     const cosmicStatus = document.getElementById('cosmic-status-label');
+    const radarGender = document.getElementById('radar-preferred-gender');
     const quickMatchUrl = "{% url 'quick_call_match_api' %}";
     let cosmicSearchTimer = null;
     let cosmicSearchStartedAt = 0;
     let cosmicSearchActive = false;
+    let radarAudioContext = null;
+    let radarAudioTimer = null;
+
+    function playRadarCue(isMatch = false) {
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return;
+            radarAudioContext ||= new AudioContext();
+            if (radarAudioContext.state === 'suspended') radarAudioContext.resume();
+            const notes = isMatch ? [659, 880, 1175] : [440];
+            notes.forEach((frequency, index) => {
+                const start = radarAudioContext.currentTime + index * 0.14;
+                const oscillator = radarAudioContext.createOscillator();
+                const gain = radarAudioContext.createGain();
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(frequency, start);
+                gain.gain.setValueAtTime(0.001, start);
+                gain.gain.exponentialRampToValueAtTime(0.08, start + 0.025);
+                gain.gain.exponentialRampToValueAtTime(0.001, start + 0.18);
+                oscillator.connect(gain);
+                gain.connect(radarAudioContext.destination);
+                oscillator.start(start);
+                oscillator.stop(start + 0.2);
+            });
+        } catch (error) {
+            console.warn('Orbit radar audio cue could not play.', error);
+        }
+    }
+
+    function stopRadarAudio() {
+        if (radarAudioTimer) window.clearInterval(radarAudioTimer);
+        radarAudioTimer = null;
+    }
 
     async function searchCosmicMatch() {
         if (!cosmicSearchActive) return;
         if (Date.now() - cosmicSearchStartedAt >= 60000) {
             cosmicSearchActive = false;
+            stopRadarAudio();
             await fetch(quickMatchUrl, {
                 method: 'POST',
                 headers: {
@@ -398,13 +455,25 @@
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken(),
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({ preferred_gender: radarGender?.value || 'E' }),
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || data.message || 'Could not start matching.');
+            if (!res.ok) {
+                if (res.status === 409 || res.status === 403) {
+                    cosmicSearchActive = false;
+                    throw new Error(data.detail || data.message || 'Could not start matching.');
+                }
+                cosmicStatus.textContent = 'Connection interrupted. Retrying the search…';
+                cosmicSearchTimer = setTimeout(searchCosmicMatch, 2000);
+                return;
+            }
             if (data.status === 'success' && data.room_id) {
                 cosmicSearchActive = false;
-                window.location.href = `/call/${data.room_id}/`;
+                stopRadarAudio();
+                playRadarCue(true);
+                window.setTimeout(() => {
+                    window.location.href = `/call/${data.room_id}/`;
+                }, 550);
                 return;
             }
             const flexibleSeconds = Number(data.flexible_after_seconds || 0);
@@ -413,8 +482,14 @@
                 : 'Searching all available Sex Call members…';
             cosmicSearchTimer = setTimeout(searchCosmicMatch, 1800);
         } catch (error) {
-            cosmicSearchActive = false;
-            cosmicStatus.textContent = error.message || 'Could not search right now. Please retry.';
+            if (!cosmicSearchActive) {
+                stopRadarAudio();
+                cosmicStatus.textContent = error.message || 'Could not search right now. Please retry.';
+                window.lovenyToast(cosmicStatus.textContent, 'error');
+            } else {
+                cosmicStatus.textContent = 'Connection interrupted. Retrying the search…';
+                cosmicSearchTimer = setTimeout(searchCosmicMatch, 2000);
+            }
         }
     }
 
@@ -423,6 +498,9 @@
         cosmicOverlay.classList.add('flex');
         cosmicSearchActive = true;
         cosmicSearchStartedAt = Date.now();
+        playRadarCue(false);
+        stopRadarAudio();
+        radarAudioTimer = window.setInterval(() => playRadarCue(false), 6000);
         cosmicStatus.textContent = 'Searching for another active Sex Call member…';
         searchCosmicMatch();
     });

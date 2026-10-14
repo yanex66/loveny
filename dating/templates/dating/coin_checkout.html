@@ -232,7 +232,7 @@
     // Paystack payment trigger
     payBtn?.addEventListener('click', function() {
         if (!selectedPackageId) {
-            alert('Please select a coin package first.');
+            window.lovenyToast('Please select a coin package first.', 'error');
             return;
         }
 
@@ -344,7 +344,7 @@
     const flutterwaveBtn = document.getElementById('pay-flutterwave-btn');
     flutterwaveBtn?.addEventListener('click', function() {
         if (!selectedPackageId) {
-            alert('Please select a coin package first.');
+            window.lovenyToast('Please select a coin package first.', 'error');
             return;
         }
 

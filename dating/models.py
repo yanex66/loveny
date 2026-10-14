@@ -485,6 +485,7 @@ class CallSession(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     started_at = models.DateTimeField(null=True, blank=True)
     connected_at = models.DateTimeField(null=True, blank=True)
+    last_heartbeat_at = models.DateTimeField(null=True, blank=True, db_index=True)
     ended_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -505,6 +506,7 @@ class SexCallQueue(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     last_ping_at = models.DateTimeField(default=timezone.now, db_index=True)
+    preferred_gender = models.CharField(max_length=1, blank=True, default='')
 
     class Meta:
         indexes = [

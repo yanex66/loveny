@@ -88,9 +88,9 @@
                 <span class="rounded-full border border-white/20 bg-black/35 px-2 py-0.5 text-[10px] font-bold text-white">{{ profile.get_gender_display }}</span>
                 <span>•</span>
                 {% endif %}
-                <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 px-2 py-0.5 text-[10px] font-black text-emerald-300">
-                    <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    Online
+                <span class="inline-flex items-center gap-1.5 rounded-full {% if is_online %}bg-emerald-500/20 border-emerald-400/40 text-emerald-300{% else %}bg-slate-500/20 border-slate-400/40 text-slate-200{% endif %} border px-2 py-0.5 text-[10px] font-black">
+                    <span class="h-1.5 w-1.5 rounded-full {% if is_online %}bg-emerald-400 animate-pulse{% else %}bg-slate-400{% endif %}"></span>
+                    {% if is_online %}Online{% elif profile.last_active %}Offline {{ profile.last_active|timesince }} ago{% else %}Offline{% endif %}
                 </span>
                 <span>•</span>
                 <span>{{ profile.location|default:"Lekki, Lagos" }}</span>
@@ -160,21 +160,6 @@
         </div>
 
         <!-- Gift Showcase (Chamet / HiiClub Standard) -->
-        <div class="rounded-3xl bg-slate-900/70 border border-white/10 p-4">
-            <div class="flex items-center justify-between mb-3">
-                <h3 class="text-[10px] font-black uppercase tracking-widest text-white/50">Gifts Received</h3>
-                <span class="text-[10px] font-extrabold text-pink-400">Host Showcase</span>
-            </div>
-            <div class="grid grid-cols-5 gap-2 text-center">
-                {% for g in gifts_showcase %}
-                <div class="flex flex-col items-center justify-center p-2 rounded-2xl bg-white/5 border border-white/10 shadow-sm">
-                    <span class="text-xl sm:text-2xl">{{ g.icon }}</span>
-                    <span class="text-[10px] font-black text-white/90 mt-1">×{{ g.count }}</span>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-
         <!-- Identity Gallery (Horizontal Thumbnail Rail) -->
         <div class="rounded-3xl bg-slate-900/70 border border-white/10 p-4">
             <div class="flex items-center justify-between mb-3">
@@ -204,7 +189,7 @@
     </div>
 
     <!-- FLOATING ACTION CONTROLS (Chamet / HiiClub Standard) -->
-    <div class="fixed bottom-[calc(5.2rem+env(safe-area-inset-bottom))] left-1/2 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 px-2 z-40 space-y-2 pointer-events-auto">
+    <div class="fixed bottom-[calc(7rem+env(safe-area-inset-bottom))] left-1/2 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 px-2 z-40 space-y-2 pointer-events-auto">
 
         <!-- Row 1: Side-by-side Quick Actions: [ 💬 Say Hi ] and [ ⚡ Match / Connect ] -->
         <div class="grid grid-cols-2 gap-2">
@@ -217,7 +202,7 @@
             <button type="button" id="connect-btn" onclick="connectAction()"
                     class="flex items-center justify-center gap-1.5 rounded-2xl {% if is_matched %}bg-emerald-600 text-white border border-emerald-400{% else %}bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow-pink-500/25{% endif %} py-3 text-xs font-black uppercase tracking-wider shadow-xl active:scale-95 transition">
                 <span id="connect-icon">{% if is_matched %}❤️{% else %}⚡{% endif %}</span>
-                <span id="connect-label">{% if is_matched %}Connected{% else %}Match{% endif %}</span>
+                <span id="connect-label">{% if is_matched %}Connected{% else %}Connect{% endif %}</span>
             </button>
         </div>
 
@@ -249,6 +234,7 @@
     const TARGET_USER_ID = {{ profile.user.id }};
     const TARGET_USERNAME = "{{ profile.user.username }}";
     const CSRF_TOKEN = "{{ csrf_token }}";
+    let isMatched = {{ is_matched|yesno:"true,false" }};
 
     // Photos data list
     const photos = [
@@ -424,12 +410,12 @@
             if (res.ok && data.redirect_url) {
                 window.location.href = data.redirect_url;
             } else {
-                alert(data.message || 'Unable to open chat');
+                window.lovenyToast(data.message || 'Unable to open chat.', 'error');
                 label.textContent = originalText;
                 btn.disabled = false;
             }
         } catch (err) {
-            alert('Connection error: ' + err.message);
+            window.lovenyToast('Connection error: ' + err.message, 'error');
             label.textContent = originalText;
             btn.disabled = false;
         }
@@ -453,17 +439,26 @@
             });
             const data = await res.json();
             if (res.ok) {
-                btn.className = 'flex items-center justify-center gap-1.5 rounded-2xl bg-emerald-600 text-white border border-emerald-400 py-3 text-xs font-black uppercase tracking-wider shadow-xl active:scale-95 transition';
-                icon.textContent = '❤️';
-                label.textContent = 'Connected';
+                isMatched = data.is_matched;
+                if (data.is_matched) {
+                    btn.className = 'flex items-center justify-center gap-1.5 rounded-2xl bg-emerald-600 text-white border border-emerald-400 py-3 text-xs font-black uppercase tracking-wider shadow-xl active:scale-95 transition';
+                    icon.textContent = '❤️';
+                    label.textContent = 'Connected';
+                } else {
+                    btn.className = 'flex items-center justify-center gap-1.5 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-600 text-white py-3 text-xs font-black uppercase tracking-wider shadow-xl active:scale-95 transition';
+                    icon.textContent = '⚡';
+                    label.textContent = 'Connect';
+                }
+                btn.disabled = false;
+                window.lovenyToast(data.message || (data.is_matched ? 'Connected.' : 'Disconnected.'), 'success');
             } else {
-                alert(data.message || 'Unable to connect');
-                label.textContent = 'Match';
+                window.lovenyToast(data.message || 'Unable to connect.', 'error');
+                label.textContent = isMatched ? 'Connected' : 'Connect';
                 btn.disabled = false;
             }
         } catch (err) {
-            alert('Connection error: ' + err.message);
-            label.textContent = 'Match';
+            window.lovenyToast('Connection error: ' + err.message, 'error');
+            label.textContent = isMatched ? 'Connected' : 'Connect';
             btn.disabled = false;
         }
     };
@@ -472,7 +467,7 @@
     window.startDirectCall = receiverId => {
         const btn = document.getElementById('instant-call-btn');
         if (!window.lovenyStartVideoCall) {
-            alert('Video calling is unavailable. Please refresh and try again.');
+            window.lovenyToast('Video calling is unavailable. Please refresh and try again.', 'error');
             return;
         }
         btn.classList.add('opacity-75');
@@ -484,14 +479,28 @@
         if (navigator.share) {
             navigator.share({ title: `${TARGET_USERNAME} on LOVENY`, url: window.location.href });
         } else {
-            navigator.clipboard?.writeText(window.location.href);
-            alert('Profile link copied to clipboard!');
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(window.location.href)
+                    .then(() => window.lovenyToast('Profile link copied to clipboard!', 'success'))
+                    .catch(() => window.lovenyToast('Unable to copy the profile link.', 'error'));
+            } else {
+                window.lovenyToast('Sharing is unavailable in this browser.', 'error');
+            }
         }
     };
 
     window.reportUser = async (targetId) => {
-        const reason = prompt("Report this user? Please enter a reason (spam, harassment, fake, etc):");
-        if (!reason) return;
+        const report = await window.lovenyPrompt({
+            title: 'Report this member',
+            message: 'Choose a reason and add any details that will help our safety team review your report.',
+            choices: [
+                {value: 'spam', label: 'Spam or scam'},
+                {value: 'harassment', label: 'Harassment or abuse'},
+                {value: 'fake', label: 'Fake or misleading profile'},
+                {value: 'other', label: 'Other safety concern'},
+            ],
+        });
+        if (!report) return;
         
         try {
             const token = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));
@@ -503,17 +512,20 @@
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrf,
                 },
-                body: JSON.stringify({ target_id: targetId, reason: reason }),
+                body: JSON.stringify({
+                    target_id: targetId,
+                    reason: report.reason,
+                    details: report.details,
+                }),
             });
             if (res.ok) {
-                alert("User has been reported and blocked.");
-                window.location.href = "{% url 'swipe_card' %}";
+                window.lovenyToast('Report submitted. This member is blocked from your feed.', 'success');
             } else {
                 const data = await res.json();
-                alert(data.message || 'Could not report user');
+                window.lovenyToast(data.message || 'Could not report this member.', 'error');
             }
         } catch (err) {
-            console.error(err);
+            window.lovenyToast('Could not submit your report. Please try again.', 'error');
         }
     };
 })();

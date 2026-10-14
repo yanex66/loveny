@@ -29,9 +29,7 @@
                         {% if match.avatar %}
                         <div class="relative shrink-0">
                             <img src="{{ match.avatar }}" alt="{{ match.username }}" class="h-16 w-16 rounded-2xl object-cover border-2 border-pink-200 shadow-md">
-                            {% if match.is_online %}
-                            <span class="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-emerald-500 border-2 border-white" title="Online"></span>
-                            {% endif %}
+                            <span class="absolute -bottom-1 -right-1 h-4 w-4 rounded-full {% if match.is_online %}bg-emerald-500{% else %}bg-slate-400{% endif %} border-2 border-white" title="{% if match.is_online %}Online{% elif match.last_seen %}Offline {{ match.last_seen|timesince }} ago{% else %}Offline{% endif %}"></span>
                         </div>
                         {% endif %}
 
@@ -46,6 +44,9 @@
                                         {% if match.gender %}<span class="text-slate-500 text-xs">• {{ match.gender }}</span>{% endif %}
                                         <span class="text-slate-400 text-xs">• {{ match.location|default:'Nearby' }}</span>
                                     </div>
+                                    <p class="mt-1 text-[10px] font-bold {% if match.is_online %}text-emerald-600{% else %}text-slate-500{% endif %}">
+                                        {% if match.is_online %}Online{% elif match.last_seen %}Offline {{ match.last_seen|timesince }} ago{% else %}Offline{% endif %}
+                                    </p>
                                 </div>
                                 
                                 <div class="bg-rose-50 border border-rose-200 text-rose-700 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold flex items-center gap-1 shrink-0">
@@ -82,6 +83,9 @@
                             Start video call
                         </button>
                         {% endif %}
+                        <button type="button" data-unmatch-user="{{ match.other_user_id }}" class="w-full py-2.5 rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 font-bold text-xs uppercase tracking-wider hover:bg-rose-100 transition">
+                            Unmatch
+                        </button>
                     </div>
 
                 </div>
@@ -116,4 +120,26 @@
         {% endif %}
     </main>
 </div>
+<script>
+document.querySelectorAll('[data-unmatch-user]').forEach(button => {
+    button.addEventListener('click', async () => {
+        if (!await window.lovenyConfirm('Unmatch this person? Your match will end and the private chat will no longer be available.')) return;
+        button.disabled = true;
+        try {
+            const csrf = document.cookie.split('; ').find(value => value.startsWith('csrftoken='));
+            const response = await fetch(`/api/connect/${button.dataset.unmatchUser}/`, {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrf ? decodeURIComponent(csrf.split('=')[1]) : ''},
+            });
+            const result = await response.json();
+            if (!response.ok || result.is_matched !== false) throw new Error(result.message || 'Could not unmatch.');
+            button.closest('.soft-card').remove();
+            window.lovenyToast('Match ended.', 'success');
+        } catch (error) {
+            button.disabled = false;
+            window.lovenyToast(error.message || 'Could not unmatch. Please try again.', 'error');
+        }
+    });
+});
+</script>
 {% endblock %}

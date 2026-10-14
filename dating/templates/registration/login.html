@@ -30,6 +30,11 @@
                     <p class="mt-1">{{ suspension_notice }}</p>
                 </div>
             {% endif %}
+            {% if welcome_message %}
+                <div class="mb-6 rounded-xl border border-pink-200 bg-pink-50 p-4 text-sm text-pink-900" role="status">
+                    Welcome to LOVENY. Log in to find your people.
+                </div>
+            {% endif %}
 
             {% if form.non_field_errors or form.relationship_mode.errors or form.email.errors or form.password.errors %}
                 <div class="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r animate-pulse">

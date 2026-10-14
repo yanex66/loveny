@@ -26,9 +26,7 @@
                 <a href="{{ conv.chat_url }}" class="flex items-center gap-4 p-4 rounded-3xl bg-white/90 backdrop-blur-md border border-rose-100 shadow-sm hover:shadow-md hover:border-pink-300 transition-all duration-200 group">
                     <div class="relative shrink-0">
                         <img src="{{ conv.other_avatar }}" alt="{{ conv.other_username }}" class="h-14 w-14 rounded-2xl object-cover border-2 border-pink-200 shadow">
-                        {% if conv.is_online %}
-                        <span class="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-white shadow" title="Online"></span>
-                        {% endif %}
+                        <span class="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full {% if conv.is_online %}bg-emerald-500{% else %}bg-slate-400{% endif %} border-2 border-white shadow" title="{% if conv.is_online %}Online{% elif conv.last_seen %}Offline {{ conv.last_seen|timesince }} ago{% else %}Offline{% endif %}"></span>
                     </div>
 
                     <div class="flex-1 min-w-0">
@@ -42,6 +40,7 @@
                             <span class="text-[11px] font-bold text-slate-400 shrink-0 font-mono">{{ conv.time_ago }}</span>
                         </div>
                         <p class="text-xs text-slate-500 truncate font-medium">
+                            <span class="font-bold {% if conv.is_online %}text-emerald-600{% else %}text-slate-500{% endif %}">{% if conv.is_online %}Online{% elif conv.last_seen %}Offline {{ conv.last_seen|timesince }} ago{% else %}Offline{% endif %} · </span>
                             {{ conv.last_message }}
                         </p>
                     </div>

@@ -107,6 +107,52 @@ def _paystack_keys_configured():
     return bool(public_mode and public_mode == secret_mode)
 
 
+def _expire_stale_call_sessions(now=None):
+    now = now or timezone.now()
+    ringing_cutoff = now - timedelta(seconds=30)
+    CallSession.objects.filter(
+        status='ringing',
+        created_at__lt=ringing_cutoff,
+    ).update(status='missed', ended_at=now)
+
+    heartbeat_cutoff = now - timedelta(seconds=45)
+    CallSession.objects.filter(
+        status__in=('connected', 'active'),
+    ).filter(
+        Q(last_heartbeat_at__lt=heartbeat_cutoff)
+        | Q(last_heartbeat_at__isnull=True, connected_at__lt=heartbeat_cutoff)
+        | Q(
+            last_heartbeat_at__isnull=True,
+            connected_at__isnull=True,
+            started_at__lt=heartbeat_cutoff,
+        )
+        | Q(
+            last_heartbeat_at__isnull=True,
+            connected_at__isnull=True,
+            started_at__isnull=True,
+            created_at__lt=heartbeat_cutoff,
+        )
+    ).update(status='ended', ended_at=now)
+
+
+def _profile_is_online(profile, now=None):
+    now = now or timezone.now()
+    return bool(profile.last_active and profile.last_active >= now - timedelta(minutes=15))
+
+
+def _active_call_user_ids(now=None):
+    _expire_stale_call_sessions(now)
+    return set(
+        CallSession.objects.filter(
+            status__in=('ringing', 'connected', 'active'),
+        ).values_list('caller_id', flat=True)
+    ) | set(
+        CallSession.objects.filter(
+            status__in=('ringing', 'connected', 'active'),
+        ).values_list('receiver_id', flat=True)
+    )
+
+
 def _subscription_details(profile, product):
     prefix = {'DATING': 'dating', 'HOOKUP': 'hookup', 'SEX_CALL': 'sex_call'}[product]
     return (
@@ -277,7 +323,8 @@ def _profile_payload(profile):
         ),
         'is_verified': profile.is_verified,
         'is_vip': profile.is_vip,
-        'is_online': profile.is_host_ready or (profile.last_active and (timezone.now() - profile.last_active).total_seconds() < 1800),
+        'is_online': _profile_is_online(profile),
+        'last_seen': profile.last_active.isoformat() if profile.last_active else None,
         'response_rate': getattr(profile, 'response_rate', 98),
         'total_calls_completed': getattr(profile, 'total_calls_completed', 0),
         'is_host_ready': getattr(profile, 'is_host_ready', True),
@@ -378,27 +425,12 @@ def public_profile(request, pk):
     else:
         languages.append('Igbo')
 
-    # Gift showcase: count real gifts or show standard showcase
-    real_gifts = (
-        CallGift.objects.filter(receiver=profile.user)
-        .values('gift_type')
-        .annotate(total=Count('id'))
-    )
-    real_map = {g['gift_type']: g['total'] for g in real_gifts}
-    
-    base_seed = (profile.user.id * 7) % 50
-    gifts_showcase = [
-        {'icon': '🌹', 'name': 'Rose', 'count': real_map.get('rose', 12 + base_seed % 15)},
-        {'icon': '💋', 'name': 'Kiss', 'count': real_map.get('kiss', 5 + (base_seed * 2) % 10)},
-        {'icon': '🥂', 'name': 'Champagne', 'count': real_map.get('champagne', 2 + base_seed % 6)},
-        {'icon': '👑', 'name': 'Crown', 'count': real_map.get('crown', 1 + base_seed % 3)},
-        {'icon': '💎', 'name': 'Diamond', 'count': real_map.get('car', 1 + (base_seed % 2))},
-    ]
-
     is_matched = Match.objects.filter(
         (Q(user1=request.user, user2=profile.user) | Q(user2=request.user, user1=profile.user)),
         expires_at__gt=timezone.now()
     ).exists()
+    now = timezone.now()
+    _expire_stale_call_sessions(now)
     is_busy = CallSession.objects.filter(
         Q(caller=profile.user) | Q(receiver=profile.user),
         status__in=('ringing', 'connected', 'active'),
@@ -416,11 +448,11 @@ def public_profile(request, pk):
         'host_level': host_level,
         'mood_line': mood_line,
         'languages': languages,
-        'gifts_showcase': gifts_showcase,
         'is_matched': is_matched,
         'is_busy': is_busy,
         'response_status': '⚡ Fast Pickup' if (profile.user.id % 2 == 0) else '🟢 Available Now',
-        'is_online': profile.last_active >= timezone.now() - timedelta(minutes=15),
+        'is_online': _profile_is_online(profile, now),
+        'last_seen': profile.last_active,
     })
 
 
@@ -439,28 +471,49 @@ def quick_connect_api(request, user_id):
     if not target_profile:
         return JsonResponse({'status': 'error', 'message': 'target_not_found'}, status=404)
 
-    Swipe.objects.get_or_create(
-        swiper=request.user,
-        swiped=target_user,
-        defaults={'type': 'LIKE', 'is_direct': True}
-    )
-    Swipe.objects.get_or_create(
-        swiper=target_user,
-        swiped=request.user,
-        defaults={'type': 'LIKE', 'is_direct': True}
-    )
+    user1, user2 = sorted((request.user, target_user), key=lambda user: user.pk)
+    now = timezone.now()
+    with transaction.atomic():
+        match = Match.objects.select_for_update().filter(
+            user1=user1,
+            user2=user2,
+            expires_at__gt=now,
+        ).first()
+        if match:
+            match.expires_at = now
+            match.save(update_fields=['expires_at'])
+            Swipe.objects.filter(
+                Q(swiper=request.user, swiped=target_user)
+                | Q(swiper=target_user, swiped=request.user),
+            ).delete()
+            return JsonResponse({
+                'status': 'success',
+                'is_matched': False,
+                'message': f'Disconnected from {target_user.username}.',
+            })
 
-    match, _ = Match.objects.get_or_create(
-        user1=min(request.user, target_user, key=lambda u: u.pk),
-        user2=max(request.user, target_user, key=lambda u: u.pk),
-        defaults={
-            'mode': 'SEX_CALL' if getattr(target_profile, 'relationship_mode', '').upper() == 'SEX_CALL' else 'DATING',
-            'expires_at': timezone.now() + timedelta(days=365),
-        }
-    )
-    if match.expires_at and match.expires_at <= timezone.now():
-        match.expires_at = timezone.now() + timedelta(days=365)
-        match.save(update_fields=['expires_at'])
+        Swipe.objects.get_or_create(
+            swiper=request.user,
+            swiped=target_user,
+            defaults={'type': 'LIKE', 'is_direct': True}
+        )
+        Swipe.objects.get_or_create(
+            swiper=target_user,
+            swiped=request.user,
+            defaults={'type': 'LIKE', 'is_direct': True}
+        )
+
+        match, _ = Match.objects.get_or_create(
+            user1=user1,
+            user2=user2,
+            defaults={
+                'mode': 'SEX_CALL' if target_profile.relationship_mode.upper() == 'SEX_CALL' else 'DATING',
+                'expires_at': now + timedelta(days=365),
+            }
+        )
+        if match.expires_at <= now:
+            match.expires_at = now + timedelta(days=365)
+            match.save(update_fields=['expires_at'])
 
     return JsonResponse({
         'status': 'success',
@@ -758,7 +811,8 @@ def match_list(request):
                     or viewer_profile.coin_balance >= call_rate
                 )
             ),
-            'is_online': bool(profile.is_host_ready or (profile.last_active and (timezone.now() - profile.last_active).total_seconds() < 1800)),
+            'is_online': _profile_is_online(profile),
+            'last_seen': profile.last_active,
         })
     return render(request, 'dating/match_list.html', {
         'matches': data,
@@ -832,12 +886,7 @@ def messages_inbox(request):
         else:
             last_preview = "No messages yet. Say hello!"
 
-        is_online = (
-            other_profile.is_host_ready or (
-                other_profile.last_active
-                and (timezone.now() - other_profile.last_active).total_seconds() < 1800
-            )
-        )
+        is_online = _profile_is_online(other_profile)
 
         threads.append({
             'id': conv.pk,
@@ -847,6 +896,7 @@ def messages_inbox(request):
             'other_name': other_user.first_name or other_user.username,
             'other_age': other_profile.age,
             'is_online': is_online,
+            'last_seen': other_profile.last_active,
             'time_ago': time_str,
             'last_message': last_preview,
             'unread_count': unread_count,
@@ -1357,6 +1407,7 @@ def _can_use_sex_call(profile_or_user):
 @login_required
 @require_POST
 def call_initiate_api(request):
+    _expire_stale_call_sessions()
     try:
         data = json.loads(request.body)
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -1490,6 +1541,7 @@ def call_respond_api(request, room_id):
     action = data.get('action') if isinstance(data, dict) else None
     if action not in ('accept', 'decline'):
         return JsonResponse({'status': 'error', 'message': 'invalid_action'}, status=400)
+    _expire_stale_call_sessions()
     with transaction.atomic():
         call = get_object_or_404(
             CallSession.objects.select_for_update().select_related('caller'),
@@ -1541,6 +1593,7 @@ def call_respond_api(request, room_id):
             now = timezone.now()
             call.started_at = now
             call.connected_at = now
+            call.last_heartbeat_at = now
 
             # Billing Starts Only After Pickup:
             # Deduct the first minute's rate upon connection
@@ -1562,7 +1615,10 @@ def call_respond_api(request, room_id):
         else:
             call.status = 'declined'
             call.ended_at = timezone.now()
-        call.save(update_fields=['status', 'started_at', 'connected_at', 'ended_at', 'coins_spent'])
+        call.save(update_fields=[
+            'status', 'started_at', 'connected_at', 'last_heartbeat_at',
+            'ended_at', 'coins_spent',
+        ])
     return JsonResponse({'status': 'success', 'call': _call_payload(call)})
 
 
@@ -1917,7 +1973,11 @@ def call_heartbeat_api(request, room_id):
         room_id=room_id,
     )
     _call_participants(call, request.user)
-    if call.status != 'connected' or not call.started_at:
+    if call.status not in ('connected', 'active'):
+        return JsonResponse({'status': 'ok', 'call': _call_payload(call)})
+    call.last_heartbeat_at = timezone.now()
+    call.save(update_fields=['last_heartbeat_at'])
+    if not call.started_at:
         return JsonResponse({'status': 'ok', 'call': _call_payload(call)})
     if not settings.SEX_CALL_BALANCE_GATING_ENABLED:
         return JsonResponse({'status': 'ok', 'call': _call_payload(call)})
@@ -2489,19 +2549,22 @@ def online_hosts_api(request):
     hosts = list(base_qs.order_by('-is_host_ready', '-last_active')[:24])
 
     results = []
-    busy_user_ids = set(
-        CallSession.objects.filter(
-            status__in=('ringing', 'connected', 'active'),
-        ).values_list('caller_id', flat=True)
-    ) | set(
-        CallSession.objects.filter(
-            status__in=('ringing', 'connected', 'active'),
-        ).values_list('receiver_id', flat=True)
-    )
+    busy_user_ids = _active_call_user_ids()
+    connected_user_ids = set()
+    if request.user.is_authenticated and hosts:
+        active_match_user_ids = Match.objects.filter(
+            Q(user1=request.user, user2_id__in=[host.user_id for host in hosts])
+            | Q(user2=request.user, user1_id__in=[host.user_id for host in hosts]),
+            expires_at__gt=timezone.now(),
+        ).values_list('user1_id', 'user2_id')
+        connected_user_ids = {
+            second_id if first_id == request.user.pk else first_id
+            for first_id, second_id in active_match_user_ids
+        }
     for p in hosts:
-        is_active = p.is_host_ready or (
+        is_active = bool(
             p.last_active
-            and (timezone.now() - p.last_active).total_seconds() < 1800
+            and (timezone.now() - p.last_active).total_seconds() < 15 * 60
         )
         photo = p.photos.filter(is_main=True).first() or p.photos.first()
         avatar = ''
@@ -2524,6 +2587,8 @@ def online_hosts_api(request):
             'is_host_ready': getattr(p, 'is_host_ready', True),
             'is_online': is_active,
             'is_busy': p.user_id in busy_user_ids,
+            'is_connected': p.user_id in connected_user_ids,
+            'last_seen': p.last_active.isoformat() if p.last_active else None,
             'response_rate': getattr(p, 'response_rate', 98),
             'total_calls': getattr(p, 'total_calls_completed', 0),
             'call_rate': site_config.call_rate_per_minute,
@@ -2575,6 +2640,11 @@ def quick_call_match_api(request):
                 'status': 'error',
                 'message': 'sex_call_profile_required',
             }, status=403)
+        requested_gender = data.get('preferred_gender')
+        if requested_gender not in ('M', 'F', 'E'):
+            requested_gender = caller_profile.preferred_gender or 'E'
+        if requested_gender not in ('M', 'F', 'E'):
+            requested_gender = 'E'
 
         active_quick_call = CallSession.objects.filter(
             Q(caller=request.user) | Q(receiver=request.user),
@@ -2608,17 +2678,12 @@ def quick_call_match_api(request):
         if not created and queue.last_ping_at < now - queue_ttl:
             queue.created_at = now
         queue.last_ping_at = now
-        queue.save(update_fields=('created_at', 'last_ping_at'))
+        queue.preferred_gender = requested_gender
+        queue.save(update_fields=('created_at', 'last_ping_at', 'preferred_gender'))
         caller_profile.last_active = now
         caller_profile.save(update_fields=('last_active',))
 
-        busy_user_ids = set(
-            CallSession.objects.filter(status__in=('ringing', 'connected', 'active'))
-            .values_list('caller_id', flat=True)
-        ) | set(
-            CallSession.objects.filter(status__in=('ringing', 'connected', 'active'))
-            .values_list('receiver_id', flat=True)
-        )
+        busy_user_ids = _active_call_user_ids(now)
         waiting = list(
             SexCallQueue.objects.filter(
                 last_ping_at__gte=now - queue_ttl,
@@ -2637,9 +2702,14 @@ def quick_call_match_api(request):
         chosen_queue = None
         for candidate_queue in waiting:
             candidate_profile = candidate_queue.user.profile
+            candidate_preference = (
+                candidate_queue.preferred_gender
+                or candidate_profile.preferred_gender
+                or 'E'
+            )
             mutually_preferred = (
-                caller_profile.preferred_gender == candidate_profile.gender
-                and candidate_profile.preferred_gender == caller_profile.gender
+                requested_gender in ('E', candidate_profile.gender)
+                and candidate_preference in ('E', caller_profile.gender)
             )
             flexible_search = (
                 now - queue.created_at >= flexible_after
@@ -2691,6 +2761,7 @@ def quick_call_match_api(request):
             status='connected',
             started_at=now,
             connected_at=now,
+            last_heartbeat_at=now,
         )
         deposit = (
             min(caller_profile.coin_balance, call.rate_per_minute)
@@ -3675,6 +3746,7 @@ def login_view(request):
     return render(request, 'registration/login.html', {
         'form': form,
         'next': request.GET.get('next', ''),
+        'welcome_message': request.GET.get('welcome') == '1',
         'suspension_notice': request.session.pop(
             'live_call_suspension_notice',
             '',
@@ -3883,23 +3955,16 @@ def sex_call_hosts_api(request):
     """
     current_profile = Profile.objects.filter(user=request.user).first()
     tab = request.GET.get('tab', 'hot').lower()
-    online_since = timezone.now() - timedelta(minutes=30)
+    online_since = timezone.now() - timedelta(minutes=15)
+    recently_active_since = timezone.now() - timedelta(days=30)
     base_qs = _exclude_test_profiles(
         Profile.objects.filter(
             user__is_active=True,
             relationship_mode='SEX_CALL',
-            last_active__gte=online_since,
+            last_active__gte=recently_active_since,
         ).exclude(user=request.user)
     )
-    busy_user_ids = set(
-        CallSession.objects.filter(
-            status__in=('ringing', 'connected', 'active'),
-        ).values_list('caller_id', flat=True)
-    ) | set(
-        CallSession.objects.filter(
-            status__in=('ringing', 'connected', 'active'),
-        ).values_list('receiver_id', flat=True)
-    )
+    busy_user_ids = _active_call_user_ids()
     hosts_list = list(
         base_qs.select_related('user').prefetch_related('photos')
         .order_by('-is_host_ready', '-last_active')
@@ -3912,9 +3977,23 @@ def sex_call_hosts_api(request):
         except Exception:
             pass
     else:
-        hosts_list.sort(key=lambda h: (not getattr(h, 'is_host_ready', True), -(h.last_active.timestamp() if h.last_active else 0)))
+        hosts_list.sort(key=lambda h: (
+            not bool(h.last_active and h.last_active >= online_since),
+            not getattr(h, 'is_host_ready', True),
+            -(h.last_active.timestamp() if h.last_active else 0),
+        ))
 
     site_config = SiteConfiguration.get_solo()
+    host_user_ids = [host.user_id for host in hosts_list]
+    active_matches = Match.objects.filter(
+        Q(user1=request.user, user2_id__in=host_user_ids)
+        | Q(user2=request.user, user1_id__in=host_user_ids),
+        expires_at__gt=timezone.now(),
+    ).values_list('user1_id', 'user2_id')
+    connected_user_ids = {
+        second_id if first_id == request.user.pk else first_id
+        for first_id, second_id in active_matches
+    }
     data = []
     for h in hosts_list:
         payload = _profile_payload(h)
@@ -3925,8 +4004,10 @@ def sex_call_hosts_api(request):
             'age': h.age or 22,
             'location': loc,
             'avatar_url': payload['image_url'],
-            'is_online': h.last_active >= online_since,
+            'is_online': bool(h.last_active and h.last_active >= online_since),
+            'last_seen': h.last_active.isoformat() if h.last_active else None,
             'is_busy': h.user_id in busy_user_ids,
+            'is_connected': h.user_id in connected_user_ids,
             'rate_per_minute': site_config.call_rate_per_minute,
             'is_verified': h.is_verified,
             'is_vip': h.is_vip,
@@ -4168,6 +4249,10 @@ def hookup_discovery_view(request):
                 first_name
                 if first_name and first_name.casefold() != 'member'
                 else candidate.user.username
+            )
+            candidate.is_online = bool(
+                candidate.last_active
+                and now - candidate.last_active < timedelta(minutes=15)
             )
     else:
         available_candidates = []
