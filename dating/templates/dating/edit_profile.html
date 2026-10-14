@@ -71,14 +71,25 @@
                 {{ form.gender }}
             </div>
             <div class="grid grid-cols-1 gap-3">
+                {% if profile.relationship_mode != 'SEX_CALL' %}
                 <div class="form-group"><label for="{{ form.location.id_for_label }}">City / Home</label>{{ form.location }}</div>
+                {% endif %}
+                {% if profile.relationship_mode == 'DATING' %}
                 <div class="form-group"><label for="{{ form.job_title.id_for_label }}">Job / Industry</label>{{ form.job_title }}</div>
+                {% endif %}
             </div>
             <div class="form-group">
                 <div class="mb-2 flex items-center justify-between"><label for="{{ form.bio.id_for_label }}">The vibe</label><span id="bio-count" class="text-xs text-slate-500">0 / 200</span></div>
                 {{ form.bio }}
             </div>
+            {% if profile.relationship_mode == 'DATING' %}
             <div class="form-group"><label for="{{ form.first_date_idea.id_for_label }}">Ideal first date</label>{{ form.first_date_idea }}</div>
+            {% endif %}
+            {% if verification_photo_count < 4 %}
+            <p class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                Upload {{ verification_photos_needed }} more gallery photo(s) to become eligible for profile verification.
+            </p>
+            {% endif %}
         </section>
 
         <section role="tabpanel" id="panel-interests" aria-labelledby="tab-interests" data-panel="interests" class="edit-panel soft-card hidden space-y-4 rounded-3xl p-4">
@@ -110,26 +121,9 @@
                 <label>Age range</label>
                 <div class="flex items-center gap-2">{{ form.min_age_pref }}<span class="text-slate-400">to</span>{{ form.max_age_pref }}</div>
             </div>
+            {% if profile.relationship_mode != 'SEX_CALL' %}
             <div class="form-group"><label for="{{ form.max_distance_km.id_for_label }}">Maximum distance (km)</label>{{ form.max_distance_km }}</div>
-            <div class="rounded-2xl border border-rose-100 bg-white p-4">
-                <h3 class="text-sm font-semibold text-slate-900">Precise location</h3>
-                <p class="mt-1 text-xs text-slate-500">Use your device location to improve nearby discovery.</p>
-                <div class="mt-3 grid grid-cols-2 gap-3">
-                    <div class="form-group">
-                        <label for="{{ form.latitude.id_for_label }}">Latitude (decimal degrees)</label>
-                        {{ form.latitude }}
-                    </div>
-                    <div class="form-group">
-                        <label for="{{ form.longitude.id_for_label }}">Longitude (decimal degrees)</label>
-                        {{ form.longitude }}
-                    </div>
-                </div>
-                <button type="button" id="use-current-location" class="mt-3 min-h-11 w-full rounded-xl border border-pink-200 bg-pink-50 px-4 py-2 text-sm font-semibold text-pink-700">
-                    Use current GPS location
-                </button>
-                <p id="location-status" class="mt-2 text-xs text-slate-500" role="status" aria-live="polite"></p>
-            </div>
-
+            {% endif %}
             <div class="rounded-2xl border border-rose-100 bg-white p-4">
                 <label class="flex items-start gap-3 cursor-pointer">
                     <div class="pt-0.5">
@@ -330,27 +324,6 @@
     });
     const saveToast = document.getElementById('save-toast');
     if (saveToast) window.setTimeout(() => saveToast.remove(), 4000);
-
-    const locationButton = document.getElementById('use-current-location');
-    const locationStatus = document.getElementById('location-status');
-    locationButton.addEventListener('click', () => {
-        if (!navigator.geolocation) {
-            locationStatus.textContent = 'Location is not available in this browser.';
-            return;
-        }
-        locationStatus.textContent = 'Getting your location...';
-        navigator.geolocation.getCurrentPosition(
-            ({ coords }) => {
-                document.getElementById('id_latitude').value = coords.latitude.toFixed(6);
-                document.getElementById('id_longitude').value = coords.longitude.toFixed(6);
-                locationStatus.textContent = 'Location updated. Save your profile to apply it.';
-            },
-            () => {
-                locationStatus.textContent = 'Unable to get your location. Check browser permissions and try again.';
-            },
-            { enableHighAccuracy: true, timeout: 10000 }
-        );
-    });
 
     function handleMediaClick(el) {
         document.getElementById('actions-existing').classList.remove('hidden');

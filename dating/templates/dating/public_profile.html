@@ -224,12 +224,13 @@
         <!-- Row 2: Full-Bleed INSTANT VIDEO CALL Bar -->
         <button type="button"
                 id="instant-call-btn"
+                {% if is_busy %}disabled{% endif %}
                 onclick="startDirectCall({{ profile.user.id }}, '{{ profile.user.username }}')"
-                class="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 via-rose-500 to-pink-600 py-4 text-white font-black text-sm uppercase tracking-wider shadow-2xl shadow-rose-500/40 border-2 border-white/20 active:scale-95 hover:scale-[1.01] transition"
-                title="Instant Video Call">
+                class="w-full flex items-center justify-center gap-2 rounded-2xl {% if is_busy %}bg-slate-500 cursor-not-allowed{% else %}bg-gradient-to-r from-orange-500 via-rose-500 to-pink-600 active:scale-95 hover:scale-[1.01]{% endif %} py-4 text-white font-black text-sm uppercase tracking-wider shadow-2xl shadow-rose-500/40 border-2 border-white/20 transition"
+                title="{% if is_busy %}This member is busy on a call{% else %}Instant Video Call{% endif %}">
             <span class="text-xl">📹</span>
-            <span>Instant Video Call</span>
-            <span class="rounded-full bg-black/40 px-2.5 py-0.5 text-xs text-amber-300 font-black">&#x1FA99; {{ rate_per_minute }}/m</span>
+            <span>{% if is_busy %}Busy on a call{% else %}Instant Video Call{% endif %}</span>
+            {% if not is_busy %}<span class="rounded-full bg-black/40 px-2.5 py-0.5 text-xs text-amber-300 font-black">&#x1FA99; {{ rate_per_minute }}/m</span>{% endif %}
         </button>
     </div>
 

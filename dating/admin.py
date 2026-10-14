@@ -61,6 +61,14 @@ class ProfileAdminForm(forms.ModelForm):
                 required=False,
             )
 
+    def clean_is_verified(self):
+        is_verified = self.cleaned_data.get('is_verified')
+        if is_verified and not self.instance.is_verification_eligible:
+            raise forms.ValidationError(
+                'At least four gallery photos are required before this profile can be verified.'
+            )
+        return is_verified
+
 
 # Register Tag model
 @admin.register(Tag)

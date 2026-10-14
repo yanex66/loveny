@@ -119,21 +119,14 @@ class LoginForm(forms.Form):
         return self.user_cache
 
 
-LOCATION_CHOICES = [
-    ('', 'Select your location'),
-    ('Abia', 'Abia'), ('Abuja', 'Abuja (FCT)'), ('Adamawa', 'Adamawa'), 
-    ('Akwa Ibom', 'Akwa Ibom'), ('Anambra', 'Anambra'), ('Bauchi', 'Bauchi'), 
-    ('Bayelsa', 'Bayelsa'), ('Benue', 'Benue'), ('Borno', 'Borno'), 
-    ('Cross River', 'Cross River'), ('Delta', 'Delta'), ('Ebonyi', 'Ebonyi'), 
-    ('Edo', 'Edo'), ('Ekiti', 'Ekiti'), ('Enugu', 'Enugu'), ('Gombe', 'Gombe'), 
-    ('Imo', 'Imo'), ('Jigawa', 'Jigawa'), ('Kaduna', 'Kaduna'), ('Kano', 'Kano'), 
-    ('Katsina', 'Katsina'), ('Kebbi', 'Kebbi'), ('Kogi', 'Kogi'), ('Kwara', 'Kwara'), 
-    ('Lagos', 'Lagos'), ('Nasarawa', 'Nasarawa'), ('Niger', 'Niger'), 
-    ('Ogun', 'Ogun'), ('Ondo', 'Ondo'), ('Osun', 'Osun'), ('Oyo', 'Oyo'), 
-    ('Plateau', 'Plateau'), ('Rivers', 'Rivers'), ('Sokoto', 'Sokoto'), 
-    ('Taraba', 'Taraba'), ('Yobe', 'Yobe'), ('Zamfara', 'Zamfara'),
-    ('Outside Nigeria', 'Outside Nigeria (International)'),
-]
+class MultipleFileField(forms.FileField):
+    def clean(self, data, initial=None):
+        if data in self.empty_values:
+            return []
+        files = data if isinstance(data, (list, tuple)) else [data]
+        clean_file = super().clean
+        return [clean_file(uploaded_file) for uploaded_file in files]
+
 
 class ProfileForm(forms.ModelForm):
     """
@@ -141,9 +134,9 @@ class ProfileForm(forms.ModelForm):
     """
     name = forms.CharField(max_length=150, required=False, label='Name')
     photo = forms.ImageField(required=False, label="Main Profile Picture")
-    age = forms.IntegerField(min_value=18, max_value=120, required=True)
-    min_age_pref = forms.IntegerField(min_value=18, max_value=120, required=False, initial=18)
-    max_age_pref = forms.IntegerField(min_value=18, max_value=120, required=False, initial=50)
+    age = forms.IntegerField(min_value=18, max_value=99, required=True)
+    min_age_pref = forms.IntegerField(min_value=18, max_value=99, required=False, initial=18)
+    max_age_pref = forms.IntegerField(min_value=18, max_value=99, required=False, initial=50)
     max_distance_km = forms.IntegerField(min_value=1, max_value=500, required=False, initial=100)
     latitude = forms.DecimalField(
         max_digits=9,
@@ -172,11 +165,15 @@ class ProfileForm(forms.ModelForm):
         }),
     )
     
-    location = forms.ChoiceField(
-        choices=LOCATION_CHOICES,
+    location = forms.CharField(
+        max_length=100,
         required=False,
-        label='Location (State / Country)',
-        widget=forms.Select(attrs={'class': 'form-input'}),
+        label='City / Location',
+        widget=forms.TextInput(attrs={
+            'class': 'form-input',
+            'autocomplete': 'address-level2',
+            'placeholder': 'Enter your city or state',
+        }),
     )
     gender = forms.ChoiceField(
         choices=GENDER_CHOICES,
@@ -192,7 +189,7 @@ class ProfileForm(forms.ModelForm):
     )
     
     # FIXED: Using our Custom Widget to bypass the 'multiple' ValueError
-    more_photos = forms.FileField(
+    more_photos = MultipleFileField(
         widget=MultipleFileInput(attrs={
             'multiple': True, 
             'class': 'form-input'
@@ -211,8 +208,6 @@ class ProfileForm(forms.ModelForm):
             'max_age_pref',
             'location', 
             'max_distance_km',
-            'latitude',
-            'longitude',
             'job_title', 
             'bio', 
             'first_date_idea', 
@@ -221,29 +216,12 @@ class ProfileForm(forms.ModelForm):
         ]
         widgets = {
             # Enforce 18+ Rule in the UI
-            'age': forms.NumberInput(attrs={'min': '18', 'class': 'form-input'}),
-            'min_age_pref': forms.NumberInput(attrs={'min': '18', 'class': 'form-input'}),
-            'max_age_pref': forms.NumberInput(attrs={'min': '18', 'class': 'form-input'}),
+            'age': forms.NumberInput(attrs={'min': '18', 'max': '99', 'class': 'form-input'}),
+            'min_age_pref': forms.NumberInput(attrs={'min': '18', 'max': '99', 'class': 'form-input'}),
+            'max_age_pref': forms.NumberInput(attrs={'min': '18', 'max': '99', 'class': 'form-input'}),
             'max_distance_km': forms.NumberInput(attrs={'min': '1', 'max': '500', 'class': 'form-input'}),
             'bio': forms.Textarea(attrs={'rows': 3, 'maxlength': '200', 'class': 'form-input'}),
             'tags': forms.CheckboxSelectMultiple(),
-            'location': forms.Select(choices=[
-                ('', 'Select Location'),
-                ('Nigeria - Lagos', 'Nigeria - Lagos'),
-                ('Nigeria - Abuja', 'Nigeria - Abuja'),
-                ('Nigeria - Rivers', 'Nigeria - Rivers'),
-                ('Nigeria - Kano', 'Nigeria - Kano'),
-                ('Nigeria - Oyo', 'Nigeria - Oyo'),
-                ('Nigeria - Enugu', 'Nigeria - Enugu'),
-                ('United States', 'United States'),
-                ('United Kingdom', 'United Kingdom'),
-                ('Canada', 'Canada'),
-                ('Australia', 'Australia'),
-                ('South Africa', 'South Africa'),
-                ('Kenya', 'Kenya'),
-                ('Ghana', 'Ghana'),
-                ('Other', 'Other'),
-            ], attrs={'class': 'form-input'}),
             'is_dnd': forms.CheckboxInput(attrs={'class': 'form-checkbox h-5 w-5 text-pink-600 rounded focus:ring-pink-500'}),
         }
         labels = {
@@ -254,6 +232,23 @@ class ProfileForm(forms.ModelForm):
             'max_distance_km': 'Maximum distance (km)',
             'is_dnd': 'Do Not Disturb (DND)',
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        mode = (
+            self.data.get('relationship_mode')
+            or self.initial.get('relationship_mode')
+            or getattr(self.instance, 'relationship_mode', 'DATING')
+        )
+        mode = str(mode).upper()
+        self.fields.pop('latitude', None)
+        self.fields.pop('longitude', None)
+        if mode != 'DATING':
+            self.fields.pop('job_title', None)
+            self.fields.pop('first_date_idea', None)
+        if mode == 'SEX_CALL':
+            self.fields.pop('location', None)
+            self.fields.pop('max_distance_km', None)
 
     def clean_name(self):
         val = (self.cleaned_data.get('name') or '').strip()

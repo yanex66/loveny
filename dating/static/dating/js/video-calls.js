@@ -19,12 +19,13 @@
     const callHudCoins = document.getElementById('call-hud-coins');
     const callHudDiamondsWrapper = document.getElementById('call-hud-diamonds-wrapper');
     const callHudDiamonds = document.getElementById('call-hud-diamonds');
-    const callQuickAddCoins = document.getElementById('call-quick-add-coins');
     const callLowCoinsBanner = document.getElementById('call-low-coins-banner');
     const callBannerTopupBtn = document.getElementById('call-banner-topup-btn');
     const callGiftOverlay = document.getElementById('call-gift-overlay');
     const callGiftDrawer = document.getElementById('call-gift-drawer');
+    const closeCallGiftDrawer = document.getElementById('close-call-gift-drawer');
     const toggleGiftsBtn = document.getElementById('toggle-gifts');
+    const callHudFollowBtn = document.getElementById('call-hud-follow-btn');
 
     // Elements - Picture-in-Picture (PiP)
     const callMinimizeBtn = document.getElementById('call-minimize-btn');
@@ -712,6 +713,11 @@
             exitPipMode();
         }
         if (feedback) feedback.textContent = message;
+        if (callHudFollowBtn) {
+            callHudFollowBtn.disabled = false;
+            document.getElementById('call-hud-follow-icon').textContent = '+';
+            document.getElementById('call-hud-follow-label').textContent = 'Follow';
+        }
         updateWalletUI();
         if (callTimerDisplay) callTimerDisplay.textContent = '00:00';
         if (pipTimerDisplay) pipTimerDisplay.textContent = '00:00';
@@ -1026,7 +1032,7 @@
     }
 
     async function initiateCall(receiverId) {
-        if (!window.CallSpeechMonitor?.requestConsent()) return;
+        if (!window.CallSpeechMonitor || !(await window.CallSpeechMonitor.requestConsent())) return;
         try {
             const response = await api(config.dataset.initiateUrl, {
                 method: 'POST',
@@ -1068,7 +1074,9 @@
     async function respondToCall(action) {
         const roomId = incomingRoomId;
         if (!roomId) return;
-        if (action === 'accept' && !window.CallSpeechMonitor?.requestConsent()) {
+        if (action === 'accept' && (
+            !window.CallSpeechMonitor || !(await window.CallSpeechMonitor.requestConsent())
+        )) {
             hideIncoming();
             try {
                 await api(`${apiPrefix}${roomId}/respond/`, {
@@ -1143,14 +1151,23 @@
     });
 
     const muteCallBtn = document.getElementById('mute-call');
+    const setControlIcon = (button, paths) => {
+        if (!button) return;
+        button.innerHTML = `<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">${paths}</svg>`;
+    };
+    const micIcon = '<path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1m7 8v4m-4 0h8"/>';
+    const mutedMicIcon = `${micIcon}<path d="m3 3 18 18"/>`;
+    const cameraIcon = '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3z"/>';
+    const cameraOffIcon = `${cameraIcon}<path d="m3 3 18 18"/>`;
     if (muteCallBtn) muteCallBtn.addEventListener('click', event => {
         if (!localStream) return;
         const enabled = localStream.getAudioTracks().some(track => track.enabled);
         localStream.getAudioTracks().forEach(track => { track.enabled = !enabled; });
         if (enabled) window.CallSpeechMonitor?.pause();
         else window.CallSpeechMonitor?.resume();
-        event.currentTarget.textContent = enabled ? 'Unmute' : 'Mute';
+        setControlIcon(event.currentTarget, enabled ? mutedMicIcon : micIcon);
         event.currentTarget.setAttribute('aria-label', enabled ? 'Unmute audio' : 'Mute audio');
+        event.currentTarget.setAttribute('title', enabled ? 'Unmute audio' : 'Mute audio');
     });
 
     const toggleCamBtn = document.getElementById('toggle-camera');
@@ -1158,8 +1175,9 @@
         if (!localStream) return;
         const enabled = localStream.getVideoTracks().some(track => track.enabled);
         localStream.getVideoTracks().forEach(track => { track.enabled = !enabled; });
-        event.currentTarget.textContent = enabled ? 'Cam off' : 'Cam';
+        setControlIcon(event.currentTarget, enabled ? cameraOffIcon : cameraIcon);
         event.currentTarget.setAttribute('aria-label', enabled ? 'Turn camera on' : 'Turn camera off');
+        event.currentTarget.setAttribute('title', enabled ? 'Turn camera on' : 'Turn camera off');
     });
 
     const flipCamBtn = document.getElementById('flip-camera');
@@ -1192,6 +1210,9 @@
             if (!callGiftDrawer) return;
             callGiftDrawer.classList.toggle('hidden');
         });
+    }
+    if (closeCallGiftDrawer) {
+        closeCallGiftDrawer.addEventListener('click', () => callGiftDrawer?.classList.add('hidden'));
     }
 
     // Dynamic gifts loading from server
@@ -1288,8 +1309,25 @@
     // Coin Store Buttons
     if (openCoinStoreBtn) openCoinStoreBtn.addEventListener('click', openCoinStore);
     if (closeCoinStoreBtn) closeCoinStoreBtn.addEventListener('click', closeCoinStore);
-    if (callQuickAddCoins) callQuickAddCoins.addEventListener('click', openCoinStore);
     if (callBannerTopupBtn) callBannerTopupBtn.addEventListener('click', openCoinStore);
+
+    if (callHudFollowBtn) {
+        callHudFollowBtn.addEventListener('click', async () => {
+            if (!activeCall) return;
+            const targetId = Number(activeCall.caller_id) === Number(config.dataset.userId)
+                ? activeCall.receiver_id
+                : activeCall.caller_id;
+            callHudFollowBtn.disabled = true;
+            try {
+                await api(`/api/connect/${targetId}/`, {method: 'POST'});
+                document.getElementById('call-hud-follow-icon').textContent = '♥';
+                document.getElementById('call-hud-follow-label').textContent = 'Connected';
+            } catch (error) {
+                toast(error.message || 'Could not connect with this member.');
+                callHudFollowBtn.disabled = false;
+            }
+        });
+    }
 
     // Incoming Call Checker
     async function checkIncomingCalls() {

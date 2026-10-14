@@ -136,21 +136,48 @@
         supported: Boolean(SpeechRecognition),
 
         requestConsent() {
-            if (!SpeechRecognition) {
-                window.alert(
-                    'Live-call speech monitoring is not supported by this browser. ' +
-                    'Use a supported browser to start a monitored video call.',
-                );
-                return false;
-            }
-            return window.confirm(
-                'Live-call speech monitoring is active. Your browser speech-recognition ' +
-                'provider may process microphone audio outside LOVENY. LOVENY does not ' +
-                'record call audio or retain full transcripts. A short detected excerpt ' +
-                'is checked for contact-sharing and is not kept in the moderation report. ' +
-                'A likely attempt ends the call and immediately suspends the account ' +
-                'pending admin review. Continue?',
-            );
+            return new Promise(resolve => {
+                const overlay = document.createElement('div');
+                overlay.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/70 p-5 backdrop-blur-sm';
+                overlay.setAttribute('role', 'presentation');
+                const supported = Boolean(SpeechRecognition);
+                overlay.innerHTML = `
+                    <section role="dialog" aria-modal="true" aria-labelledby="call-monitor-title"
+                        class="w-full max-w-sm rounded-3xl border border-pink-200/20 bg-slate-900 p-5 text-white shadow-2xl">
+                        <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-pink-500/15 text-pink-300" aria-hidden="true">
+                            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                                <path d="M19 10v1a7 7 0 0 1-14 0v-1m7 8v4m-4 0h8"/>
+                            </svg>
+                        </div>
+                        <h2 id="call-monitor-title" class="text-lg font-black">${supported ? 'A quick note before your call' : 'Call monitoring unavailable'}</h2>
+                        <p class="mt-2 text-sm leading-relaxed text-slate-300">${
+                            supported
+                                ? 'Live-call monitoring checks for attempts to share contact details. Your browser’s speech recognition provider may process audio; LOVENY does not record calls or keep full transcripts. Detected contact sharing can end the call and suspend the account for review.'
+                                : 'This browser does not support the speech monitoring required for live calls. Try a supported browser to continue.'
+                        }</p>
+                        <div class="mt-5 flex gap-3">
+                            <button type="button" data-consent="no" class="flex-1 rounded-xl border border-white/15 px-3 py-3 text-sm font-bold text-slate-200 hover:bg-white/10">${supported ? 'Not now' : 'Close'}</button>
+                            ${supported ? '<button type="button" data-consent="yes" class="flex-1 rounded-xl bg-gradient-to-r from-pink-600 to-violet-600 px-3 py-3 text-sm font-black text-white hover:brightness-110">I agree &amp; continue</button>' : ''}
+                        </div>
+                    </section>`;
+                const onKeydown = event => {
+                    if (event.key === 'Escape') finish(false);
+                };
+                const finish = accepted => {
+                    overlay.remove();
+                    document.removeEventListener('keydown', onKeydown);
+                    resolve(accepted);
+                };
+                overlay.querySelector('[data-consent="no"]').addEventListener('click', () => finish(false));
+                overlay.querySelector('[data-consent="yes"]')?.addEventListener('click', () => finish(true));
+                overlay.addEventListener('click', event => {
+                    if (event.target === overlay) finish(false);
+                });
+                document.addEventListener('keydown', onKeydown);
+                document.body.appendChild(overlay);
+                overlay.querySelector('[data-consent="yes"], [data-consent="no"]').focus();
+            });
         },
 
         async start(activeCallId, token, callbacks = {}) {

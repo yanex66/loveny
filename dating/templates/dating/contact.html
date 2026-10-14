@@ -1,9 +1,11 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}LOVENY - Support{% endblock %}
 
 {% block content %}
-<div class="min-h-screen bg-gray-900 font-sans pb-24 px-6 py-12 flex flex-col items-center justify-center text-center">
+<div class="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-rose-950 font-sans pb-24 px-6 py-12 flex flex-col items-center justify-center text-center">
+    <img src="{% static 'dating/images/loveny-logo.png' %}" alt="LOVENY" class="mb-8 h-14 w-auto rounded-xl bg-white/90 px-2 object-contain">
     <div class="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mb-6 border-2 border-pink-500">
         <svg class="w-10 h-10 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h8M8 14h5m-8 6 2.5-3H18a3 3 0 0 0 3-3V6a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v14z"/>

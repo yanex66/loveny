@@ -499,7 +499,7 @@
 
                 <div class="relative">
                     <img id="call-remote-host-avatar" src="{% static 'dating/images/profile-placeholder.svg' %}" alt="" class="h-11 w-11 rounded-full border-2 border-pink-400 object-cover shadow-lg bg-slate-800">
-                    <span class="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-400 ring-2 ring-black animate-pulse"></span>
+                    <span class="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-amber-400 ring-2 ring-black" aria-label="Busy on a call"></span>
                 </div>
                 <div>
                     <div class="flex items-center gap-2">
@@ -538,9 +538,6 @@
                     <span>💎</span>
                     <span id="call-hud-diamonds">0</span>
                 </div>
-                <button type="button" id="call-quick-add-coins" class="rounded-full bg-gradient-to-r from-amber-500 to-yellow-300 px-3 py-1 text-xs font-black text-slate-950 shadow-lg shadow-amber-500/30 hover:scale-105 active:scale-95 transition" aria-label="Add Coins">
-                    + Add
-                </button>
             </div>
         </div>
 
@@ -554,7 +551,7 @@
         <!-- Call Status Feedback -->
         <p id="call-feedback" class="pip-hidden-in-pip absolute left-1/2 top-24 z-10 -translate-x-1/2 rounded-full bg-black/60 px-4 py-1.5 text-center text-xs font-semibold backdrop-blur-md max-w-[80vw]" role="status" aria-live="polite"></p>
         <p class="pip-hidden-in-pip absolute inset-x-4 top-36 z-10 mx-auto max-w-xl rounded-xl border border-amber-300/40 bg-black/75 px-3 py-2 text-center text-[10px] leading-relaxed text-amber-100 backdrop-blur-md">
-            Speech monitoring is active. Your browser’s recognition provider may process audio. LOVENY does not record calls or retain full transcripts. Suspected contact sharing ends the call and suspends the account pending admin review.
+            Speech monitoring is active for call-safety checks.
         </p>
 
         <!-- Floating Gift Celebration Overlay -->
@@ -579,7 +576,10 @@
             <div class="mx-auto max-w-sm rounded-3xl border border-white/20 bg-slate-950/90 p-4 shadow-2xl backdrop-blur-2xl">
                 <div class="flex items-center justify-between pb-2 border-b border-white/10">
                     <span class="text-xs font-black uppercase tracking-wider text-pink-300">Send In-Call Gift 🎁</span>
-                    <span class="text-[11px] text-white/60">Host earns {{ site_config.host_commission_percentage|default:70 }}% 💎</span>
+                    <div class="flex items-center gap-3">
+                        <span class="text-[11px] text-white/60">Host earns {{ site_config.host_commission_percentage|default:70 }}% 💎</span>
+                        <button type="button" id="close-call-gift-drawer" class="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-xl text-white hover:bg-white/20" aria-label="Close gift panel">&times;</button>
+                    </div>
                 </div>
                 <div id="gifts-grid-container" class="grid grid-cols-4 sm:grid-cols-5 gap-2 pt-3">
                     <button type="button" class="gift-btn flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/10 p-2 transition hover:bg-pink-500/30 hover:scale-105 active:scale-95" data-gift-type="rose" data-cost="5">
@@ -614,9 +614,15 @@
         <!-- Bottom Controls Bar -->
         <div class="pip-hidden-in-pip absolute inset-x-0 bottom-12 z-20 flex justify-center pb-[max(1.5rem,env(safe-area-inset-bottom))] pointer-events-auto">
             <div class="flex items-center gap-3 rounded-full border border-white/20 bg-slate-950/80 px-4 py-2.5 shadow-2xl backdrop-blur-xl">
-                <button type="button" id="mute-call" aria-label="Mute audio" class="h-11 w-11 rounded-full bg-white/15 text-xs font-semibold text-white transition hover:bg-white/25">Mute</button>
-                <button type="button" id="toggle-camera" aria-label="Turn camera off" class="h-11 w-11 rounded-full bg-white/15 text-xs font-semibold text-white transition hover:bg-white/25">Cam</button>
-                <button type="button" id="flip-camera" aria-label="Flip camera" class="h-11 w-11 rounded-full bg-white/15 text-xs font-semibold text-white transition hover:bg-white/25">Flip</button>
+                <button type="button" id="mute-call" aria-label="Mute audio" title="Mute audio" class="h-11 w-11 rounded-full bg-white/15 text-white transition hover:bg-white/25">
+                    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1m7 8v4m-4 0h8"/></svg>
+                </button>
+                <button type="button" id="toggle-camera" aria-label="Turn camera off" title="Turn camera off" class="h-11 w-11 rounded-full bg-white/15 text-white transition hover:bg-white/25">
+                    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3z"/></svg>
+                </button>
+                <button type="button" id="flip-camera" aria-label="Flip camera" title="Flip camera" class="h-11 w-11 rounded-full bg-white/15 text-white transition hover:bg-white/25">
+                    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 7h-7l2-2m-2 2 2 2M4 17h7l-2 2m2-2-2-2"/></svg>
+                </button>
                 <button type="button" id="toggle-gifts" aria-label="Send gift" class="h-12 w-12 rounded-full bg-gradient-to-tr from-pink-600 via-rose-500 to-amber-400 text-xl font-bold text-white shadow-xl shadow-pink-500/40 transition hover:scale-110 active:scale-95">🎁</button>
                 <button type="button" id="end-call" aria-label="End call" class="h-11 w-11 rounded-full bg-red-600 text-xs font-black uppercase text-white shadow-lg shadow-red-600/40 transition hover:bg-red-700">End</button>
             </div>

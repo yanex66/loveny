@@ -137,6 +137,14 @@ class Profile(models.Model):
         return self.coin_balance >= config.min_coins_for_video_call
 
     @property
+    def verification_photo_count(self):
+        return sum(1 for photo in self.photos.all() if not photo.is_video)
+
+    @property
+    def is_verification_eligible(self):
+        return self.verification_photo_count >= 4
+
+    @property
     def has_unlocked_mode_switching(self):
         return bool(self.has_paid_mode_switch_fee)
 

@@ -399,6 +399,10 @@ def public_profile(request, pk):
         (Q(user1=request.user, user2=profile.user) | Q(user2=request.user, user1=profile.user)),
         expires_at__gt=timezone.now()
     ).exists()
+    is_busy = CallSession.objects.filter(
+        Q(caller=profile.user) | Q(receiver=profile.user),
+        status__in=('ringing', 'connected', 'active'),
+    ).exists()
 
     return render(request, 'dating/public_profile.html', {
         'profile': profile, 
@@ -414,6 +418,7 @@ def public_profile(request, pk):
         'languages': languages,
         'gifts_showcase': gifts_showcase,
         'is_matched': is_matched,
+        'is_busy': is_busy,
         'response_status': '⚡ Fast Pickup' if (profile.user.id % 2 == 0) else '🟢 Available Now',
         'is_online': profile.last_active >= timezone.now() - timedelta(minutes=15),
     })
@@ -544,7 +549,7 @@ def edit_profile(request):
             if single_photo and single_photo not in more_photos:
                 more_photos.append(single_photo)
 
-            media_limit = 9
+            media_limit = 14
             remaining_slots = max(0, media_limit - profile.photos.count())
             if len(more_photos) > remaining_slots:
                 form.add_error('more_photos', f'You can add up to {remaining_slots} more media file(s). Maximum total is {media_limit}.')
@@ -582,7 +587,9 @@ def edit_profile(request):
         'profile': profile,
         'existing_photos': existing_photos,
         'current_count': profile.photos.count(),
-        'media_limit': 9,
+        'verification_photo_count': profile.verification_photo_count,
+        'verification_photos_needed': max(0, 4 - profile.verification_photo_count),
+        'media_limit': 14,
     })
 
 # --- ACTION: Swiping ---
@@ -818,10 +825,12 @@ def messages_inbox(request):
                 last_preview = f"🎁 Sent a gift: {last_msg.text}"
             elif last_msg.message_type == 'sticker':
                 last_preview = "Sent a sticker"
+            elif last_msg.message_type == 'image':
+                last_preview = last_msg.text or 'Sent a photo'
             else:
-                last_preview = last_msg.text
+                last_preview = last_msg.text[:100]
         else:
-            last_preview = "Tap to open chat..."
+            last_preview = "No messages yet. Say hello!"
 
         is_online = (
             other_profile.is_host_ready or (
@@ -1418,12 +1427,30 @@ def call_initiate_api(request):
         if not (caller_is_sex_call or receiver_is_sex_call):
             return JsonResponse({'status': 'error', 'message': 'active_sex_call_match_required'}, status=403)
 
-    call = CallSession.objects.create(
-        caller=request.user,
-        receiver=receiver,
-        status='ringing',
-        rate_per_minute=min_coins,
-    )
+    with transaction.atomic():
+        list(
+            User.objects.select_for_update()
+            .filter(pk__in=(request.user.pk, receiver.pk))
+            .order_by('pk')
+        )
+        existing_call = CallSession.objects.filter(
+            status__in=('ringing', 'connected', 'active'),
+        ).filter(
+            Q(caller_id__in=(request.user.pk, receiver.pk))
+            | Q(receiver_id__in=(request.user.pk, receiver.pk))
+        ).exists()
+        if existing_call:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'user_busy',
+                'detail': 'You or the selected member is already in a call.',
+            }, status=409)
+        call = CallSession.objects.create(
+            caller=request.user,
+            receiver=receiver,
+            status='ringing',
+            rate_per_minute=min_coins,
+        )
     return JsonResponse({
         'status': 'success',
         'room_id': str(call.room_id),
@@ -1477,6 +1504,25 @@ def call_respond_api(request, room_id):
             call.save(update_fields=['status', 'ended_at'])
             return JsonResponse({'status': 'error', 'message': 'call_missed_or_timeout'}, status=409)
         if action == 'accept':
+            list(
+                User.objects.select_for_update()
+                .filter(pk__in=(call.caller_id, call.receiver_id))
+                .order_by('pk')
+            )
+            competing_call = CallSession.objects.filter(
+                Q(caller_id__in=(call.caller_id, call.receiver_id))
+                | Q(receiver_id__in=(call.caller_id, call.receiver_id)),
+                status__in=('ringing', 'connected', 'active'),
+            ).exclude(pk=call.pk).exists()
+            if competing_call:
+                call.status = 'declined'
+                call.ended_at = timezone.now()
+                call.save(update_fields=['status', 'ended_at'])
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'user_busy',
+                    'detail': 'You or the caller is already in another call.',
+                }, status=409)
             caller_profile = Profile.objects.select_for_update().filter(user=call.caller).first()
             call_rate = call.rate_per_minute or SiteConfiguration.get_solo().call_rate_per_minute or 20
             if (
@@ -2443,6 +2489,15 @@ def online_hosts_api(request):
     hosts = list(base_qs.order_by('-is_host_ready', '-last_active')[:24])
 
     results = []
+    busy_user_ids = set(
+        CallSession.objects.filter(
+            status__in=('ringing', 'connected', 'active'),
+        ).values_list('caller_id', flat=True)
+    ) | set(
+        CallSession.objects.filter(
+            status__in=('ringing', 'connected', 'active'),
+        ).values_list('receiver_id', flat=True)
+    )
     for p in hosts:
         is_active = p.is_host_ready or (
             p.last_active
@@ -2468,6 +2523,7 @@ def online_hosts_api(request):
             'avatar': avatar,
             'is_host_ready': getattr(p, 'is_host_ready', True),
             'is_online': is_active,
+            'is_busy': p.user_id in busy_user_ids,
             'response_rate': getattr(p, 'response_rate', 98),
             'total_calls': getattr(p, 'total_calls_completed', 0),
             'call_rate': site_config.call_rate_per_minute,
@@ -2538,6 +2594,15 @@ def quick_call_match_api(request):
                     else active_quick_call.caller
                 ).username,
             })
+        if CallSession.objects.filter(
+            Q(caller=request.user) | Q(receiver=request.user),
+            status__in=('ringing', 'connected', 'active'),
+        ).exists():
+            return JsonResponse({
+                'status': 'error',
+                'message': 'user_busy',
+                'detail': 'End your current call before starting another search.',
+            }, status=409)
 
         queue, created = SexCallQueue.objects.get_or_create(user=request.user)
         if not created and queue.last_ping_at < now - queue_ttl:
@@ -2592,6 +2657,30 @@ def quick_call_match_api(request):
                     0,
                     int((flexible_after - (now - queue.created_at)).total_seconds()),
                 ),
+            })
+
+        locked_user_ids = list(
+            User.objects.select_for_update()
+            .filter(pk__in=(request.user.pk, chosen_queue.user_id))
+            .order_by('pk')
+            .values_list('pk', flat=True)
+        )
+        if len(locked_user_ids) != 2:
+            return JsonResponse({
+                'status': 'waiting',
+                'message': 'searching_for_match',
+                'flexible_after_seconds': 0,
+            })
+        if CallSession.objects.filter(
+            Q(caller_id__in=locked_user_ids)
+            | Q(receiver_id__in=locked_user_ids),
+            status__in=('ringing', 'connected', 'active'),
+        ).exists():
+            SexCallQueue.objects.filter(user_id=chosen_queue.user_id).delete()
+            return JsonResponse({
+                'status': 'waiting',
+                'message': 'searching_for_match',
+                'flexible_after_seconds': 0,
             })
 
         candidate_profile = chosen_queue.user.profile
@@ -3684,8 +3773,9 @@ def create_profile(request):
 def delete_account(request):
     if request.method == 'POST':
         user = request.user
+        with transaction.atomic():
+            user.delete()
         logout(request)
-        user.delete()
         return render(request, 'dating/account_deleted.html')
     return render(request, 'dating/confirm_delete.html')
 
@@ -3801,6 +3891,15 @@ def sex_call_hosts_api(request):
             last_active__gte=online_since,
         ).exclude(user=request.user)
     )
+    busy_user_ids = set(
+        CallSession.objects.filter(
+            status__in=('ringing', 'connected', 'active'),
+        ).values_list('caller_id', flat=True)
+    ) | set(
+        CallSession.objects.filter(
+            status__in=('ringing', 'connected', 'active'),
+        ).values_list('receiver_id', flat=True)
+    )
     hosts_list = list(
         base_qs.select_related('user').prefetch_related('photos')
         .order_by('-is_host_ready', '-last_active')
@@ -3827,6 +3926,7 @@ def sex_call_hosts_api(request):
             'location': loc,
             'avatar_url': payload['image_url'],
             'is_online': h.last_active >= online_since,
+            'is_busy': h.user_id in busy_user_ids,
             'rate_per_minute': site_config.call_rate_per_minute,
             'is_verified': h.is_verified,
             'is_vip': h.is_vip,

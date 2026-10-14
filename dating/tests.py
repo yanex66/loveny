@@ -18,9 +18,11 @@ from django.contrib import admin
 from django.db import connection
 from django.db.models import Q
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.core import mail
 from django.core.management import call_command
 from django.core.files.base import ContentFile
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -544,6 +546,127 @@ class DatingPlatformTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn('Choose up to five interests.', form.errors['tags'])
 
+    def test_profile_fields_and_age_limits_follow_connection_mode(self):
+        dating_form = ProfileForm(instance=self.alice_profile)
+        self.assertIn('first_date_idea', dating_form.fields)
+        self.assertIn('job_title', dating_form.fields)
+        self.assertIn('location', dating_form.fields)
+        self.assertNotIn('latitude', dating_form.fields)
+        self.assertNotIn('longitude', dating_form.fields)
+        self.assertEqual(dating_form.fields['age'].min_value, 18)
+        self.assertEqual(dating_form.fields['age'].max_value, 99)
+
+        for mode in ('HOOKUP', 'SEX_CALL'):
+            with self.subTest(mode=mode):
+                self.alice_profile.relationship_mode = mode
+                form = ProfileForm(instance=self.alice_profile)
+                self.assertNotIn('first_date_idea', form.fields)
+                self.assertNotIn('job_title', form.fields)
+                self.assertNotIn('latitude', form.fields)
+                self.assertNotIn('longitude', form.fields)
+                self.assertEqual('location' in form.fields, mode == 'HOOKUP')
+
+        invalid_age_form = ProfileForm(data={
+            'age': 100,
+            'gender': 'F',
+            'preferred_gender': 'M',
+        }, instance=self.alice_profile)
+        self.assertFalse(invalid_age_form.is_valid())
+        self.assertIn('age', invalid_age_form.errors)
+
+    def test_gallery_upload_accepts_multiple_files_and_caps_total_at_fourteen(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                self.client.force_login(self.alice)
+                for index in range(12):
+                    ProfilePhoto.objects.create(
+                        profile=self.alice_profile,
+                        user=self.alice,
+                        mode='DATING',
+                        image=f'gallery/existing-{index}.jpg',
+                    )
+                uploads = [
+                    SimpleUploadedFile(
+                        f'photo-{index}.jpg',
+                        b'photo-bytes',
+                        content_type='image/jpeg',
+                    )
+                    for index in range(2)
+                ]
+                response = self.client.post(reverse('edit_profile'), {
+                    'name': 'Alice',
+                    'age': 26,
+                    'gender': 'F',
+                    'preferred_gender': 'M',
+                    'min_age_pref': 18,
+                    'max_age_pref': 50,
+                    'max_distance_km': 100,
+                    'more_photos': uploads,
+                })
+                self.assertRedirects(response, f"{reverse('edit_profile')}?saved=1")
+                self.assertEqual(self.alice_profile.photos.count(), 14)
+                self.assertTrue(ProfileForm(instance=self.alice_profile).fields['more_photos'].widget.allow_multiple_selected)
+                over_limit = self.client.post(reverse('edit_profile'), {
+                    'name': 'Alice',
+                    'age': 26,
+                    'gender': 'F',
+                    'preferred_gender': 'M',
+                    'min_age_pref': 18,
+                    'max_age_pref': 50,
+                    'max_distance_km': 100,
+                    'more_photos': SimpleUploadedFile(
+                        'extra.jpg',
+                        b'extra-photo',
+                        content_type='image/jpeg',
+                    ),
+                })
+                self.assertEqual(over_limit.status_code, 200)
+                self.assertEqual(self.alice_profile.photos.count(), 14)
+                self.assertContains(over_limit, 'Maximum total is 14')
+
+    def test_profiles_need_four_gallery_photos_before_admin_verification(self):
+        form = ProfileAdminForm(instance=self.alice_profile)
+        form.cleaned_data = {'is_verified': True}
+        with self.assertRaises(ValidationError):
+            form.clean_is_verified()
+        for index in range(3):
+            ProfilePhoto.objects.create(
+                profile=self.alice_profile,
+                user=self.alice,
+                image=f'verification/photo-{index}.jpg',
+            )
+        ProfilePhoto.objects.create(
+            profile=self.alice_profile,
+            user=self.alice,
+            image='verification/clip.mp4',
+        )
+        self.assertFalse(self.alice_profile.is_verification_eligible)
+        with self.assertRaises(ValidationError):
+            form.clean_is_verified()
+        ProfilePhoto.objects.create(
+            profile=self.alice_profile,
+            user=self.alice,
+            image='verification/photo-3.jpg',
+        )
+        self.assertTrue(form.clean_is_verified())
+
+    def test_account_deletion_post_completes_and_signs_the_user_out(self):
+        self.client.force_login(self.alice)
+        response = self.client.post(reverse('delete_account'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'dating/account_deleted.html')
+        self.assertFalse(User.objects.filter(pk=self.alice.pk).exists())
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_support_desk_uses_loveny_branding_and_palette(self):
+        self.client.force_login(self.alice)
+        response = self.client.get(reverse('support_alias'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'alt="LOVENY"')
+        self.assertContains(response, 'LOVENY Support Assistant')
+        for legacy_green in ('#25D366', '#075E54', '#DCF8C6', '#1ebe5e'):
+            self.assertNotContains(response, legacy_green)
+
     def test_test_data_command_creates_idempotent_profiles_with_avatars(self):
         with tempfile.TemporaryDirectory() as media_root:
             with override_settings(MEDIA_ROOT=media_root):
@@ -593,7 +716,7 @@ class DatingPlatformTests(TestCase):
         response = self.client.get(reverse('edit_profile'))
         self.assertContains(response, 'Photos &amp; Media')
         self.assertContains(response, 'Discovery &amp; Settings')
-        self.assertContains(response, 'Use current GPS location')
+        self.assertNotContains(response, 'Use current GPS location')
 
         response = self.client.post(reverse('edit_profile'), {
             'name': 'Alice Newname',
@@ -981,7 +1104,7 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(self.client.get(reverse('edit_profile')).status_code, 200)
         self.assertNotContains(self.client.get(reverse('edit_profile')), 'Connection mode')
         self.assertNotContains(self.client.get(reverse('edit_profile')), 'WhatsApp')
-        self.assertContains(self.client.get(reverse('edit_profile')), 'Latitude (decimal degrees)')
+        self.assertNotContains(self.client.get(reverse('edit_profile')), 'Latitude (decimal degrees)')
         settings_page = self.client.get(reverse('settings'))
         self.assertEqual(settings_page.status_code, 200)
         self.assertContains(settings_page, 'Sex Call')
@@ -1291,6 +1414,25 @@ class DatingPlatformTests(TestCase):
                     f'<a href="{reverse(route_name)}" class="bottom-tab',
                     html=False,
                 )
+
+    def test_messages_inbox_shows_latest_message_preview(self):
+        match = Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+        conversation = Conversation.objects.create()
+        conversation.participants.add(self.alice, self.bob)
+        ChatMessage.objects.create(
+            conversation=conversation,
+            sender=self.bob,
+            text='Can we talk this weekend?',
+        )
+        self.client.force_login(self.alice)
+        response = self.client.get(reverse('messages_inbox'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Can we talk this weekend?')
+        self.assertNotContains(response, 'Tap to open chat...')
 
     def test_empty_messages_uses_profile_mode_for_bottom_navigation(self):
         self.client.force_login(self.alice)
@@ -2600,7 +2742,10 @@ class DatingPlatformTests(TestCase):
         self.assertContains(res_alice, 'local-video')
         self.assertContains(res_alice, 'remote-video')
         self.assertContains(res_alice, 'call-feedback')
-        self.assertContains(res_alice, 'Speech monitoring is active')
+        self.assertContains(res_alice, 'Speech monitoring is active for call-safety checks')
+        self.assertContains(res_alice, 'close-in-call-gift-drawer')
+        self.assertContains(res_alice, 'btn-flip-camera')
+        self.assertNotContains(res_alice, '+ Add')
 
         # Bob (receiver) can access the connected call room.
         self.client.force_login(self.bob)
@@ -2688,6 +2833,60 @@ class DatingPlatformTests(TestCase):
         # Alice's coin balance is untouched while dialing
         self.alice_profile.refresh_from_db()
         self.assertEqual(self.alice_profile.coin_balance, 50)
+
+    def test_call_concurrency_marks_busy_and_rejects_overlapping_calls(self):
+        host_user, host_profile = self.make_profile('busy-host', mode='SEX_CALL', age=23)
+        second_host, second_host_profile = self.make_profile(
+            'second-host',
+            mode='SEX_CALL',
+            age=24,
+        )
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.coin_balance = 50
+        self.alice_profile.save(update_fields=['relationship_mode', 'coin_balance'])
+        second_host_profile.coin_balance = 50
+        second_host_profile.save(update_fields=['coin_balance'])
+        self.client.force_login(self.alice)
+
+        first_response = self.post_json(
+            reverse('call_initiate_api'),
+            {'receiver_id': host_user.pk},
+        )
+        self.assertEqual(first_response.status_code, 201)
+
+        overlapping_caller = self.post_json(
+            reverse('call_initiate_api'),
+            {'receiver_id': second_host.pk},
+        )
+        self.assertEqual(overlapping_caller.status_code, 409)
+        self.assertEqual(overlapping_caller.json()['message'], 'user_busy')
+
+        self.client.force_login(second_host)
+        overlapping_receiver = self.post_json(
+            reverse('call_initiate_api'),
+            {'receiver_id': host_user.pk},
+        )
+        self.assertEqual(overlapping_receiver.status_code, 409)
+        self.assertEqual(overlapping_receiver.json()['message'], 'user_busy')
+
+        self.client.force_login(self.alice)
+        host_list = self.client.get(reverse('sex_call_hosts_api')).json()['hosts']
+        host_item = next(item for item in host_list if item['id'] == host_user.pk)
+        self.assertTrue(host_item['is_busy'])
+        self.client.force_login(second_host)
+        busy_profile = self.client.get(
+            reverse('public_profile', args=[host_user.pk]),
+        )
+        self.assertContains(busy_profile, 'Busy on a call')
+        self.assertContains(busy_profile, 'disabled')
+
+        call = CallSession.objects.get(room_id=first_response.json()['room_id'])
+        self.client.force_login(self.alice)
+        self.client.post(reverse('call_end_api', args=[call.room_id]))
+        host_list = self.client.get(reverse('sex_call_hosts_api')).json()['hosts']
+        host_item = next(item for item in host_list if item['id'] == host_user.pk)
+        self.assertFalse(host_item['is_busy'])
+
 
     def test_declined_and_cancelled_calls_do_not_deduct_coins(self):
         host_user, host_profile = self.make_profile('host_sarah', mode='SEX_CALL', age=24)
@@ -2884,6 +3083,8 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, 'Active Mode:')
         self.assertContains(res, 'Do Not Disturb (DND)')
+        self.assertContains(res, 'settings-header-coin-balance')
+        self.assertNotContains(res, '⚙️')
         self.assertContains(res, 'Change connection mode')
         self.assertContains(res, 'mode-switch-target')
         self.assertEqual(list(SettingsForm(instance=self.alice.profile).fields), ['is_dnd'])
@@ -2902,6 +3103,19 @@ class DatingPlatformTests(TestCase):
         self.assertTrue(self.alice.profile.is_dnd)
         self.assertEqual(self.alice.profile.relationship_mode, 'HOOKUP')
         self.assertTrue(self.alice.profile.incognito_mode)
+
+    def test_edit_profile_hides_non_dating_fields_and_precise_location(self):
+        self.client.force_login(self.alice)
+        self.alice_profile.relationship_mode = 'SEX_CALL'
+        self.alice_profile.save(update_fields=['relationship_mode'])
+        response = self.client.get(reverse('edit_profile'))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'Ideal first date')
+        self.assertNotContains(response, 'Job / Industry')
+        self.assertNotContains(response, 'Latitude')
+        self.assertNotContains(response, 'Longitude')
+        self.assertNotContains(response, 'Use current GPS location')
+        self.assertNotContains(response, 'Maximum distance (km)')
 
     def test_mode_switch_requires_a_bound_verified_payment_and_preserves_profile_backup(self):
         self.client.force_login(self.alice)
