@@ -949,7 +949,11 @@ class DatingPlatformTests(TestCase):
         ticket = SupportTicket.objects.create(user=self.alice)
         with override_settings(GEMINI_API_KEY=''):
             greeting = process_support_inquiry(ticket, 'Hello, are you there?')
-            capabilities = process_support_inquiry(ticket, 'What can you do for me?')
+            capabilities = process_support_inquiry(ticket, 'What can you do?')
+            capabilities_with_context = process_support_inquiry(
+                ticket,
+                'What can you help me with?',
+            )
             referral = process_support_inquiry(ticket, 'How does the referral reward work?')
             mode_switch = process_support_inquiry(ticket, 'How do I switch my mode?')
             call_monitor = process_support_inquiry(
@@ -959,6 +963,7 @@ class DatingPlatformTests(TestCase):
 
         self.assertIn('What can I help you with?', greeting)
         self.assertIn('changing modes', capabilities)
+        self.assertEqual(capabilities_with_context, capabilities)
         self.assertIn('100 coins', referral)
         self.assertIn('10 successful referrals', referral)
         self.assertIn('paid once', mode_switch)

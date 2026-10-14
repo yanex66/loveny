@@ -92,10 +92,13 @@ def _known_platform_answer(question):
             'immediately suspends the account pending admin review.'
         )
     if any(phrase in normalized for phrase in (
+        'what can you do',
         'what can you do for me',
         'what can you help with',
+        'what can you help me with',
         'what do you do',
         'how can you help',
+        'how can you help me',
     )):
         return (
             'I can help with account settings, changing modes, referrals, free-trial access, '
