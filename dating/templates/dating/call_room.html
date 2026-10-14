@@ -50,6 +50,10 @@
                 <span>&#x1FA99;</span>
                 <span id="room-coins-val">{{ current_profile.coin_balance }}</span>
             </div>
+            <div class="flex items-center gap-1.5 rounded-full border border-cyan-300/40 bg-black/60 px-3 py-1 text-xs font-black text-cyan-300 shadow-lg">
+                <span>💎</span>
+                <span id="room-diamonds-val">{{ user_earned_diamonds }}</span>
+            </div>
             <button type="button" id="room-open-store-btn" class="rounded-full bg-gradient-to-r from-amber-500 to-yellow-300 px-3 py-1 text-xs font-black text-slate-950 shadow-lg shadow-amber-500/30 hover:scale-105 active:scale-95 transition" aria-label="Add Coins">
                 + Add
             </button>
@@ -154,6 +158,7 @@
     const isCaller = {{ is_caller|yesno:"true,false" }};
     const localVideo = document.getElementById('local-video');
     const remoteVideo = document.getElementById('remote-video');
+    const roomDiamonds = document.getElementById('room-diamonds-val');
     const callFeedback = document.getElementById('call-feedback');
     let peer = null;
     let signalingSocket = null;
@@ -162,6 +167,7 @@
     let signalTimer = null;
     let heartbeatTimer = null;
     let localStream = null;
+    let remoteStream = null;
     let pendingCandidates = [];
     let callTerminating = false;
 
@@ -307,6 +313,7 @@
                     {urls: 'stun:stun1.l.google.com:19302'},
                 ],
             });
+            remoteStream = new MediaStream();
             const senders = new Map();
             ['audio', 'video'].forEach(kind => {
                 senders.set(kind, peer.addTransceiver(kind, {direction: 'sendrecv'}).sender);
@@ -325,11 +332,16 @@
                 }
             };
             peer.ontrack = event => {
-                const stream = event.streams[0] || new MediaStream([event.track]);
+                const incomingTracks = event.streams[0]?.getTracks() || [event.track];
+                incomingTracks.forEach(track => {
+                    if (!remoteStream.getTracks().some(existing => existing.id === track.id)) {
+                        remoteStream.addTrack(track);
+                    }
+                });
                 if (window.CallPrivacy?.setRemoteStream) {
-                    window.CallPrivacy.setRemoteStream(stream);
+                    window.CallPrivacy.setRemoteStream(remoteStream);
                 } else {
-                    remoteVideo.srcObject = stream;
+                    remoteVideo.srcObject = remoteStream;
                     remoteVideo.play().catch(error => {
                         console.warn('Remote video playback requires user interaction.', error);
                     });
@@ -437,6 +449,18 @@
             leaveCallWithNotice(
                 'The call ended because the live-call monitor detected suspected contact sharing. The other account has been suspended pending review.',
                 '{% url "sex_call_hub" %}',
+            );
+            return;
+        }
+        if (signal.type === 'gift') {
+            const gift = signal.payload || {};
+            if (Number(gift.recipient_id) === currentUserId && roomDiamonds) {
+                roomDiamonds.textContent = Number(gift.recipient_diamonds || 0);
+            }
+            triggerGiftAnimation(gift.gift_type);
+            appendChatMessage(
+                gift.sender_name || 'Partner',
+                `sent ${gift.name || gift.gift_type || 'a gift'} (+${gift.diamond_award || gift.diamonds || 0} 💎)`,
             );
             return;
         }

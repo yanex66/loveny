@@ -55,7 +55,9 @@
     let activeCall = null;
     let peer = null;
     let localStream = null;
+    let remoteStream = null;
     let lastSignalId = 0;
+    const processedCallSignals = new Set();
     let signalingTimer = null;
     let statusTimer = null;
     let heartbeatTimer = null;
@@ -759,7 +761,9 @@
             localStream = null;
         }
         if (remoteVideo) remoteVideo.srcObject = null;
+        remoteStream = null;
         if (localVideo) localVideo.srcObject = null;
+        processedCallSignals.clear();
         if (window.CallPrivacy) {
             window.CallPrivacy.cleanup();
         }
@@ -803,6 +807,14 @@
             call_answer: 'answer',
             ice_candidate: 'candidate',
         })[signal.type] || signal.type;
+        if (signal.id !== undefined && signal.id !== null) {
+            const signalKey = `${signal.type}:${signal.id}`;
+            if (processedCallSignals.has(signalKey)) return;
+            processedCallSignals.add(signalKey);
+            if (processedCallSignals.size > 200) {
+                processedCallSignals.delete(processedCallSignals.values().next().value);
+            }
+        }
         if (window.CallPrivacy && typeof window.CallPrivacy.onPeerSignal === 'function') {
             window.CallPrivacy.onPeerSignal(signal.type, signal.payload);
         }
@@ -824,11 +836,16 @@
         }
         // In-call Gift Signal handling
         if (signal.type === 'gift') {
-            if (!isCaller && signal.payload.diamond_award) {
-                userDiamonds += signal.payload.diamond_award;
+            const gift = signal.payload || {};
+            if (Number(gift.recipient_id) === Number(config.dataset.userId)) {
+                userDiamonds = Number(gift.recipient_diamonds ?? userDiamonds);
                 updateWalletUI();
             }
-            triggerGiftAnimation(signal.payload);
+            triggerGiftAnimation({
+                ...gift,
+                diamond_award: gift.diamond_award ?? gift.diamonds,
+                is_self: false,
+            });
             return;
         }
 
@@ -957,11 +974,15 @@
                 {urls: 'stun:stun1.l.google.com:19302'},
             ],
         });
+        remoteStream = new MediaStream();
         const senders = new Map();
         ['audio', 'video'].forEach(kind => {
             senders.set(kind, peer.addTransceiver(kind, {direction: 'sendrecv'}).sender);
         });
         if (window.CallPrivacy) {
+            window.CallPrivacy.onCallSignal = (type, payload, id) => {
+                if (type === 'gift') consumeSignal({type, payload, id});
+            };
             window.CallPrivacy.onFeedsUnlocked = async () => {
                 for (const track of localStream.getTracks()) {
                     const sender = senders.get(track.kind);
@@ -975,11 +996,16 @@
         };
         peer.ontrack = event => {
             if (remoteVideo) {
-                const stream = event.streams[0] || new MediaStream([event.track]);
+                const incomingTracks = event.streams[0]?.getTracks() || [event.track];
+                incomingTracks.forEach(track => {
+                    if (!remoteStream.getTracks().some(existing => existing.id === track.id)) {
+                        remoteStream.addTrack(track);
+                    }
+                });
                 if (window.CallPrivacy && activeCall) {
-                    window.CallPrivacy.setRemoteStream(stream);
+                    window.CallPrivacy.setRemoteStream(remoteStream);
                 } else {
-                    remoteVideo.srcObject = stream;
+                    remoteVideo.srcObject = remoteStream;
                     remoteVideo.play().catch(error => {
                         console.warn('Remote video playback requires interaction.', error);
                     });

@@ -2006,7 +2006,7 @@ def call_gift_api(request, room_id):
                 description=f'Received {gift_icon} {gift_name} from {request.user.username} (+{diamonds} 💎)',
             )
 
-        CallSignal.objects.create(
+        gift_signal = CallSignal.objects.create(
             call=call,
             sender=request.user,
             signal_type='gift',
@@ -2016,15 +2016,38 @@ def call_gift_api(request, room_id):
                 'icon': gift_icon,
                 'coins': cost,
                 'diamonds': diamonds,
+                'diamond_award': diamonds,
+                'recipient_id': recipient_user.pk,
+                'recipient_diamonds': recipient_profile.earned_diamonds if recipient_profile else 0,
                 'sender_name': request.user.first_name or request.user.username,
             },
         )
+
+    channel_layer = get_channel_layer()
+    if channel_layer:
+        try:
+            async_to_sync(channel_layer.group_send)(
+                f'call_{call.room_id.hex}',
+                {
+                    'type': 'call.event',
+                    'recipient_id': recipient_user.pk,
+                    'signal_type': 'gift',
+                    'payload': gift_signal.payload,
+                    'signal_id': gift_signal.pk,
+                },
+            )
+        except Exception:
+            logger.exception(
+                'Could not broadcast call gift signal %s; polling can deliver it.',
+                gift_signal.pk,
+            )
 
     return JsonResponse({
         'status': 'success',
         'remaining_coins': sender_profile.coin_balance,
         'caller_coins': sender_profile.coin_balance,
         'diamond_award': diamonds,
+        'recipient_diamonds': recipient_profile.earned_diamonds if recipient_profile else 0,
         'gift': {
             'gift_type': gift_type,
             'name': gift_name,

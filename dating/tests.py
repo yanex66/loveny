@@ -1960,7 +1960,12 @@ class DatingPlatformTests(TestCase):
         )
         self.alice_profile.relationship_mode = 'SEX_CALL'
         self.alice_profile.coin_balance = 100
-        self.alice_profile.save(update_fields=['relationship_mode', 'coin_balance'])
+        self.alice_profile.earned_diamonds = 0
+        self.alice_profile.save(update_fields=[
+            'relationship_mode',
+            'coin_balance',
+            'earned_diamonds',
+        ])
         self.bob_profile.earned_diamonds = 0
         self.bob_profile.save(update_fields=['earned_diamonds'])
 
@@ -2014,7 +2019,12 @@ class DatingPlatformTests(TestCase):
         )
         self.alice_profile.relationship_mode = 'SEX_CALL'
         self.alice_profile.coin_balance = 100
-        self.alice_profile.save(update_fields=['relationship_mode', 'coin_balance'])
+        self.alice_profile.earned_diamonds = 0
+        self.alice_profile.save(update_fields=[
+            'relationship_mode',
+            'coin_balance',
+            'earned_diamonds',
+        ])
         self.bob_profile.earned_diamonds = 0
         self.bob_profile.save(update_fields=['earned_diamonds'])
 
@@ -2039,6 +2049,11 @@ class DatingPlatformTests(TestCase):
         self.bob_profile.refresh_from_db()
         self.assertEqual(self.alice_profile.coin_balance, 30)
         self.assertEqual(self.bob_profile.earned_diamonds, 35)
+        self.assertEqual(gift_data['recipient_diamonds'], 35)
+        gift_signal = CallSignal.objects.get(call__room_id=room_id, signal_type='gift')
+        self.assertEqual(gift_signal.payload['diamond_award'], 35)
+        self.assertEqual(gift_signal.payload['recipient_id'], self.bob.pk)
+        self.assertEqual(gift_signal.payload['recipient_diamonds'], 35)
 
         self.assertTrue(
             CallGift.objects.filter(
@@ -2047,6 +2062,29 @@ class DatingPlatformTests(TestCase):
                 gift_type='champagne',
                 coins_cost=50,
             ).exists()
+        )
+
+        self.bob_profile.coin_balance = 100
+        self.bob_profile.save(update_fields=['coin_balance'])
+        self.client.force_login(self.bob)
+        reverse_gift = self.post_json(
+            reverse('call_gift_api', args=[room_id]),
+            {'gift_type': 'rose'},
+        )
+        self.assertEqual(reverse_gift.status_code, 200)
+        self.alice_profile.refresh_from_db()
+        self.assertEqual(
+            self.alice_profile.earned_diamonds,
+            reverse_gift.json()['diamond_award'],
+        )
+        reverse_signal = CallSignal.objects.filter(
+            call__room_id=room_id,
+            signal_type='gift',
+        ).latest('pk')
+        self.assertEqual(reverse_signal.payload['recipient_id'], self.alice.pk)
+        self.assertEqual(
+            reverse_signal.payload['recipient_diamonds'],
+            self.alice_profile.earned_diamonds,
         )
 
     def test_call_heartbeat_auto_ends_when_coins_depleted(self):

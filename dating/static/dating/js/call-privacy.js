@@ -21,6 +21,7 @@
         _faceDetector: null,
         _pendingRemoteStream: null,
         onFeedsUnlocked: null,
+        onCallSignal: null,
         _listeners: [],
 
         init(callId, viewerId) {
@@ -134,6 +135,9 @@
                     const message = JSON.parse(event.data);
                     if (message.type !== 'error' && message.type) {
                         this.onPeerSignal(message.type, message.payload || {});
+                        if (this.onCallSignal) {
+                            this.onCallSignal(message.type, message.payload || {}, message.id);
+                        }
                     }
                 } catch (error) {
                     console.error('[CallPrivacy] Invalid signaling event.', error);
@@ -457,6 +461,7 @@
             }
             this._pendingRemoteStream = null;
             this.onFeedsUnlocked = null;
+            this.onCallSignal = null;
             ['call-privacy-blur-card', 'face-handshake-overlay'].forEach(id => {
                 document.getElementById(id)?.remove();
             });
