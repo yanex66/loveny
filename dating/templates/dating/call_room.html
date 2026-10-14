@@ -8,7 +8,7 @@
 {% block content %}
 <main class="fixed inset-0 z-50 bg-slate-950 text-white select-none overflow-hidden" role="main" aria-label="1-on-1 Video Call">
     <!-- Remote Full-Screen Video Background -->
-    <video id="remote-video" class="absolute inset-0 h-full w-full object-cover bg-slate-950" autoplay playsinline></video>
+    <video id="remote-video" class="absolute inset-0 h-full w-full object-cover bg-slate-950" autoplay muted playsinline></video>
     
     <!-- Top and Bottom Vignette Overlays -->
     <div class="absolute inset-x-0 top-0 h-44 bg-gradient-to-b from-black/85 via-black/35 to-transparent pointer-events-none"></div>
@@ -60,6 +60,9 @@
         Speech monitoring is active for call-safety checks.
     </p>
     <p id="call-feedback" role="status" aria-live="polite" class="absolute inset-x-4 top-40 z-20 mx-auto hidden max-w-xl rounded-xl border border-white/20 bg-black/80 px-4 py-3 text-center text-sm font-semibold text-white shadow-xl"></p>
+    <button type="button" id="enable-remote-audio" class="absolute bottom-36 left-1/2 z-40 hidden -translate-x-1/2 rounded-full border border-white/20 bg-slate-950/90 px-5 py-3 text-sm font-bold text-white shadow-xl backdrop-blur-md">
+        Enable partner audio
+    </button>
 
     <!-- FLOATING LIVE CHAT OVERLAY (Bottom-Left) -->
     <div id="floating-chat-container" class="absolute left-4 bottom-44 z-30 w-64 sm:w-80 flex flex-col justify-end pointer-events-auto">
@@ -160,6 +163,7 @@
     const isCaller = {{ is_caller|yesno:"true,false" }};
     const localVideo = document.getElementById('local-video');
     const remoteVideo = document.getElementById('remote-video');
+    const enableRemoteAudioBtn = document.getElementById('enable-remote-audio');
     const roomDiamonds = document.getElementById('room-diamonds-val');
     const callFeedback = document.getElementById('call-feedback');
     let peer = null;
@@ -170,6 +174,7 @@
     let heartbeatTimer = null;
     let localStream = null;
     let remoteStream = null;
+    let hasRemoteMedia = false;
     let pendingCandidates = [];
     let callTerminating = false;
 
@@ -331,6 +336,7 @@
                         const sender = senders.get(track.kind);
                         if (sender) await sender.replaceTrack(track);
                     }
+                    if (hasRemoteMedia) enableRemoteAudioBtn.classList.remove('hidden');
                 };
             }
             peer.onicecandidate = event => {
@@ -339,6 +345,7 @@
                 }
             };
             peer.ontrack = event => {
+                hasRemoteMedia = true;
                 const incomingTracks = event.streams[0]?.getTracks() || [event.track];
                 incomingTracks.forEach(track => {
                     if (!remoteStream.getTracks().some(existing => existing.id === track.id)) {
@@ -352,6 +359,9 @@
                     remoteVideo.play().catch(error => {
                         console.warn('Remote video playback requires user interaction.', error);
                     });
+                }
+                if (CallPrivacy.handshakeComplete) {
+                    enableRemoteAudioBtn.classList.remove('hidden');
                 }
                 setCallFeedback('Partner media received. Completing secure connection…');
             };
@@ -654,6 +664,19 @@
         const audioEnabled = localStream.getAudioTracks().some(track => track.enabled);
         localStream.getAudioTracks().forEach(track => {
             track.enabled = !audioEnabled;
+        });
+
+        enableRemoteAudioBtn?.addEventListener('click', async () => {
+            if (!remoteVideo?.srcObject) return;
+            remoteVideo.muted = false;
+            try {
+                await remoteVideo.play();
+                enableRemoteAudioBtn.classList.add('hidden');
+            } catch (error) {
+                remoteVideo.muted = true;
+                setCallFeedback('Partner video is connected. Tap Enable partner audio again to hear sound.');
+                console.warn('Remote audio playback requires a user gesture.', error);
+            }
         });
         muteBtn.innerHTML = audioEnabled
             ? '<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1m7 8v4m-4 0h8"/><path d="m3 3 18 18"/></svg>'
