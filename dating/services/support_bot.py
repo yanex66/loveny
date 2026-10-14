@@ -81,6 +81,46 @@ def _small_talk_response(question):
 
 def _known_platform_answer(question):
     normalized = normalize_query(question)
+    payment_intent = any(phrase in normalized for phrase in (
+        'want to pay',
+        'need to pay',
+        'trying to pay',
+        'how do i pay',
+        'how can i pay',
+        'make a payment',
+        'payment options',
+        'payment methods',
+        'pay now',
+    ))
+    if payment_intent:
+        if any(term in normalized for term in ('mode switch', 'switch mode', 'change mode', 'switching')):
+            return (
+                'To unlock mode switching, open Settings and choose Change Connection Mode, then select '
+                'Unlock Mode Switching. The one-time fee is charged through Paystack; switching unlocks '
+                'only after the payment is verified.'
+            )
+        if any(term in normalized for term in ('hookup', 'connection request', 'connection fee')):
+            return (
+                'For a Hookup connection, open the pending request and tap Pay to pay your displayed '
+                'connection fee through Paystack. The 24-hour chat unlocks only after both participants’ '
+                'payments are verified.'
+            )
+        if any(term in normalized for term in ('coin', 'call minute', 'minutes', 'wallet')):
+            return (
+                'To buy coins or call minutes, open the Coins shop from your coin balance, choose a package, '
+                'and complete checkout. Coins are added only after the payment provider verifies the payment.'
+            )
+        if any(term in normalized for term in ('premium', 'subscription', 'pass', 'dating access')):
+            return (
+                'Open the Premium or Upgrade page, choose a pass for your active connection mode, and '
+                'complete checkout. Premium access starts only after the payment provider verifies payment.'
+            )
+        return (
+            'I can guide you through payment for mode switching (Settings), a Hookup request (open the '
+            'pending request), coins or call minutes (Coins shop), or a Premium pass (Upgrade). Which '
+            'one are you trying to pay for? LOVENY activates purchases only after the payment provider '
+            'confirms them.'
+        )
     if any(term in normalized for term in ('live call', 'video call', 'call audio', 'call speech')) and any(
         term in normalized for term in ('monitor', 'record', 'contact', 'whatsapp', 'number', 'exchange', 'listen')
     ):

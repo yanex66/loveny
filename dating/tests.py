@@ -971,6 +971,25 @@ class DatingPlatformTests(TestCase):
         self.assertIn('speech recognition', call_monitor)
         self.assertIn('pending admin review', call_monitor)
 
+    def test_support_bot_guides_common_payment_requests_without_external_ai(self):
+        ticket = SupportTicket.objects.create(user=self.alice)
+        with override_settings(GEMINI_API_KEY=''):
+            general_payment = process_support_inquiry(ticket, 'i want to pay')
+            hookup_payment = process_support_inquiry(
+                ticket,
+                'How do I pay for a Hookup request?',
+            )
+            mode_switch_payment = process_support_inquiry(
+                ticket,
+                'I want to pay to switch mode',
+            )
+
+        self.assertIn('Which one are you trying to pay for?', general_payment)
+        self.assertIn('pending request', hookup_payment)
+        self.assertIn('both participants’ payments are verified', hookup_payment)
+        self.assertIn('open Settings', mode_switch_payment)
+        self.assertIn('payment is verified', mode_switch_payment)
+
     def test_auth_pages_show_concise_password_guidance(self):
         signup = self.client.get(reverse('signup'))
         self.assertContains(
