@@ -188,11 +188,7 @@
     let isDragging = false;
     let startX = 0;
 
-    window.onload = function() {
-        fetchProfilesBatch();
-    };
-
-        async function fetchProfilesBatch() {
+    async function fetchProfilesBatch() {
         if (isFetching) return;
         isFetching = true;
         try {
@@ -225,6 +221,8 @@
             isFetching = false;
         }
     }
+
+    fetchProfilesBatch();
 
     function renderNextCard() {
         if (profileQueue.length === 0) {

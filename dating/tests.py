@@ -1146,6 +1146,21 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "You're all caught up")
 
+    def test_dating_swipe_page_starts_feed_load_and_api_returns_candidates(self):
+        self.client.force_login(self.alice)
+
+        page = self.client.get(reverse('swipe_card'))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'fetchProfilesBatch();')
+        self.assertNotContains(page, 'window.onload')
+
+        feed = self.client.get(reverse('get_profiles_json'))
+        self.assertEqual(feed.status_code, 200)
+        self.assertEqual(
+            [profile['id'] for profile in feed.json()['profiles']],
+            [self.bob.pk],
+        )
+
     def test_profile_settings_and_chat_templates_render(self):
         self.client.force_login(self.alice)
         self.assertContains(self.client.get(reverse('index')), 'Sex Call')
