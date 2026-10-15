@@ -303,8 +303,25 @@
                         <div id="handshake-progress" style="width: 0%; height: 100%; background: linear-gradient(90deg, #ec4899, #f59e0b); transition: width 0.2s ease;"></div>
                     </div>
                     <div id="handshake-status" style="font-size: 0.75rem; font-weight: 700; color: #f472b6;">Starting on-device face detection…</div>
+                    <button id="call-verification-cancel" type="button" style="margin-top: 1.25rem; border: 1px solid rgba(255,255,255,0.3); border-radius: 9999px; padding: 0.7rem 1.4rem; color: #fff; font-size: 0.85rem; font-weight: 700; background: rgba(225,29,72,0.9);">
+                        Cancel call
+                    </button>
                 </div>
             `;
+            overlay.querySelector('#call-verification-cancel').addEventListener('click', event => {
+                const cancelButton = event.currentTarget;
+                cancelButton.disabled = true;
+                cancelButton.textContent = 'Ending call…';
+                const endCallButton = document.getElementById('btn-end') ||
+                    document.getElementById('end-call');
+                if (endCallButton) {
+                    endCallButton.click();
+                } else {
+                    console.error('[CallPrivacy] Could not find the call end control.');
+                    cancelButton.disabled = false;
+                    cancelButton.textContent = 'Cancel call';
+                }
+            });
             this.refreshPrivacyState();
         },
 
