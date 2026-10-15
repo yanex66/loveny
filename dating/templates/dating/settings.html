@@ -83,7 +83,10 @@
                  data-intent-url="{% url 'create_mode_switch_payment_intent_api' %}"
                  data-cancel-url="{% url 'cancel_mode_switch_payment_intent_api' %}"
                  data-verify-url="{% url 'switch_profile_mode_api' %}"
-                 data-requested-mode="{{ requested_mode }}"
+                         data-dating-home="{% url 'swipe_card' %}"
+                         data-hookup-home="{% url 'hookup_discovery' %}"
+                         data-sex-call-home="{% url 'sex_call_hub' %}"
+                         data-requested-mode="{{ requested_mode }}"
                  data-switching-unlocked="{{ mode_switch_unlocked|yesno:'true,false' }}">
             <h2 class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 ml-1">Change connection mode</h2>
             <div class="soft-card rounded-3xl p-5 sm:p-7">
@@ -314,6 +317,20 @@ document.addEventListener('DOMContentLoaded', () => {
         status.textContent = message;
         status.className = `mt-3 min-h-5 text-center text-xs font-semibold ${isError ? 'text-red-600' : 'text-emerald-700'}`;
     };
+    const navigateToModeHome = mode => {
+        const destinations = {
+            DATING: panel.dataset.datingHome,
+            HOOKUP: panel.dataset.hookupHome,
+            SEX_CALL: panel.dataset.sexCallHome,
+        };
+        const destination = destinations[mode];
+        if (!destination) {
+            throw new Error('The selected connection mode is unavailable.');
+        }
+        const url = new URL(destination, window.location.origin);
+        url.searchParams.set('mode_changed', mode);
+        window.location.assign(url);
+    };
 
     const verifyPayment = async (reference) => {
         const verifyResponse = await fetch(panel.dataset.verifyUrl, {
@@ -329,9 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error(result.message || 'Payment could not be verified.');
         }
         pendingReference = null;
-        setStatus('Mode switched successfully. Refreshing settings…');
-        window.lovenyToast('Mode switched successfully!', 'success');
-        window.setTimeout(() => window.location.reload(), 900);
+        navigateToModeHome(result.target_mode);
     };
 
     const switchWithoutPayment = async (targetMode) => {
@@ -347,9 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!switchResponse.ok || result.status !== 'success') {
             throw new Error(result.message || 'Could not switch mode.');
         }
-        setStatus('Mode switched successfully. Refreshing settings…');
-        window.lovenyToast('Mode switched successfully!', 'success');
-        window.setTimeout(() => window.location.reload(), 900);
+        navigateToModeHome(result.target_mode);
     };
 
     button.addEventListener('click', async () => {

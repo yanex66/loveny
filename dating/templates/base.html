@@ -222,6 +222,9 @@
         body.hide-bottom-nav .bottom-nav-container {
             display: none !important;
         }
+        body.hide-support-widget #support-widget-root {
+            display: none !important;
+        }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
@@ -944,6 +947,20 @@
             };
             document.addEventListener('pointerdown', unlockNotificationAudio, {once: true});
             document.addEventListener('keydown', unlockNotificationAudio, {once: true});
+
+            const changedMode = new URLSearchParams(window.location.search).get('mode_changed');
+            if (changedMode) {
+                const modeLabels = {
+                    DATING: 'Dating',
+                    HOOKUP: 'Hookup',
+                    SEX_CALL: 'Sex Call',
+                };
+                window.lovenyToast(
+                    `Connection changed to ${modeLabels[changedMode] || 'your new mode'}.`,
+                    'success',
+                );
+                window.history.replaceState({}, '', window.location.pathname);
+            }
 
             function showSystemNotification(title, body, url) {
                 if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') {

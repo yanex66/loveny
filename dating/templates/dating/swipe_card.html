@@ -9,16 +9,16 @@
     .dating-card-wrapper {
         position: relative;
         width: min(90vw, 400px);
-        height: min(68svh, 680px);
-        min-height: 420px;
-        max-height: calc(100svh - 245px);
-        margin: 0 auto;       
+        height: min(58svh, 560px);
+        min-height: 280px;
+        max-height: calc(100svh - 340px);
+        margin: 0 auto;
         perspective: 1000px;
     }
     @media (max-height: 640px) {
         .dating-card-wrapper {
-            height: calc(100svh - 230px);
-            min-height: 360px;
+            height: calc(100svh - 340px);
+            min-height: 280px;
         }
     }
     
@@ -64,9 +64,9 @@
 {% endblock %}
 
 {% block floating_coin_pill %}{% endblock %}
-{% block body_class %}hide-floating-coin{% endblock %}
+{% block body_class %}hide-floating-coin hide-support-widget{% endblock %}
 {% block content %}
-<div class="min-h-screen relative overflow-hidden bg-gradient-to-br from-rose-50 via-white to-orange-50 font-sans flex flex-col items-center pb-24 text-slate-900">
+<div class="min-h-[calc(100svh-9rem)] relative overflow-hidden bg-gradient-to-br from-rose-50 via-white to-orange-50 font-sans flex flex-col items-center pb-2 text-slate-900">
 
     <div id="config-data" 
          data-swipe-url="{{ SWIPE_URL }}" 
@@ -127,7 +127,7 @@
 
 
 
-    <main class="w-full flex-grow flex flex-col justify-center items-center p-4 relative">
+    <main class="w-full flex-grow flex flex-col justify-start items-center p-2 pt-1 relative">
         
         <div id="card-container" class="dating-card-wrapper">
             <div id="initial-loading-message" class="h-full w-full flex flex-col justify-center items-center text-center bg-white/80 backdrop-blur-md rounded-3xl border border-pink-100 shadow-lg">
@@ -259,12 +259,11 @@
         // --- NEW: ONLINE INDICATOR HTML ---
         const presenceLabel = profile.is_online ? 'ONLINE' : formatLastSeen(profile.last_seen);
         const onlineBadge = `
-            <div class="absolute top-4 right-4 z-10">
                 <div class="${profile.is_online ? 'bg-green-500/90' : 'bg-slate-900/75'} text-white text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-lg backdrop-blur-md flex items-center gap-2 border border-white/20">
                     <span class="w-2 h-2 ${profile.is_online ? 'bg-white animate-pulse shadow-[0_0_10px_rgba(255,255,255,0.8)]' : 'bg-slate-300'} rounded-full"></span>
                     ${escapeHTML(presenceLabel)}
                 </div>
-            </div>`;
+            `;
 
         const verifiedBadge = profile.is_verified
             ? '<span class="ml-2 rounded-full bg-blue-500/80 px-2 py-1 text-[9px] font-black uppercase">Verified</span>'

@@ -3,7 +3,7 @@
 
 {% block title %}Sex Call · Live 1-on-1 Video Hosts | LOVENY{% endblock %}
 
-{% block body_class %}hide-floating-coin{% endblock %}
+{% block body_class %}hide-floating-coin hide-support-widget{% endblock %}
 {% block floating_coin_pill %}{% endblock %}
 
 {% block extra_head %}
@@ -63,7 +63,7 @@
 
     <div class="relative max-w-4xl mx-auto">
         <!-- Top Navigation & Live Wallet Bar -->
-        <header class="flex items-center justify-between gap-2 pb-4 border-b border-white/10">
+        <header class="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-white/10 min-[380px]:flex-nowrap">
             <div class="flex items-center gap-3">
                 <a href="{% url 'profile' %}" class="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 border border-white/15 text-pink-300 hover:bg-white/20 transition" aria-label="Profile">
                     👤
@@ -78,7 +78,7 @@
             </div>
 
             <!-- Live Wallet Pills (Coins & Diamonds) -->
-            <div class="flex items-center gap-2">
+            <div class="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
                 <!-- Coin Balance Pill (Triggers Coin Shop) -->
                 <a href="{% url 'coin_shop' %}" id="hub-coins-btn" class="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-400/40 px-3 py-1.5 text-xs font-black text-amber-300 hover:bg-amber-500/30 active:scale-95 transition shadow-lg shadow-amber-500/10" title="Buy Coins">
                     <span class="text-sm">&#x1FA99;</span>
@@ -326,8 +326,8 @@ function formatLastSeen(isoTimestamp) {
                     </div>
 
                     <!-- Bottom Info & Call Button -->
-                    <div class="absolute bottom-3 left-3 right-14 pointer-events-none">
-                        <h3 class="text-base sm:text-lg font-black text-white truncate drop-shadow-md leading-tight">
+                    <div class="absolute bottom-[4.25rem] left-3 right-3 pointer-events-none">
+                        <h3 class="text-sm sm:text-lg font-black text-white truncate drop-shadow-md leading-tight">
                             ${h.username}, <span class="text-pink-400 font-bold">${h.age}</span>
                         </h3>
                         <p class="text-[10px] font-semibold text-white/70 truncate flex items-center gap-1">
@@ -338,7 +338,7 @@ function formatLastSeen(isoTimestamp) {
                     </div>
 
                     <!-- Floating Round Video Call Action Button -->
-                    <button type="button" data-connected="${h.is_connected}" onclick="event.stopPropagation(); connectHost(${h.id}, this)" class="absolute bottom-3 right-16 rounded-full border border-white/25 ${h.is_connected ? 'bg-emerald-600' : 'bg-black/65'} px-3 py-2 text-[9px] font-black uppercase tracking-wide text-white shadow-lg hover:bg-pink-600 active:scale-95 transition" title="${h.is_connected ? 'Disconnect from ' : 'Connect with '}${h.username}">
+                    <button type="button" data-connected="${h.is_connected}" onclick="event.stopPropagation(); connectHost(${h.id}, this)" class="absolute bottom-3 right-[4.25rem] max-w-[calc(100%-6.5rem)] truncate rounded-full border border-white/25 ${h.is_connected ? 'bg-emerald-600' : 'bg-black/65'} px-2.5 py-2 text-[9px] font-black uppercase tracking-wide text-white shadow-lg hover:bg-pink-600 active:scale-95 transition" title="${h.is_connected ? 'Disconnect from ' : 'Connect with '}${h.username}">
                         ${h.is_connected ? 'Connected' : 'Connect'}
                     </button>
                     <button type="button" ${h.is_busy ? 'disabled' : ''} onclick="event.stopPropagation(); startDirectCall(${h.id}, '${h.username}')" class="absolute bottom-3 right-3 h-11 w-11 rounded-full ${h.is_busy ? 'bg-slate-600 cursor-not-allowed' : 'bg-gradient-to-tr from-orange-500 via-rose-500 to-pink-500 hover:scale-110 active:scale-90'} flex items-center justify-center text-white shadow-xl shadow-pink-500/40 transition-all duration-200" title="${h.is_busy ? 'This member is busy' : 'Call ' + h.username}">

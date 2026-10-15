@@ -3,7 +3,7 @@
 
 {% block title %}Chat with {{ other_user.first_name|default:other_user.username }} | LOVENY{% endblock %}
 
-{% block body_class %}hide-floating-coin{% endblock %}
+{% block body_class %}hide-floating-coin hide-support-widget{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -38,18 +38,39 @@
         height: 100vh;
         z-index: 9999;
     }
+    .chat-room-page {
+        height: calc(100dvh - 6rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+        min-height: 0;
+        padding-bottom: 0;
+    }
+    .chat-room-section {
+        height: 100%;
+        min-height: 0;
+    }
+    @media (max-width: 420px) {
+        .chat-recipient-header {
+            flex-wrap: wrap;
+        }
+        .chat-recipient-header__person {
+            flex: 1 1 calc(100% - 3rem);
+        }
+        .chat-recipient-header__wallet {
+            width: 100%;
+            justify-content: flex-end;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<main class="min-h-screen bg-[#0e071c] px-2 py-2 text-slate-100 sm:px-4 sm:py-4 select-none pb-28">
+<main class="chat-room-page bg-[#0e071c] px-2 py-2 text-slate-100 sm:px-4 sm:py-4 select-none">
     <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
 
-    <section class="mx-auto flex h-[min(88vh,56rem)] min-h-[36rem] max-w-4xl flex-col overflow-hidden rounded-3xl border border-purple-500/20 bg-[#140a27]/95 shadow-2xl backdrop-blur-2xl">
+    <section class="chat-room-section mx-auto flex max-w-4xl flex-col overflow-hidden rounded-3xl border border-purple-500/20 bg-[#140a27]/95 shadow-2xl backdrop-blur-2xl">
         
         <!-- 1. TOP RECIPIENT CARD (Chamet/HiiClub Host Header) -->
-        <header class="flex items-center justify-between gap-2 border-b border-white/10 bg-[#1a0c33]/90 px-3 py-3 sm:px-5">
-            <div class="flex items-center gap-3 min-w-0">
+        <header class="chat-recipient-header flex items-center justify-between gap-2 border-b border-white/10 bg-[#1a0c33]/90 px-3 py-3 sm:px-5">
+            <div class="chat-recipient-header__person flex items-center gap-3 min-w-0">
                 <!-- Back Button -->
                 <a href="{% url 'match_list' %}" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white active:scale-95" title="Back to matches">
                     <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -71,7 +92,7 @@
 
                 <!-- Host Info (Name, Age, Location, Online Badge) -->
                 <div class="min-w-0">
-                    <div class="flex items-center gap-2">
+                    <div class="chat-recipient-header__wallet flex items-center gap-2">
                         <h1 class="truncate text-sm sm:text-base font-black text-white">
                             {{ other_user.first_name|default:other_user.username }}
                         </h1>
