@@ -896,8 +896,109 @@
             let lastNotificationId = 0;
             const toastContainer = document.getElementById('global-toast-container');
             const chatNavIcon = document.querySelector('a[href="/messages/"]');
+            let notificationAudioContext = null;
+
+            function unlockNotificationAudio() {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContextClass) return;
+                if (!notificationAudioContext) {
+                    notificationAudioContext = new AudioContextClass();
+                }
+                if (notificationAudioContext.state === 'suspended') {
+                    notificationAudioContext.resume().catch(error => {
+                        console.warn('Notification sound could not be enabled.', error);
+                    });
+                }
+            }
+
+            window.lovenyNotificationSound = () => {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContextClass) return;
+                try {
+                    if (!notificationAudioContext) {
+                        notificationAudioContext = new AudioContextClass();
+                    }
+                    const ctx = notificationAudioContext;
+                    const playTone = () => {
+                        const oscillator = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        oscillator.type = 'sine';
+                        oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+                        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+                        oscillator.connect(gain);
+                        gain.connect(ctx.destination);
+                        oscillator.start();
+                        oscillator.stop(ctx.currentTime + 0.18);
+                    };
+                    if (ctx.state === 'suspended') {
+                        ctx.resume().then(playTone).catch(error => {
+                            console.warn('Notification sound could not play.', error);
+                        });
+                    } else {
+                        playTone();
+                    }
+                } catch(error) {
+                    console.warn('Notification sound could not play.', error);
+                }
+            };
+            document.addEventListener('pointerdown', unlockNotificationAudio, {once: true});
+            document.addEventListener('keydown', unlockNotificationAudio, {once: true});
+
+            function showSystemNotification(title, body, url) {
+                if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') {
+                    return;
+                }
+                try {
+                    const notification = new Notification(title, {
+                        body: body.slice(0, 180),
+                        tag: 'loveny-' + title.slice(0, 40),
+                    });
+                    notification.onclick = () => {
+                        window.focus();
+                        if (url) window.location.assign(url);
+                        notification.close();
+                    };
+                } catch(error) {
+                    console.warn('System notification could not be displayed.', error);
+                }
+            }
+
+            function offerNotificationPermission() {
+                if (!('Notification' in window) || Notification.permission !== 'default') return;
+                try {
+                    if (sessionStorage.getItem('loveny_notification_permission_prompted')) return;
+                } catch(error) {
+                    console.warn('Notification preference could not be read.', error);
+                }
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'fixed bottom-24 right-4 z-[9998] rounded-full border border-pink-300/30 bg-[#1a0c33] px-4 py-3 text-xs font-bold text-white shadow-xl';
+                button.textContent = 'Enable message notifications';
+                button.addEventListener('click', async () => {
+                    button.disabled = true;
+                    try {
+                        unlockNotificationAudio();
+                        const permission = await Notification.requestPermission();
+                        if (permission === 'granted') {
+                            window.lovenyToast('Notifications enabled on this device.', 'success');
+                        }
+                    } catch(error) {
+                        console.warn('Notification permission request failed.', error);
+                    } finally {
+                        try {
+                            sessionStorage.setItem('loveny_notification_permission_prompted', 'true');
+                        } catch(error) {
+                            console.warn('Notification preference could not be saved.', error);
+                        }
+                        button.remove();
+                    }
+                });
+                document.body.appendChild(button);
+            }
 
             function showToast(title, body, avatar, url) {
+                showSystemNotification(title, body, url);
                 const toast = document.createElement('div');
                 toast.className = 'bg-[#1a0c33]/95 border border-purple-500/30 text-white p-3 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-xl transition-all duration-300 transform translate-x-full opacity-0 pointer-events-auto cursor-pointer';
                 const avatarElement = document.createElement(avatar ? 'img' : 'div');
@@ -920,15 +1021,7 @@
                     toast.classList.remove('translate-x-full', 'opacity-0');
                 });
 
-                try {
-                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    const osc = ctx.createOscillator();
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(800, ctx.currentTime);
-                    osc.connect(ctx.destination);
-                    osc.start();
-                    osc.stop(ctx.currentTime + 0.1);
-                } catch(e) {}
+                window.lovenyNotificationSound();
 
                 setTimeout(() => {
                     toast.classList.add('translate-x-full', 'opacity-0');
@@ -964,8 +1057,11 @@
                     // Keep max 100 IDs in session cache
                     const arr = Array.from(seen).slice(-100);
                     sessionStorage.setItem('loveny_seen_notifications', JSON.stringify(arr));
-                } catch(e) {}
+                } catch(error) {
+                    console.warn('Notification state could not be saved.', error);
+                }
             }
+            window.lovenyMarkNotificationSeen = markNotificationSeen;
 
             function acknowledgeNotifications(messageIds, hookupRequestIds) {
                 if (!messageIds.length && !hookupRequestIds.length) return;
@@ -993,7 +1089,10 @@
             async function pollNotifications() {
                 try {
                     const res = await fetch(`/api/notifications/global/?last_id=${lastNotificationId}`);
-                    if (!res.ok) return;
+                    if (!res.ok) {
+                        console.warn('Notification polling returned an error.', res.status);
+                        return;
+                    }
                     const data = await res.json();
                     
                     if (data.status === 'success') {
@@ -1055,6 +1154,19 @@
                             }
                         });
                         acknowledgeNotifications([], hookupRequestsToAcknowledge);
+
+                        (data.incoming_social_events || []).forEach(event => {
+                            const notificationKey = `social_${event.id}`;
+                            if (seenIds.has(notificationKey)) return;
+                            markNotificationSeen(notificationKey);
+                            const isConnection = event.type === 'connection';
+                            showToast(
+                                event.sender_name,
+                                isConnection ? 'You have a new connection.' : 'Followed you.',
+                                null,
+                                '/matches/',
+                            );
+                        });
                         
                         updateChatIndicator(data.unread_count);
                         
@@ -1062,12 +1174,14 @@
                             lastNotificationId = data.last_id;
                         }
                     }
-                } catch(e) {}
+                } catch(error) {
+                    console.warn('Notification polling failed.', error);
+                }
             }
 
             {% if user.is_authenticated %}
-                // Polling interval set to 25 seconds to eliminate buzzing loops
-                setInterval(pollNotifications, 25000);
+                offerNotificationPermission();
+                setInterval(pollNotifications, 8000);
                 pollNotifications();
             {% endif %}
         });

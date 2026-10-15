@@ -579,10 +579,17 @@
     }
 
     // --- Call Telemetry, Timers & Heartbeats ---
+    function startHeartbeat() {
+        if (!activeCall || heartbeatTimer) return;
+        sendHeartbeat();
+        heartbeatTimer = window.setInterval(sendHeartbeat, 10000);
+    }
+
     function startCallTimer() {
+        startHeartbeat();
         if (window.CallPrivacy && !window.CallPrivacy.handshakeComplete) return;
         stopRingtone();
-        stopCallTimer();
+        if (callTimerInterval) return;
         window.CallSpeechMonitor?.enableDetection();
         callDurationSeconds = 0;
         updateCallTimerDisplay();
@@ -590,8 +597,6 @@
             callDurationSeconds++;
             updateCallTimerDisplay();
         }, 1000);
-
-        heartbeatTimer = window.setInterval(sendHeartbeat, 10000);
     }
 
     function stopCallTimer() {
@@ -793,11 +798,11 @@
         window.clearInterval(statusTimer);
         signalingTimer = null;
         statusTimer = null;
-        stopCallTimer();
     }
 
     function closeRoom() {
         stopPolling();
+        stopCallTimer();
         stopRingtone();
         window.CallSpeechMonitor?.stop();
         if (peer) {
@@ -885,6 +890,10 @@
             return;
         }
         if (signal.type === 'follow') {
+            if (signal.payload?.swipe_id) {
+                window.lovenyMarkNotificationSeen?.(`social_${signal.payload.swipe_id}`);
+            }
+            window.lovenyNotificationSound?.();
             renderCallFollowState(
                 callHudFollowBtn?.dataset.isFollowing === 'true',
                 true,
@@ -1059,7 +1068,10 @@
         };
         peer.ontrack = event => {
             if (remoteVideo) {
-                const incomingTracks = event.streams[0]?.getTracks() || [event.track];
+                const incomingTracks = [
+                    ...(event.streams[0]?.getTracks() || []),
+                    event.track,
+                ];
                 incomingTracks.forEach(track => {
                     if (!remoteStream.getTracks().some(existing => existing.id === track.id)) {
                         remoteStream.addTrack(track);
@@ -1096,6 +1108,7 @@
                 body: JSON.stringify({receiver_id: receiverId}),
             });
             activeCall = response.call;
+            startHeartbeat();
             isCaller = true;
             if (response.call.caller_coins !== undefined) {
                 userCoins = response.call.caller_coins;
@@ -1164,6 +1177,7 @@
                 body: JSON.stringify({action}),
             });
             activeCall = response.call;
+            startHeartbeat();
             isCaller = false;
             showRoom('Joining call…');
             await createPeer();

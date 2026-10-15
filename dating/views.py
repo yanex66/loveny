@@ -142,15 +142,14 @@ def _profile_is_online(profile, now=None):
 
 def _active_call_user_ids(now=None):
     _expire_stale_call_sessions(now)
-    return set(
-        CallSession.objects.filter(
-            status__in=('ringing', 'connected', 'active'),
-        ).values_list('caller_id', flat=True)
-    ) | set(
-        CallSession.objects.filter(
-            status__in=('ringing', 'connected', 'active'),
-        ).values_list('receiver_id', flat=True)
-    )
+    active_participants = CallSession.objects.filter(
+        status__in=('ringing', 'connected', 'active'),
+    ).values_list('caller_id', 'receiver_id')
+    return {
+        user_id
+        for caller_id, receiver_id in active_participants
+        for user_id in (caller_id, receiver_id)
+    }
 
 
 def _subscription_details(profile, product):
@@ -422,11 +421,7 @@ def public_profile(request, pk):
         expires_at__gt=timezone.now()
     ).exists()
     now = timezone.now()
-    _expire_stale_call_sessions(now)
-    is_busy = CallSession.objects.filter(
-        Q(caller=profile.user) | Q(receiver=profile.user),
-        status__in=('ringing', 'connected', 'active'),
-    ).exists()
+    is_busy = profile.user_id in _active_call_user_ids(now)
 
     return render(request, 'dating/public_profile.html', {
         'profile': profile, 
@@ -4072,7 +4067,7 @@ def call_follow_api(request, room_id):
     )
     now = timezone.now()
     with transaction.atomic():
-        Swipe.objects.update_or_create(
+        follow_swipe, _ = Swipe.objects.update_or_create(
             swiper=request.user,
             swiped_id=other_user_id,
             defaults={
@@ -4113,6 +4108,7 @@ def call_follow_api(request, room_id):
             {
                 'action': 'follow_back' if is_followed_by else 'follow',
                 'is_matched': is_matched,
+                'swipe_id': follow_swipe.pk,
             },
         )
         if signal is None:
@@ -5242,6 +5238,29 @@ def global_notifications_api(request):
             .order_by('-created_at')[:5]
         )
 
+    now = timezone.now()
+    incoming_likes = list(
+        Swipe.objects.filter(
+            swiped=request.user,
+            type='LIKE',
+            mode=user_mode,
+            timestamp__gte=now - timedelta(minutes=15),
+        )
+        .select_related('swiper')
+        .order_by('-timestamp')[:10]
+    )
+    active_match_user_ids = set(
+        Match.objects.filter(
+            Q(user1=request.user) | Q(user2=request.user),
+            mode=user_mode,
+            expires_at__gt=now,
+        ).values_list('user1_id', 'user2_id')
+    )
+    connected_user_ids = {
+        second_id if first_id == request.user.pk else first_id
+        for first_id, second_id in active_match_user_ids
+    }
+
     return JsonResponse({
         'status': 'success',
         'unread_count': unread_count,
@@ -5254,6 +5273,11 @@ def global_notifications_api(request):
             'id': str(match.pk),
             'initiator_name': match.initiator.first_name or match.initiator.username,
         } for match in incoming_hookup_requests],
+        'incoming_social_events': [{
+            'id': swipe.pk,
+            'type': 'connection' if swipe.swiper_id in connected_user_ids else 'follow',
+            'sender_name': swipe.swiper.first_name or swipe.swiper.username,
+        } for swipe in incoming_likes],
     })
 
 

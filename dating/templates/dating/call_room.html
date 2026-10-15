@@ -351,7 +351,10 @@
             };
             peer.ontrack = event => {
                 hasRemoteMedia = true;
-                const incomingTracks = event.streams[0]?.getTracks() || [event.track];
+                const incomingTracks = [
+                    ...(event.streams[0]?.getTracks() || []),
+                    event.track,
+                ];
                 incomingTracks.forEach(track => {
                     if (!remoteStream.getTracks().some(existing => existing.id === track.id)) {
                         remoteStream.addTrack(track);
@@ -465,6 +468,10 @@
         }
         if (signal.type === 'call_accepted') return;
         if (signal.type === 'follow') {
+            if (signal.payload?.swipe_id) {
+                window.lovenyMarkNotificationSeen?.(`social_${signal.payload.swipe_id}`);
+            }
+            window.lovenyNotificationSound?.();
             isFollowedBy = true;
             isMatched = Boolean(signal.payload?.is_matched);
             renderFollowState();

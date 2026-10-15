@@ -4145,6 +4145,37 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(isolated['new_messages'], [])
         self.assertEqual(isolated['unread_count'], 0)
 
+    def test_global_notifications_include_recent_follows_and_connections(self):
+        self.alice_profile.relationship_mode = 'DATING'
+        self.alice_profile.save(update_fields=['relationship_mode'])
+        self.bob_profile.relationship_mode = 'DATING'
+        self.bob_profile.save(update_fields=['relationship_mode'])
+        Swipe.objects.create(
+            swiper=self.bob,
+            swiped=self.alice,
+            type='LIKE',
+            mode='DATING',
+        )
+        self.client.force_login(self.alice)
+        notifications_url = reverse('global_notifications_api')
+
+        follow_event = self.client.get(notifications_url).json()[
+            'incoming_social_events'
+        ][0]
+        self.assertEqual(follow_event['type'], 'follow')
+        self.assertEqual(follow_event['sender_name'], self.bob.username)
+
+        Match.objects.create(
+            user1=self.alice,
+            user2=self.bob,
+            mode='DATING',
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+        connection_event = self.client.get(notifications_url).json()[
+            'incoming_social_events'
+        ][0]
+        self.assertEqual(connection_event['type'], 'connection')
+
     def test_hookup_payment_api_requires_a_verified_paystack_transaction(self):
         match = HookupMatch.objects.create(
             initiator=self.alice,

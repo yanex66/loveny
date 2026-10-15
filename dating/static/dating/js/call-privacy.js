@@ -16,7 +16,7 @@
         captureLocked: false,
         peerPaused: false,
         _unblurTimeout: null,
-        _faceAnimationId: null,
+        _faceTimerId: null,
         _socket: null,
         _faceDetector: null,
         _pendingRemoteStream: null,
@@ -92,6 +92,10 @@
                     z-index: 30;
                     background: rgba(10, 5, 20, 0.98);
                     backdrop-filter: blur(20px);
+                    pointer-events: none;
+                }
+                #call-privacy-blur-card .privacy-card-action {
+                    pointer-events: auto;
                 }
                 #face-handshake-overlay {
                     z-index: 35;
@@ -330,11 +334,10 @@
             }
 
             let facePresentSince = null;
-            let lastDetectionAt = 0;
-            const update = now => {
+            const update = () => {
                 if (!this.active || this.localVerified) return;
-                if (now - lastDetectionAt >= 200) {
-                    lastDetectionAt = now;
+                const now = performance.now();
+                if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
                     try {
                         const result = this._faceDetector.detectForVideo(video, now);
                         const singleFace = result.detections.length === 1;
@@ -363,15 +366,15 @@
                     this.onLocalFaceVerified();
                     return;
                 }
-                this._faceAnimationId = requestAnimationFrame(update);
+                this._faceTimerId = window.setTimeout(update, 400);
             };
-            this._faceAnimationId = requestAnimationFrame(update);
+            this._faceTimerId = window.setTimeout(update, 0);
         },
 
         onLocalFaceVerified() {
             if (this.localVerified) return;
             this.localVerified = true;
-            cancelAnimationFrame(this._faceAnimationId);
+            clearTimeout(this._faceTimerId);
             const icon = document.getElementById('handshake-icon');
             const status = document.getElementById('handshake-status');
             const title = document.getElementById('handshake-title');
@@ -436,6 +439,18 @@
             const content = document.createElement('p');
             content.textContent = message;
             card.append(heading, content);
+            if (this.peerPaused) {
+                const endButton = document.createElement('button');
+                endButton.type = 'button';
+                endButton.className = 'privacy-card-action mt-5 rounded-full bg-rose-600 px-5 py-3 font-bold text-white shadow-lg';
+                endButton.textContent = 'End call';
+                endButton.addEventListener('click', () => {
+                    const callEndButton = document.getElementById('btn-end') ||
+                        document.getElementById('end-call');
+                    callEndButton?.click();
+                });
+                card.appendChild(endButton);
+            }
         },
 
         hideBlurCard() {
@@ -445,7 +460,7 @@
 
         cleanup() {
             this.active = false;
-            cancelAnimationFrame(this._faceAnimationId);
+            clearTimeout(this._faceTimerId);
             clearTimeout(this._unblurTimeout);
             this._listeners.forEach(({target, eventName, handler, options}) => {
                 target.removeEventListener(eventName, handler, options);
