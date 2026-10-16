@@ -11,6 +11,7 @@
     // Elements - Video Room
     const roomOverlay = document.getElementById('video-call-room');
     const remoteVideo = document.getElementById('remote-call-video');
+    const enableCallAudioBtn = document.getElementById('enable-call-audio');
     const localVideo = document.getElementById('local-call-video');
     const feedback = document.getElementById('call-feedback');
     const callTimerDisplay = document.getElementById('call-timer-display');
@@ -1117,13 +1118,34 @@
                         console.warn('Remote video playback requires interaction.', error);
                     });
                 }
+                if (event.track.kind === 'audio') {
+                    enableCallAudioBtn?.classList.remove('hidden');
+                }
+                if (event.track.kind === 'video') {
+                    event.track.addEventListener('unmute', () => {
+                        if (feedback) feedback.textContent = 'Partner video is live.';
+                    });
+                    event.track.addEventListener('mute', () => {
+                        if (feedback && peer?.connectionState === 'connected') {
+                            feedback.textContent = 'Waiting for your partner’s video…';
+                        }
+                    });
+                }
             }
-            if (feedback) feedback.textContent = 'Call connected';
-            startCallTimer();
+            const hasLiveVideo = remoteStream?.getVideoTracks().some(
+                track => track.readyState === 'live' && !track.muted,
+            );
+            if (feedback) {
+                feedback.textContent = hasLiveVideo
+                    ? 'Partner video is live.'
+                    : 'Partner connected. Waiting for video…';
+            }
         };
         peer.onconnectionstatechange = () => {
             if (peer && peer.connectionState === 'connected') {
-                if (feedback) feedback.textContent = 'Call connected';
+                if (feedback && !remoteStream?.getVideoTracks().some(track => track.readyState === 'live' && !track.muted)) {
+                    feedback.textContent = 'Call connected. Waiting for your partner’s video…';
+                }
                 startCallTimer();
             }
             if (peer && peer.connectionState === 'failed' && feedback) {
@@ -1134,10 +1156,30 @@
         };
         peer.oniceconnectionstatechange = () => {
             if (peer && peer.iceConnectionState === 'failed' && feedback) {
-                feedback.textContent = 'Could not reach your partner. Check your connection and try again.';
+                feedback.textContent = 'Could not reach your partner. Check your connection or try another network.';
             }
         };
+        peer.onicecandidateerror = event => {
+            console.warn('WebRTC ICE candidate gathering failed.', {
+                url: event.url,
+                errorCode: event.errorCode,
+                errorText: event.errorText,
+            });
+        };
     }
+
+    enableCallAudioBtn?.addEventListener('click', async () => {
+        if (!remoteVideo?.srcObject) return;
+        remoteVideo.muted = false;
+        try {
+            await remoteVideo.play();
+            enableCallAudioBtn.classList.add('hidden');
+        } catch (error) {
+            remoteVideo.muted = true;
+            if (feedback) feedback.textContent = 'Tap Enable partner audio again to hear your partner.';
+            console.warn('Remote audio playback requires a user gesture.', error);
+        }
+    });
 
     async function initiateCall(receiverId) {
         if (!window.CallSpeechMonitor || !(await window.CallSpeechMonitor.requestConsent())) return;

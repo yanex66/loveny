@@ -124,7 +124,25 @@
                 },
                 body: JSON.stringify({transcript: transcript.slice(0, 500)}),
             });
-            const result = await response.json();
+            let result;
+            try {
+                if (!(response.headers.get('content-type') || '').includes('application/json')) {
+                    throw new TypeError('Response was not JSON.');
+                }
+                result = await response.json();
+            } catch (parseError) {
+                console.error('Call moderation returned an invalid response.', {
+                    status: response.status,
+                    url: response.url,
+                    redirected: response.redirected,
+                    parseError,
+                });
+                throw new Error(
+                    response.redirected
+                        ? 'Your session expired, so live-call safety monitoring stopped. The call was ended.'
+                        : 'The live-call safety service returned an unexpected response. The call was ended.',
+                );
+            }
             if (response.status === 201 && result.status === 'suspended') {
                 stop();
                 onFlagged(result);

@@ -15,15 +15,15 @@
     <div class="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/90 via-black/45 to-transparent pointer-events-none"></div>
 
     <!-- Top Call HUD Bar: Host Profile, Timer, Follow Button & Live Coins -->
-    <header class="absolute inset-x-0 top-0 z-20 flex items-center justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] pointer-events-auto">
+    <header class="call-room-hud absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-2 p-4 pt-[max(1rem,env(safe-area-inset-top))] pointer-events-auto">
         <!-- Left: Host Avatar, Name, Age, Timer & Follow Button -->
-        <div class="flex items-center gap-3">
+        <div class="call-room-profile flex min-w-0 flex-1 items-center gap-3">
             <div class="relative">
                 <img id="host-avatar" src="{{ other_avatar }}" alt="{{ other_user.username }} profile photo" class="h-11 w-11 rounded-full border-2 border-pink-400 object-cover shadow-lg bg-slate-800">
                 <span class="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-amber-400 ring-2 ring-black" aria-label="Busy on a call"></span>
             </div>
             <div>
-                <div class="flex items-center gap-2">
+                <div class="call-room-wallet flex shrink-0 items-center gap-2">
                     <span id="host-name-age" class="text-sm sm:text-base font-black text-white leading-tight drop-shadow">
                         {{ other_user.first_name|default:other_user.username }}{% if other_profile.age %}, <span class="text-pink-300 font-bold">{{ other_profile.age }}</span>{% endif %}
                     </span>
@@ -56,7 +56,7 @@
             </div>
         </div>
     </header>
-    <p class="absolute inset-x-4 top-24 z-10 mx-auto max-w-xl rounded-xl border border-amber-300/40 bg-black/75 px-3 py-2 text-center text-[10px] leading-relaxed text-amber-100 backdrop-blur-md">
+    <p class="call-room-safety absolute inset-x-4 top-24 z-10 mx-auto max-w-xl rounded-xl border border-amber-300/40 bg-black/75 px-3 py-2 text-center text-[10px] leading-relaxed text-amber-100 backdrop-blur-md">
         Speech monitoring is active for call-safety checks.
     </p>
     <p id="call-feedback" role="status" aria-live="polite" class="absolute inset-x-4 top-40 z-20 mx-auto hidden max-w-xl rounded-xl border border-white/20 bg-black/80 px-4 py-3 text-center text-sm font-semibold text-white shadow-xl"></p>
@@ -135,6 +135,90 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<style>
+    @media (max-width: 640px) {
+        main[aria-label="1-on-1 Video Call"] .call-room-hud {
+            align-items: flex-start;
+            padding-left: 0.65rem;
+            padding-right: 0.65rem;
+        }
+        main[aria-label="1-on-1 Video Call"] .call-room-profile {
+            gap: 0.4rem;
+        }
+        main[aria-label="1-on-1 Video Call"] #host-avatar {
+            width: 2.25rem;
+            height: 2.25rem;
+            flex: 0 0 auto;
+        }
+        main[aria-label="1-on-1 Video Call"] #host-name-age {
+            display: inline-block;
+            max-width: 24vw;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        main[aria-label="1-on-1 Video Call"] #follow-host-btn {
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+            font-size: 8px;
+        }
+        main[aria-label="1-on-1 Video Call"] .call-room-wallet {
+            gap: 0.25rem;
+        }
+        main[aria-label="1-on-1 Video Call"] .call-room-wallet > div {
+            gap: 0.2rem;
+            padding: 0.25rem 0.45rem;
+            font-size: 10px;
+        }
+        main[aria-label="1-on-1 Video Call"] #call-feedback {
+            top: 6rem;
+            left: 0.75rem;
+            right: 0.75rem;
+        }
+        main[aria-label="1-on-1 Video Call"] .call-room-safety {
+            top: 8.5rem;
+            left: 0.75rem;
+            right: 0.75rem;
+        }
+        main[aria-label="1-on-1 Video Call"] #floating-chat-container {
+            left: 0.75rem;
+            bottom: calc(10rem + env(safe-area-inset-bottom));
+            width: calc(100vw - 7.5rem);
+            max-width: 15rem;
+        }
+        main[aria-label="1-on-1 Video Call"] #floating-chat-stream {
+            max-height: 5rem;
+        }
+        main[aria-label="1-on-1 Video Call"] > .absolute.right-4.bottom-48 {
+            right: 0.75rem;
+            bottom: calc(10.5rem + env(safe-area-inset-bottom));
+            width: 5.5rem;
+        }
+        main[aria-label="1-on-1 Video Call"] > .absolute.inset-x-0.bottom-12 {
+            bottom: 0;
+            padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+        }
+        main[aria-label="1-on-1 Video Call"] > .absolute.inset-x-0.bottom-12 > div {
+            gap: 0.45rem;
+            padding: 0.45rem 0.6rem;
+        }
+        main[aria-label="1-on-1 Video Call"] > .absolute.inset-x-0.bottom-12 button {
+            width: 2.5rem;
+            height: 2.5rem;
+            flex: 0 0 auto;
+        }
+        main[aria-label="1-on-1 Video Call"] > .absolute.inset-x-0.bottom-12 button#btn-gift {
+            width: 2.65rem;
+            height: 2.65rem;
+        }
+    }
+    @media (max-height: 520px) and (orientation: landscape) {
+        main[aria-label="1-on-1 Video Call"] #floating-chat-container,
+        main[aria-label="1-on-1 Video Call"] .call-room-safety {
+            display: none;
+        }
+    }
+</style>
 <script src="{% static 'dating/js/call-privacy.js' %}"></script>
 <script src="{% static 'dating/js/call-speech-monitor.js' %}"></script>
 <script>
@@ -381,14 +465,40 @@
                         console.warn('Remote video playback requires user interaction.', error);
                     });
                 }
+                if (event.track.kind === 'video') {
+                    event.track.addEventListener('unmute', () => {
+                        setCallFeedback('Partner video is live.', false);
+                    });
+                    event.track.addEventListener('mute', () => {
+                        if (peer?.connectionState === 'connected') {
+                            setCallFeedback('Connected. Waiting for your partner’s video…');
+                        }
+                    });
+                }
                 if (CallPrivacy.handshakeComplete) {
                     enableRemoteAudioBtn.classList.remove('hidden');
                 }
-                setCallFeedback('Partner media received. Completing secure connection…');
+                const hasLiveVideo = remoteStream.getVideoTracks().some(
+                    track => track.readyState === 'live' && !track.muted,
+                );
+                setCallFeedback(
+                    hasLiveVideo
+                        ? 'Partner video is live.'
+                        : 'Partner connected. Waiting for video…',
+                    !hasLiveVideo,
+                );
             };
             peer.onconnectionstatechange = () => {
                 if (peer.connectionState === 'connected') {
-                    setCallFeedback('Call connected', false);
+                    const hasLiveVideo = remoteStream?.getVideoTracks().some(
+                        track => track.readyState === 'live' && !track.muted,
+                    );
+                    setCallFeedback(
+                        hasLiveVideo
+                            ? 'Partner video is live.'
+                            : 'Connected. Waiting for your partner’s video…',
+                        !hasLiveVideo,
+                    );
                     window.CallSpeechMonitor?.enableDetection();
                 }
                 if (peer.connectionState === 'failed') {
