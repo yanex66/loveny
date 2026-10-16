@@ -324,25 +324,38 @@
                     ));
             });
 
-            peer = new RTCPeerConnection({
-                iceServers: [
-                    {urls: 'stun:stun.l.google.com:19302'},
-                    {urls: 'stun:stun1.l.google.com:19302'},
-                ],
+            setCallFeedback('Checking call network…');
+            const iceResponse = await fetch('{% url "call_ice_servers_api" %}', {
+                credentials: 'same-origin',
+                headers: {'Accept': 'application/json'},
             });
+            if (!iceResponse.ok || !(iceResponse.headers.get('content-type') || '').includes('application/json')) {
+                throw new Error('Call network settings are unavailable. Refresh and rejoin the call.');
+            }
+            let iceConfig;
+            try {
+                iceConfig = await iceResponse.json();
+            } catch (error) {
+                console.error('Call network settings returned invalid JSON.', error);
+                throw new Error('Call network settings returned an invalid response. Refresh and rejoin the call.');
+            }
+            if (!Array.isArray(iceConfig.ice_servers) || !iceConfig.ice_servers.length) {
+                throw new Error('Call network settings are unavailable. Refresh and rejoin the call.');
+            }
+            peer = new RTCPeerConnection({iceServers: iceConfig.ice_servers});
             remoteStream = new MediaStream();
             const senders = new Map();
             ['audio', 'video'].forEach(kind => {
                 senders.set(kind, peer.addTransceiver(kind, {direction: 'sendrecv'}).sender);
             });
             if (window.CallPrivacy) {
-                CallPrivacy.onFeedsUnlocked = async () => {
+                CallPrivacy.setOnFeedsUnlocked(async () => {
                     for (const track of localStream.getTracks()) {
                         const sender = senders.get(track.kind);
                         if (sender) await sender.replaceTrack(track);
                     }
                     if (hasRemoteMedia) enableRemoteAudioBtn.classList.remove('hidden');
-                };
+                });
             }
             peer.onicecandidate = event => {
                 if (event.candidate) {
@@ -378,8 +391,15 @@
                     setCallFeedback('Call connected', false);
                     window.CallSpeechMonitor?.enableDetection();
                 }
-                if (peer.connectionState === 'failed' || peer.connectionState === 'disconnected') {
+                if (peer.connectionState === 'failed') {
+                    setCallFeedback('Could not reach your partner. Check your connection and try again.');
+                } else if (peer.connectionState === 'disconnected') {
                     setCallFeedback('Connection interrupted. Trying to reconnect…');
+                }
+            };
+            peer.oniceconnectionstatechange = () => {
+                if (peer.iceConnectionState === 'failed') {
+                    setCallFeedback('Could not reach your partner. Check your connection and try again.');
                 }
             };
 
@@ -424,7 +444,22 @@
             const data = await response.json();
             if (['ended', 'declined', 'missed', 'cancelled'].includes(data.call?.status)) {
                 callTerminating = true;
-                setCallFeedback('Your partner ended the call.');
+                if (data.call?.free_trial_complete && isCaller) {
+                    const shouldBuyCoins = await window.lovenyConfirm(
+                        'Your one-time free three-minute call has ended. Buy coins to start another call?',
+                    );
+                    window.location.replace(
+                        shouldBuyCoins
+                            ? '{% url "coin_shop" %}'
+                            : '{% url "sex_call_hub" %}',
+                    );
+                    return;
+                }
+                setCallFeedback(
+                    data.call?.free_trial_complete
+                        ? 'The free three-minute call has ended.'
+                        : 'Your partner ended the call.',
+                );
                 window.setTimeout(() => window.location.replace('{% url "sex_call_hub" %}'), 1200);
             }
         } catch (error) {

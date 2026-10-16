@@ -26,6 +26,12 @@ services:
         sync: false
       - key: FLUTTERWAVE_SECRET_KEY
         sync: false
+      - key: FLUTTERWAVE_PUBLIC_KEY
+        sync: false
+      - key: TURN_URLS
+        sync: false
+      - key: TURN_SHARED_SECRET
+        sync: false
       - key: ADMIN_USERNAME
         sync: false
       - key: ADMIN_PASSWORD

@@ -202,7 +202,27 @@
             headers['X-CSRFToken'] = csrfToken();
         }
         const response = await fetch(url, {...options, headers, credentials: 'same-origin'});
-        const payload = await response.json();
+        const contentType = response.headers.get('content-type') || '';
+        let payload;
+        try {
+            if (!contentType.includes('application/json')) {
+                throw new TypeError('Response was not JSON.');
+            }
+            payload = await response.json();
+        } catch (parseError) {
+            console.error('Call API returned an invalid response.', {
+                status: response.status,
+                url: response.url,
+                contentType,
+                parseError,
+            });
+            const message = response.redirected
+                ? 'Your session has expired. Sign in again to continue.'
+                : 'The call service returned an unexpected response. Please refresh and try again.';
+            const error = new Error(message);
+            error.status = response.status;
+            throw error;
+        }
         if (!response.ok) {
             const error = new Error(payload.message || 'The call request could not be completed.');
             error.status = response.status;
@@ -664,10 +684,23 @@
                 body: JSON.stringify({duration_seconds: callDurationSeconds}),
             });
             if (response.call?.status === 'ended') {
+                const wasFreeTrial = response.call.free_trial_complete;
+                const wasCaller = isCaller;
                 closeRoom();
+                if (wasFreeTrial && wasCaller) {
+                    const shouldBuyCoins = await window.lovenyConfirm(
+                        'Your one-time free three-minute call has ended. Buy coins to start another call?',
+                    );
+                    window.location.assign(
+                        shouldBuyCoins ? '/premium/checkout/?mode=COINS' : '/sex-call/',
+                    );
+                    return;
+                }
                 toast(response.reason === 'coins_exhausted'
                     ? 'Call ended: Out of coins. Top up your wallet to continue!'
-                    : 'The call has ended.', response.reason === 'coins_exhausted');
+                    : wasFreeTrial
+                        ? 'The free three-minute call has ended.'
+                        : 'The call has ended.', response.reason === 'coins_exhausted');
                 fetchWallet();
                 return;
             }
@@ -1040,12 +1073,11 @@
                 .catch(cleanupError => console.warn('Could not end an unmonitored call.', cleanupError));
             toast(error.message || 'Live-call speech monitoring could not start. The call was ended.', true);
         });
-        peer = new RTCPeerConnection({
-            iceServers: [
-                {urls: 'stun:stun.l.google.com:19302'},
-                {urls: 'stun:stun1.l.google.com:19302'},
-            ],
-        });
+        const iceConfig = await api(config.dataset.iceServersUrl);
+        if (!Array.isArray(iceConfig.ice_servers) || !iceConfig.ice_servers.length) {
+            throw new Error('Call network settings are unavailable. Please refresh and try again.');
+        }
+        peer = new RTCPeerConnection({iceServers: iceConfig.ice_servers});
         remoteStream = new MediaStream();
         const senders = new Map();
         ['audio', 'video'].forEach(kind => {
@@ -1055,13 +1087,13 @@
             window.CallPrivacy.onCallSignal = (type, payload, id) => {
                 if (type === 'gift') consumeSignal({type, payload, id});
             };
-            window.CallPrivacy.onFeedsUnlocked = async () => {
+            window.CallPrivacy.setOnFeedsUnlocked(async () => {
                 for (const track of localStream.getTracks()) {
                     const sender = senders.get(track.kind);
                     if (sender) await sender.replaceTrack(track);
                 }
                 if (peer && peer.connectionState === 'connected') startCallTimer();
-            };
+            });
         }
         peer.onicecandidate = event => {
             if (event.candidate) sendSignal('candidate', event.candidate.toJSON());
@@ -1094,8 +1126,15 @@
                 if (feedback) feedback.textContent = 'Call connected';
                 startCallTimer();
             }
-            if (peer && ['failed', 'disconnected'].includes(peer.connectionState)) {
-                if (feedback) feedback.textContent = 'Connection interrupted. Reconnecting…';
+            if (peer && peer.connectionState === 'failed' && feedback) {
+                feedback.textContent = 'Could not reach your partner. Check your connection and try again.';
+            } else if (peer && peer.connectionState === 'disconnected' && feedback) {
+                feedback.textContent = 'Connection interrupted. Reconnecting…';
+            }
+        };
+        peer.oniceconnectionstatechange = () => {
+            if (peer && peer.iceConnectionState === 'failed' && feedback) {
+                feedback.textContent = 'Could not reach your partner. Check your connection and try again.';
             }
         };
     }
@@ -1128,12 +1167,12 @@
                 api(`${apiPrefix}${roomId}/end/`, {method: 'POST', body: '{}'})
                     .catch(cleanupError => console.warn('Could not end call after setup failed.', cleanupError));
             }
-            const isPassOrCoinsNeeded = error.status === 403 && (
+            const isPassOrCoinsNeeded = [402, 403].includes(error.status) && (
                 error.payload?.message === 'sex_call_pass_required' ||
                 error.payload?.message === 'insufficient_coins'
             );
             if (isPassOrCoinsNeeded) {
-                toast('Sex Call requires at least 20 coins (1 min rate) or a Sex Call Pass.', true);
+                toast(error.payload?.detail || 'Add coins to start another Sex Call.', true);
                 openCoinStore();
             } else {
                 toast(error.message || 'Could not start the video call. Check camera and microphone permissions.');
@@ -1701,7 +1740,8 @@
 
         // 2. If already claimed welcome, and hasn't checked in today:
         if (!hasCheckedInToday) {
-            const dismissed = sessionStorage.getItem('loveny_dismissed_daily_checkin');
+            const checkinDate = config.dataset.checkinDate || new Date().toISOString().slice(0, 10);
+            const dismissed = sessionStorage.getItem(`loveny_dismissed_daily_checkin_${checkinDate}`);
             if (!dismissed) {
                 setTimeout(() => {
                     openDailyCheckinModal();
@@ -1777,7 +1817,8 @@
         if (modal) {
             modal.classList.add('hidden');
             modal.classList.remove('flex');
-            sessionStorage.setItem('loveny_dismissed_daily_checkin', 'true');
+            const checkinDate = config.dataset.checkinDate || new Date().toISOString().slice(0, 10);
+            sessionStorage.setItem(`loveny_dismissed_daily_checkin_${checkinDate}`, 'true');
         }
     }
 

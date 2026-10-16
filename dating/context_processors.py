@@ -18,6 +18,7 @@ def site_configuration_context(request):
 
     ctx = {
         'site_config': config,
+        'user_checkin_date': timezone.localdate().isoformat(),
         'active_connection_mode': 'DATING',
         'user_has_claimed_welcome': True,
         'user_has_checked_in_today': True,

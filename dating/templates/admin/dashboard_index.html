@@ -1,0 +1,62 @@
+{% extends "admin/index.html" %}
+{% load live_user_counts %}
+
+{% block content %}
+  {% live_user_counts as user_counts %}
+  <section id="live-user-counts"
+           class="module"
+           data-count-url="{% url 'admin_live_user_counts' %}"
+           aria-label="Live user statistics">
+    <h2>User overview</h2>
+    <div class="flex-container">
+      <p><strong>Online now:</strong> <span data-user-count="online">{{ user_counts.online_users }}</span></p>
+      <p><strong>Signed-up users:</strong> <span data-user-count="total">{{ user_counts.total_users }}</span></p>
+      <p><strong>Offline:</strong> <span data-user-count="offline">{{ user_counts.offline_users }}</span></p>
+    </div>
+    <p class="help">
+      A user is counted as online when their last activity was within the past 15 minutes.
+      <span id="user-counts-updated" role="status" aria-live="polite">Updating…</span>
+    </p>
+  </section>
+  <script>
+    (() => {
+      const dashboard = document.getElementById('live-user-counts');
+      if (!dashboard) return;
+      const updatedStatus = document.getElementById('user-counts-updated');
+      let isRefreshing = false;
+
+      const refreshCounts = async () => {
+        if (isRefreshing) return;
+        isRefreshing = true;
+        try {
+          const response = await fetch(dashboard.dataset.countUrl, {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: {'Accept': 'application/json'},
+          });
+          if (!response.ok) {
+            throw new Error(`User count request failed (${response.status}).`);
+          }
+          const counts = await response.json();
+          dashboard.querySelector('[data-user-count="online"]').textContent = counts.online_users;
+          dashboard.querySelector('[data-user-count="total"]').textContent = counts.total_users;
+          dashboard.querySelector('[data-user-count="offline"]').textContent = counts.offline_users;
+          if (updatedStatus) updatedStatus.textContent = 'Updated just now.';
+        } catch (error) {
+          console.error('Could not refresh admin user counts.', error);
+          if (updatedStatus) updatedStatus.textContent = 'Live update unavailable; retrying.';
+        } finally {
+          isRefreshing = false;
+        }
+      };
+
+      refreshCounts();
+      window.setInterval(refreshCounts, 5000);
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) refreshCounts();
+      });
+      window.addEventListener('focus', refreshCounts);
+    })();
+  </script>
+  {{ block.super }}
+{% endblock %}

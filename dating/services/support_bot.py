@@ -10,7 +10,7 @@ from django.conf import settings
 from django.db.models import F
 from django.utils import timezone
 
-from dating.models import SiteConfiguration, SupportKnowledgeBase
+from dating.models import HookupSettings, SiteConfiguration, SupportKnowledgeBase
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +28,10 @@ GREETING_RESPONSE = (
 
 SUPPORT_INSTRUCTIONS = (
     "You are LOVENY's in-app support assistant. Answer concisely in no more than "
-    "2-3 sentences. Platform rules: Hookup Mode costs ₦1,500 per participant, is "
-    "coin-free, and unlocks a 24-hour direct chat only after both participants pay; "
+    "2-3 sentences. Platform rules: after a Hookup request is accepted, both users must each "
+    "pay the configured cash connection fee through Paystack or Flutterwave to unlock the chat; "
+    "Dating matches are free, but sending messages requires paid Dating Premium; "
+    "new Sex Call accounts receive one free three-minute call, after which calls require coins or premium; "
     "phone numbers, social handles, and off-platform contact links are prohibited; "
     "video calls require a local 3-second face verification from both participants; "
     "both participants must also have live speech monitoring active before feeds unlock. "
@@ -100,10 +102,10 @@ def _known_platform_answer(question):
                 'only after the payment is verified.'
             )
         if any(term in normalized for term in ('hookup', 'connection request', 'connection fee')):
+            config = HookupSettings.get_solo()
             return (
-                'For a Hookup connection, open the pending request and tap Pay to pay your displayed '
-                'connection fee through Paystack. The 24-hour chat unlocks only after both participants’ '
-                'payments are verified.'
+                f'After an accepted Hookup request, both users must each pay ₦{config.connection_fee} '
+                f'through Paystack or Flutterwave before the 24-hour chat unlocks.'
             )
         if any(term in normalized for term in ('coin', 'call minute', 'minutes', 'wallet')):
             return (
@@ -141,7 +143,7 @@ def _known_platform_answer(question):
         'how can you help me',
     )):
         return (
-            'I can help with account settings, changing modes, referrals, free-trial access, '
+            'I can help with account settings, changing modes, referrals, premium messaging, free Sex Calls, '
             'Hookup requests and payments, video calls, and common app questions. '
             'Tell me what you are trying to do, and I’ll point you to the right place.'
         )
@@ -157,16 +159,14 @@ def _known_platform_answer(question):
         config = SiteConfiguration.get_solo()
         return (
             f'Open My Profile and copy your referral link. When a new user signs up through it, '
-            f'you receive {config.referral_reward_coins} coins. Every {config.referrals_per_free_hookup} '
-            f'successful referrals earns one free Hookup connection for your share of the fee.'
+            f'you receive {config.referral_reward_coins} coins. Referral rewards are coins and '
+            f'do not unlock Hookup connections; after acceptance, both participants pay the '
+            f'configured connection fee.'
         )
     if any(word in normalized for word in ('free trial', 'free access', 'trial')):
-        config = SiteConfiguration.get_solo()
-        if not config.free_trial_enabled:
-            return 'The new-user free access offer is currently unavailable.'
         return (
-            f'New users get {config.free_trial_duration_hours} hours of premium access in their selected mode. '
-            f'The countdown appears at the top of the app while the trial is active.'
+            'New accounts do not receive a 24-hour premium trial. New Sex Call accounts get one '
+            'three-minute free call. Dating users can match for free, but need Dating Premium to message.'
         )
     if ('request' in normalized or 'meet today' in normalized) and any(
         word in normalized for word in ('sent', 'receive', 'where', 'inbox', 'get')

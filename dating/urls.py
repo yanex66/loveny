@@ -38,6 +38,7 @@ urlpatterns = [
     path('api/subscription-plans/', views.subscription_plans_api, name='subscription_plans_api'),
     path('api/calls/initiate/', views.call_initiate_api, name='call_initiate_api'),
     path('api/calls/incoming/', views.incoming_calls_api, name='incoming_calls_api'),
+    path('api/calls/ice-servers/', views.call_ice_servers_api, name='call_ice_servers_api'),
     path('api/calls/<uuid:room_id>/respond/', views.call_respond_api, name='call_respond_api'),
     path('api/calls/<uuid:room_id>/end/', views.call_end_api, name='call_end_api'),
     path('api/calls/<uuid:room_id>/heartbeat/', views.call_heartbeat_api, name='call_heartbeat_api'),

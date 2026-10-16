@@ -299,16 +299,6 @@
             
             <div class="absolute top-4 right-4 z-20 flex flex-col items-end gap-2">
                 ${onlineBadge}
-                <button type="button"
-                        data-call-target-id="${profile.id}"
-                        data-call-target-name="${escapeHTML(profile.username)}"
-                        onclick="event.stopPropagation(); window.lovenyStartVideoCall && window.lovenyStartVideoCall(${profile.id});"
-                        class="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 px-3.5 py-1.5 text-white font-black text-xs uppercase tracking-wider shadow-2xl border border-white/80 active:scale-90 hover:scale-105 transition"
-                        title="Start instant video call">
-                    <span class="text-sm">📹</span>
-                    <span>Call Now</span>
-                    <span class="rounded bg-black/40 px-1 py-0.5 text-[9px] text-amber-200 font-bold">&#x1FA99;{{ site_config.call_rate_per_minute|default:20 }}/m</span>
-                </button>
             </div>`;
 
         const mediaElement = newCard.querySelector('.media-content');

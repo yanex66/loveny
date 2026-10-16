@@ -430,6 +430,15 @@
                 setTimeout(() => overlay.remove(), 600);
             }
             this.refreshPrivacyState();
+            this.enableVerifiedMedia();
+        },
+
+        setOnFeedsUnlocked(callback) {
+            this.onFeedsUnlocked = callback;
+            if (this.handshakeComplete) this.enableVerifiedMedia();
+        },
+
+        enableVerifiedMedia() {
             if (this.onFeedsUnlocked) {
                 Promise.resolve(this.onFeedsUnlocked()).catch(error => {
                     console.error('[CallPrivacy] Could not enable verified media tracks.', error);

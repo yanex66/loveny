@@ -95,8 +95,10 @@
                 </span>
                 <span>•</span>
                 <span>{{ profile.location|default:"Lekki, Lagos" }}</span>
+                {% if can_video_call %}
                 <span>•</span>
                 <span class="text-amber-300 font-bold">&#x1FA99; {{ rate_per_minute }}/m</span>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -104,7 +106,8 @@
     <!-- Main Content Body -->
     <div class="relative z-10 px-4 pt-3 space-y-4">
 
-        <!-- Chamet / HiiClub Standards Host Stats Ribbon -->
+        {% if can_video_call %}
+        <!-- Sex Call host stats -->
         <div class="grid grid-cols-3 gap-2 p-3 rounded-3xl bg-slate-900/90 border border-white/10 shadow-xl backdrop-blur-md text-center">
             <div class="flex flex-col items-center justify-center">
                 <span class="text-[9px] uppercase font-black tracking-widest text-amber-400">Call Rate</span>
@@ -112,6 +115,7 @@
                     <span>&#x1FA99;</span><span>{{ rate_per_minute }} / min</span>
                 </span>
             </div>
+            {% endif %}
             <div class="flex flex-col items-center justify-center border-x border-white/10">
                 <span class="text-[9px] uppercase font-black tracking-widest text-emerald-400">Pickup</span>
                 <span class="text-xs sm:text-sm font-black text-white mt-0.5">{{ response_status }}</span>
@@ -207,7 +211,8 @@
             </button>
         </div>
 
-        <!-- Row 2: Full-Bleed INSTANT VIDEO CALL Bar -->
+        {% if can_video_call %}
+        <!-- Sex Call action -->
         <button type="button"
                 id="instant-call-btn"
                 {% if is_busy %}disabled{% endif %}
@@ -218,6 +223,7 @@
             <span>{% if is_busy %}Busy on a call{% else %}Instant Video Call{% endif %}</span>
             {% if not is_busy %}<span class="rounded-full bg-black/40 px-2.5 py-0.5 text-xs text-amber-300 font-black">&#x1FA99; {{ rate_per_minute }}/m</span>{% endif %}
         </button>
+        {% endif %}
     </div>
 
     <!-- Lightbox Modal -->
@@ -464,7 +470,7 @@
         }
     };
 
-    // Action 3: Instant Video Call (📹)
+    {% if can_video_call %}
     window.startDirectCall = receiverId => {
         const btn = document.getElementById('instant-call-btn');
         if (!window.lovenyStartVideoCall) {
@@ -475,6 +481,7 @@
         window.lovenyStartVideoCall(receiverId)
             .finally(() => btn.classList.remove('opacity-75'));
     };
+    {% endif %}
 
     window.shareProfile = () => {
         if (navigator.share) {

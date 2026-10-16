@@ -105,7 +105,6 @@ def _check_phone_in_normalized(normalized: str) -> tuple[bool, str | None]:
         return True, f"phone_number_sequence({match.group()})"
     return False, None
 
-
 def _check_social_in_raw(text: str) -> tuple[bool, str | None]:
     """Check *text* (raw, un-stripped) for social keywords / handles."""
     for pattern in _SOCIAL_PATTERNS:

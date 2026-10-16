@@ -19,7 +19,7 @@
             </div>
             <p class="text-xs text-purple-300/80 font-medium mt-0.5">
                 {% if is_hookup_mode %}
-                    Real connections nearby · Dual-fiat escrow protected
+                    Real connections nearby · Requesters unlock accepted connections
                 {% else %}
                     You received a Hookup invitation. Your Dating mode has not been changed.
                 {% endif %}
@@ -30,13 +30,13 @@
         </a>
     </header>
 
-    <!-- Escrow Protection Banner -->
+    <!-- Connection Unlock Banner -->
     <div class="mb-5 rounded-2xl border border-amber-400/30 bg-gradient-to-r from-purple-950/80 via-purple-900/60 to-amber-950/40 p-3.5 shadow-lg backdrop-blur-md">
         <div class="flex items-start gap-3">
             <span class="text-2xl">🛡️</span>
             <div class="text-xs text-purple-200 leading-relaxed">
-                <strong class="font-bold text-amber-300">Dual-Fiat Escrow Commitment:</strong>
-                When both partners accept and pay the ₦{{ connection_fee|default:1500 }} connection fee, a private 24-hour direct chat is instantly unlocked.
+                <strong class="font-bold text-amber-300">Unlock a Hookup connection:</strong>
+                After a request is accepted, both users pay the ₦{{ connection_fee }} connection fee to unlock the chat. Pay securely with Paystack or Flutterwave.
             </div>
         </div>
     </div>
@@ -101,44 +101,67 @@
             </div>
             {% endfor %}
 
-            <!-- Accepted Matches Awaiting Escrow Payment -->
+            {% for m in pending_outgoing %}
+            <div class="rounded-2xl border border-white/10 bg-purple-950/30 p-3.5" id="outgoing-card-{{ m.id }}">
+                <div class="text-sm font-bold text-white">
+                    Request sent to {{ m.target.first_name|default:m.target.username }}
+                </div>
+                <p class="mt-1 text-[11px] text-purple-200/80">
+                    Waiting for them to accept. Payment is only available after acceptance.
+                </p>
+            </div>
+            {% endfor %}
+
+            <!-- Accepted Matches Awaiting Requester Unlock -->
             {% for m in accepted_matches %}
             <div class="rounded-2xl border border-amber-400/40 bg-purple-950/60 p-3.5 backdrop-blur-md" id="escrow-card-{{ m.id }}">
                 <div class="flex items-center justify-between mb-2">
                     <div class="flex items-center gap-2.5">
                         <span class="text-xl">💳</span>
                         <div>
-                            <div class="text-xs font-bold text-white">Escrow Payment Stage</div>
-                            <div class="text-[10px] text-amber-300">₦{{ m.connection_fee|default:1500 }} Dual-Fiat Fee</div>
+                            <div class="text-xs font-bold text-white">Connection Unlock</div>
+                            <div class="text-[10px] text-amber-300">Both users pay once</div>
                         </div>
                     </div>
                     {% if m.has_paid %}
                     <span class="rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold">You Paid ✓</span>
+                    {% elif m.partner_paid %}
+                    <span class="rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold">Partner Paid ✓</span>
+                    {% elif not m.is_initiator %}
+                    <span class="rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold">Payment Needed</span>
                     {% else %}
                     <span class="rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold">Payment Needed</span>
                     {% endif %}
                 </div>
                 <p class="text-[11px] text-purple-200/80 mb-3">
                     {% if m.has_paid %}
-                    {% if m.has_referral_free %}
-                    Your referral reward covered your fee. Your partner still needs to pay to unlock the 24-hour chat.
+                    Waiting for the other user to pay their connection fee.
+                    {% elif m.partner_paid %}
+                    The other user has paid. Pay your connection fee to unlock the chat.
                     {% else %}
-                    Your fee is deposited in escrow! Awaiting your partner's payment to unlock the 24h chat.
-                    {% endif %}
-                    {% else %}
-                    Both parties must pay the ₦{{ m.connection_fee|floatformat:"0" }} connection fee to unlock 24-hour direct chat.
+                    Your request was accepted. Pay your connection fee to unlock the chat.
                     {% endif %}
                 </p>
                 {% if not m.has_paid %}
                 <div class="space-y-2">
-                    <button type="button" onclick="payHookupFee('{{ m.id }}')" class="w-full rounded-xl bg-gradient-to-r from-sky-500 to-cyan-400 py-2 text-[11px] font-black text-slate-950 shadow-lg shadow-sky-500/25 active:scale-95 transition">
+                    {% if paystack_enabled %}
+                    <button type="button" onclick="payHookupFee('{{ m.id }}', 'paystack')" class="w-full rounded-xl bg-gradient-to-r from-sky-500 to-cyan-400 py-2 text-[11px] font-black text-slate-950 shadow-lg shadow-sky-500/25 active:scale-95 transition">
                         Pay ₦{{ m.connection_fee|floatformat:"0" }} via Paystack
                     </button>
+                    {% endif %}
+                    {% if flutterwave_enabled %}
+                    <button type="button" onclick="payHookupFee('{{ m.id }}', 'flutterwave')" class="w-full rounded-xl border border-amber-400/40 bg-amber-400/10 py-2 text-[11px] font-black text-amber-200 active:scale-95 transition">
+                        Pay ₦{{ m.connection_fee|floatformat:"0" }} via Flutterwave
+                    </button>
+                    {% endif %}
+                    {% if not paystack_enabled and not flutterwave_enabled %}
+                    <p class="text-xs text-rose-300">Payments are temporarily unavailable. Please try again later.</p>
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>
             {% endfor %}
-            {% if not pending_incoming and not accepted_matches %}
+            {% if not pending_incoming and not pending_outgoing and not accepted_matches %}
             <p class="rounded-2xl border border-purple-500/20 bg-purple-950/30 p-4 text-center text-xs text-purple-200/70">
                 No requests yet. Incoming Hookup requests will appear here.
             </p>
@@ -275,10 +298,7 @@
             });
             const data = await res.json();
             if (res.ok && data.status === 'success') {
-                const rewardNotice = data.referral_reward_used
-                    ? ' Your referral reward covered your connection fee; they will still need to pay their share after accepting.'
-                    : '';
-                window.lovenyToast(`⚡ Request sent to ${name}! They can accept or decline it from their Hookup inbox.${rewardNotice}`, 'success');
+                window.lovenyToast(`⚡ Request sent to ${name}! They can accept or decline it from their Hookup inbox. You can pay to unlock the chat only after they accept.`, 'success');
                 window.setTimeout(() => location.reload(), 900);
             } else if (res.ok && data.status === 'exists') {
                 if (data.request_direction === 'incoming') {
@@ -330,7 +350,7 @@
         socket.addEventListener('error', () => socket.close());
     });
 
-    window.payHookupFee = async (matchId) => {
+    window.payHookupFee = async (matchId, provider) => {
         try {
             const res = await fetch(`/api/hookup/${matchId}/pay/`, {
                 method: 'POST',
@@ -338,6 +358,7 @@
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken(),
                 },
+                body: JSON.stringify({ provider }),
             });
             const initData = await res.json();
             if (!res.ok) {
@@ -345,32 +366,60 @@
                 return;
             }
 
-            if (
-                !window.PaystackPop ||
-                !initData.public_key ||
-                initData.public_key.includes('PUT_YOUR_REAL_PUBLIC_KEY_HERE') ||
-                initData.public_key === 'pk_test_dummy'
-            ) {
-                window.lovenyToast('Paystack checkout is not configured. Please contact support.', 'error');
-                return;
+            if (provider === 'paystack') {
+                if (!window.PaystackPop || !initData.public_key) {
+                    window.lovenyToast('Paystack checkout is not configured. Please contact support.', 'error');
+                    return;
+                }
+                const handler = PaystackPop.setup({
+                    key: initData.public_key,
+                    email: initData.email,
+                    amount: initData.amount_kobo,
+                    ref: initData.reference,
+                    metadata: initData.metadata,
+                    callback: response => verifyHookupPayment(
+                        matchId,
+                        provider,
+                        response.reference,
+                    ),
+                    onClose: () => {},
+                });
+                handler.openIframe();
+            } else if (provider === 'flutterwave') {
+                if (!window.FlutterwaveCheckout || !initData.public_key) {
+                    window.lovenyToast('Flutterwave checkout is not configured. Please contact support.', 'error');
+                    return;
+                }
+                FlutterwaveCheckout({
+                    public_key: initData.public_key,
+                    tx_ref: initData.reference,
+                    amount: Number(initData.amount),
+                    currency: 'NGN',
+                    payment_options: 'card,banktransfer,ussd',
+                    customer: { email: initData.email },
+                    meta: Object.entries(initData.metadata).map(([metaname, metavalue]) => ({
+                        metaname,
+                        metavalue: String(metavalue),
+                    })),
+                    customizations: {
+                        title: 'LOVENY Hookup Connection',
+                        description: 'Hookup chat connection fee',
+                    },
+                    callback: response => verifyHookupPayment(
+                        matchId,
+                        provider,
+                        initData.reference,
+                        response.transaction_id,
+                    ),
+                    onclose: () => {},
+                });
             }
-
-            const handler = PaystackPop.setup({
-                key: initData.public_key,
-                email: initData.email,
-                amount: initData.amount_kobo,
-                ref: initData.reference,
-                metadata: initData.metadata,
-                callback: response => verifyHookupPayment(matchId, response.reference),
-                onClose: () => {},
-            });
-            handler.openIframe();
         } catch (err) {
-            window.lovenyToast('Failed to initiate escrow checkout.', 'error');
+            window.lovenyToast('Failed to start payment checkout.', 'error');
         }
     };
 
-    async function verifyHookupPayment(matchId, reference) {
+    async function verifyHookupPayment(matchId, provider, reference, transactionId = '') {
         try {
             const res = await fetch(`/api/hookup/${matchId}/verify/`, {
                 method: 'POST',
@@ -378,7 +427,11 @@
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken(),
                 },
-                body: JSON.stringify({ reference }),
+                body: JSON.stringify({
+                    provider,
+                    reference,
+                    transaction_id: transactionId,
+                }),
             });
             const data = await res.json();
             if (res.ok) {
@@ -386,7 +439,7 @@
                     window.lovenyToast('🎉 Both partners paid! Your 24-hour chat room is now unlocked!', 'success');
                     window.setTimeout(() => window.location.href = `/hookup/chat/${matchId}/`, 900);
                 } else {
-                    window.lovenyToast('✅ Your connection fee is deposited in escrow! Awaiting partner payment to unlock.', 'success');
+                    window.lovenyToast('Payment confirmed. The connection unlocks when the other user pays.', 'success');
                     window.setTimeout(() => location.reload(), 900);
                 }
             } else {

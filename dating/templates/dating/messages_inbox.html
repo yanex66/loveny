@@ -14,6 +14,11 @@
         <h1 class="text-2xl font-black italic tracking-tighter brand-text sm:text-3xl">
             MESSAGES
         </h1>
+        {% if request.GET.conversation_unavailable %}
+        <p class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800" role="status">
+            That conversation is no longer available in your current connection mode. Your active chats are shown below.
+        </p>
+        {% endif %}
         <p class="text-slate-500 font-bold uppercase tracking-widest text-xs mt-2 flex items-center justify-center gap-2">
             <span class="w-2 h-2 rounded-full bg-pink-500 animate-pulse"></span>
             Private chats & live conversations

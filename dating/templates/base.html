@@ -243,6 +243,7 @@
     <div id="call-config"
          data-initiate-url="{% url 'call_initiate_api' %}"
          data-incoming-url="{% url 'incoming_calls_api' %}"
+         data-ice-servers-url="{% url 'call_ice_servers_api' %}"
          data-call-api-prefix="/api/calls/"
          data-subscribe-url="{% url 'premium_landing' %}"
          data-wallet-url="{% url 'wallet_balance_api' %}"
@@ -260,6 +261,7 @@
          data-checkin-url="{% url 'daily_checkin_api' %}"
          data-has-claimed-welcome="{% if user_has_claimed_welcome %}true{% else %}false{% endif %}"
          data-has-checked-in-today="{% if user_has_checked_in_today %}true{% else %}false{% endif %}"
+         data-checkin-date="{{ user_checkin_date }}"
          data-checkin-streak="{{ user_checkin_streak|default:0 }}"
          data-cycle-day="{{ user_cycle_day|default:1 }}"
          data-welcome-coins="{{ user_welcome_coins|default:30 }}"
@@ -743,9 +745,11 @@
     {% if user.is_authenticated %}
     <script src="https://js.paystack.co/v1/inline.js" defer></script>
     <script src="https://checkout.flutterwave.com/v3.js" defer></script>
+    {% if request.resolver_match.url_name != 'call_room_page' %}
     <script src="{% static 'dating/js/call-privacy.js' %}" defer></script>
     <script src="{% static 'dating/js/call-speech-monitor.js' %}" defer></script>
     <script src="{% static 'dating/js/video-calls.js' %}" defer></script>
+    {% endif %}
     {% endif %}
 
     <!-- Global Notification & Toast -->

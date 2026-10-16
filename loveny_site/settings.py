@@ -60,6 +60,7 @@ ALLOWED_HOSTS += [
     '.onrender.com',
     '127.0.0.1',
     'localhost',
+    'testserver',
     '0.0.0.0',
     '.localhost',
 ]
@@ -295,16 +296,18 @@ LOGOUT_REDIRECT_URL = '/'
 # PAYSTACK KEYS
 PAYSTACK_PUBLIC_KEY = os.environ.get(
     'PAYSTACK_PUBLIC_KEY',
-    'pk_live_6fd34253cf04d94620e50e8c547b5259d052c121',
+    '',
 ).strip()
 PAYSTACK_SECRET_KEY = os.environ.get('PAYSTACK_SECRET_KEY', '').strip()
 
 # FLUTTERWAVE KEYS
 FLUTTERWAVE_PUBLIC_KEY = os.environ.get(
     'FLUTTERWAVE_PUBLIC_KEY',
-    'FLWPUBK-9137e1d408bd082a5b9a72987b0e5ce7-X',
-)
-FLUTTERWAVE_SECRET_KEY = os.environ.get('FLUTTERWAVE_SECRET_KEY', 'FLWSECK-PUT_YOUR_REAL_SECRET_KEY_HERE-X')
+    '',
+).strip()
+FLUTTERWAVE_SECRET_KEY = os.environ.get('FLUTTERWAVE_SECRET_KEY', '').strip()
+TURN_URLS = os.environ.get('TURN_URLS', '').strip()
+TURN_SHARED_SECRET = os.environ.get('TURN_SHARED_SECRET', '').strip()
 
 # AI MONITORING
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')

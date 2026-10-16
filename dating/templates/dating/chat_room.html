@@ -175,6 +175,7 @@
         <p id="chat-status" class="min-h-4 px-5 text-[11px] text-rose-400" role="status"></p>
 
         <!-- QUICK ICEBREAKER CHIPS (Horizontal Scrollable Row Above Input) -->
+        {% if can_send_messages %}
         <div class="border-t border-white/5 bg-[#160b2d]/80 px-3 py-2 sm:px-4 overflow-x-auto no-scrollbar flex items-center gap-2">
             <span class="shrink-0 text-[10px] font-black uppercase tracking-wider text-pink-400 flex items-center gap-1">
                 <span>⚡</span> Icebreakers:
@@ -188,8 +189,10 @@
                 {% endfor %}
             </div>
         </div>
+        {% endif %}
 
         <!-- STICKER DRAWER (Collapsible) -->
+        {% if can_send_messages %}
         <div id="sticker-drawer" class="hidden border-t border-white/10 bg-[#180c33] p-3.5 transition-all duration-300">
             <div class="mb-2.5 flex items-center justify-between">
                 <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar" id="sticker-pack-tabs">
@@ -235,8 +238,10 @@
                 {% endfor %}
             </div>
         </div>
+        {% endif %}
 
         <!-- 3. BOTTOM ACTION DOCK -->
+        {% if can_send_messages %}
         <div class="border-t border-white/10 bg-[#160b2e] p-3 sm:p-4 space-y-2">
             <!-- Primary Text Input Row -->
             <form id="chat-form" class="flex items-center gap-2">
@@ -289,6 +294,16 @@
                 {% endif %}
             </div>
         </div>
+        {% else %}
+        <div class="border-t border-white/10 bg-[#160b2e] p-4 text-center">
+            <p class="mb-3 text-sm font-semibold text-purple-100">
+                You can view this chat, but Dating Premium is required to send messages.
+            </p>
+            <a href="{{ dating_premium_url }}" class="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 px-5 py-3 text-sm font-black text-white shadow-lg">
+                Upgrade to Dating Premium
+            </a>
+        </div>
+        {% endif %}
 
     </section>
 
@@ -300,7 +315,7 @@
                     <span class="text-2xl">&#x1FA99;</span>
                     <div>
                         <h2 class="text-lg font-black text-white">Refill Your Coins</h2>
-                        <p class="text-xs text-slate-400">Never run out during spicy private calls &amp; gifts</p>
+                        <p class="text-xs text-slate-400">{% if can_video_call %}Never run out during private calls &amp; gifts{% else %}Keep the conversation and gifts going{% endif %}</p>
                     </div>
                 </div>
                 <button id="close-topup-modal" type="button" class="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-slate-400 hover:text-white">✕</button>
@@ -681,13 +696,13 @@
     };
 
     window.blockHost = async function() {
-        if (await window.lovenyConfirm(`Block ${OTHER_USERNAME}? You will no longer receive calls or messages.`)) {
+        if (await window.lovenyConfirm(`Block ${OTHER_USERNAME}? You will no longer receive messages or other interactions.`)) {
             window.lovenyToast(`${OTHER_USERNAME} has been blocked.`, 'success');
             window.location.href = "{% url 'match_list' %}";
         }
     };
 
-    // Direct Video Call Trigger
+    {% if can_video_call %}
     window.startDirectVideoCall = function(receiverId) {
         if (window.lovenyStartVideoCall) {
             window.lovenyStartVideoCall(receiverId);
@@ -695,6 +710,7 @@
         }
         window.lovenyToast('Video calling is unavailable. Please refresh and try again.', 'error');
     };
+    {% endif %}
 
     // STICKER DRAWER HANDLING
     const btnToggleStickers = document.getElementById('btn-toggle-stickers');

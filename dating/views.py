@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import json
@@ -37,6 +38,7 @@ from .models import (
     CoinWallet,
     Conversation,
     GiftItem,
+    HookupSettings,
     HookupMatch,
     HookupMessage,
     Match,
@@ -82,6 +84,7 @@ PREMIUM_PRODUCTS = {
         'description': 'Sex Call uses Coins — no recurring subscriptions.',
     },
 }
+FREE_SEX_CALL_DURATION_SECONDS = 180
 PREMIUM_CATEGORY_NAMES = {
     'DATING': 'dating',
     'HOOKUP': 'hookup',
@@ -105,6 +108,51 @@ def _paystack_keys_configured():
         None,
     )
     return bool(public_mode and public_mode == secret_mode)
+
+
+def _flutterwave_keys_configured():
+    public_key = getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', '').strip()
+    secret_key = getattr(settings, 'FLUTTERWAVE_SECRET_KEY', '').strip()
+    return bool(
+        public_key
+        and public_key.startswith('FLWPUBK-')
+        and secret_key
+        and secret_key.startswith('FLWSECK-')
+        and 'PUT_YOUR_REAL' not in secret_key
+    )
+
+
+def _call_ice_servers(user_id):
+    ice_servers = [
+        {'urls': 'stun:stun.l.google.com:19302'},
+        {'urls': 'stun:stun1.l.google.com:19302'},
+    ]
+    turn_urls = [
+        url.strip()
+        for url in getattr(settings, 'TURN_URLS', '').replace('\n', ',').split(',')
+        if url.strip()
+    ]
+    turn_secret = getattr(settings, 'TURN_SHARED_SECRET', '').strip()
+    if not turn_urls or not turn_secret:
+        return ice_servers
+    if any(not url.startswith(('turn:', 'turns:')) for url in turn_urls):
+        logger.error('TURN_URLS must contain only turn: or turns: URLs.')
+        return ice_servers
+
+    username = f'{int(timezone.now().timestamp()) + 3600}:{user_id}'
+    credential = base64.b64encode(
+        hmac.new(
+            turn_secret.encode('utf-8'),
+            username.encode('utf-8'),
+            hashlib.sha1,
+        ).digest(),
+    ).decode('ascii')
+    ice_servers.append({
+        'urls': turn_urls,
+        'username': username,
+        'credential': credential,
+    })
+    return ice_servers
 
 
 def _expire_stale_call_sessions(now=None):
@@ -342,7 +390,13 @@ def profile_detail(request):
         profile = request.user.profile
     except Profile.DoesNotExist:
         return redirect('create_profile')
-    
+
+    display_name = (request.user.first_name or '').strip()
+    if not display_name or display_name.casefold() == 'member':
+        display_name = request.user.username.strip()
+    if not display_name or display_name.casefold() in {'member', 'user', 'unknown'}:
+        display_name = f"User {317000000 + request.user.pk}"
+
     main_photo = profile.photos.filter(is_main=True).first() or profile.photos.first()
     other_photos = profile.photos.exclude(id=main_photo.id) if main_photo else profile.photos.all()
     
@@ -358,10 +412,9 @@ def profile_detail(request):
     following_count = Swipe.objects.filter(swiper=request.user, type='LIKE').count()
     followers_count = Swipe.objects.filter(swiped=request.user, type='LIKE').count()
     numeric_id = 317000000 + request.user.pk
-    referral_count = Referral.objects.filter(referrer=request.user).count()
-
     return render(request, 'dating/profile_detail.html', {
         'profile': profile, 
+        'display_name': display_name,
         'main_photo': main_photo, 
         'other_photos': other_photos, 
         'is_own_profile': True,
@@ -370,10 +423,6 @@ def profile_detail(request):
         'following_count': following_count,
         'followers_count': followers_count,
         'has_checked_in_today': has_checked_in_today,
-        'referral_count': referral_count,
-        'referral_link': request.build_absolute_uri(
-            f"{reverse('signup')}?ref={quote(request.user.username, safe='')}"
-        ),
     })
 
 @login_required
@@ -383,6 +432,10 @@ def public_profile(request, pk):
     qs = Profile.objects.filter(age__gte=18)
     profile = get_object_or_404(qs, user_id=pk)
     viewer_profile = Profile.objects.filter(user=request.user).first()
+    active_mode = request.session.get(
+        'active_connection_mode',
+        viewer_profile.relationship_mode if viewer_profile else 'DATING',
+    )
     
     all_photos = list(profile.photos.all())
     main_photo = profile.photos.filter(is_main=True).first() or (all_photos[0] if all_photos else None)
@@ -392,6 +445,11 @@ def public_profile(request, pk):
         profile.relationship_mode == 'SEX_CALL'
         or (viewer_profile and viewer_profile.relationship_mode == 'SEX_CALL')
     )
+    can_video_call = bool(
+        active_mode == 'SEX_CALL'
+        and profile.relationship_mode == 'SEX_CALL'
+        and _can_use_sex_call(viewer_profile)
+    )
     site_config = SiteConfiguration.get_solo()
     rate_per_minute = getattr(site_config, 'call_rate_per_minute', 20) or 20
 
@@ -399,13 +457,22 @@ def public_profile(request, pk):
     host_levels = ['⭐ New Star', '🔥 Level 2 Host', '💎 Level 3 Star', '👑 VIP Host']
     host_level = host_levels[(profile.user.id % len(host_levels))]
 
-    flirty_moods = [
-        "Looking for fun video chats tonight 💕",
-        "Let's vibe on call! Say hi 💬",
-        "Free to chat right now, let's talk ✨",
-        "Looking for real energy & good laughs 🥂",
-        "Ready to connect. Hit instant call! 📹",
-    ]
+    flirty_moods = (
+        [
+            "Looking for fun video chats tonight 💕",
+            "Let's vibe on call! Say hi 💬",
+            "Free to chat right now, let's talk ✨",
+            "Looking for real energy & good laughs 🥂",
+            "Ready to connect. Hit instant call! 📹",
+        ]
+        if can_video_call
+        else [
+            "Looking for a genuine connection 💕",
+            "Let's connect and see where it goes ✨",
+            "Looking for real energy & good laughs 🥂",
+            "Here to meet someone kind and interesting.",
+        ]
+    )
     mood_line = profile.bio if (profile.bio and len(profile.bio) > 10) else flirty_moods[(profile.user.id % len(flirty_moods))]
 
     languages = ['English', 'Pidgin']
@@ -430,6 +497,7 @@ def public_profile(request, pk):
         'other_photos': other_photos, 
         'is_own_profile': False,
         'is_sex_call': is_sex_call,
+        'can_video_call': can_video_call,
         'site_config': site_config,
         'rate_per_minute': rate_per_minute,
         'host_level': host_level,
@@ -540,7 +608,12 @@ def quick_say_hi_api(request, user_id):
 
     conversation = _get_or_create_conversation(match)
 
-    if not conversation.messages.exists():
+    if not conversation.messages.exists() and (
+        match.mode != 'DATING'
+        or _has_paid_dating_premium(
+            Profile.objects.filter(user=request.user).first(),
+        )
+    ):
         ChatMessage.objects.create(
             conversation=conversation,
             sender=request.user,
@@ -787,16 +860,9 @@ def match_list(request):
             'has_direct_interest': m.has_direct_interest,
             'mode': m.mode,
             'can_video_call': bool(
-                (
-                    m.mode == 'SEX_CALL'
-                    or viewer_profile.relationship_mode == 'SEX_CALL'
-                )
-                and viewer_profile
-                and (
-                    request.user.is_superuser
-                    or viewer_profile.is_sex_call_premium
-                    or viewer_profile.coin_balance >= call_rate
-                )
+                active_mode == 'SEX_CALL'
+                and m.mode == 'SEX_CALL'
+                and _can_use_sex_call(viewer_profile)
             ),
             'is_online': _profile_is_online(profile),
             'last_seen': profile.last_active,
@@ -998,14 +1064,8 @@ def premium_checkout(request, mode=None):
             'user_email': request.user.email,
             'paystack_key': getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''),
             'flutterwave_key': getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', ''),
-            'paystack_enabled': bool(
-                getattr(settings, 'PAYSTACK_PUBLIC_KEY', '')
-                and getattr(settings, 'PAYSTACK_SECRET_KEY', '')
-            ),
-            'flutterwave_enabled': bool(
-                getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', '')
-                and getattr(settings, 'FLUTTERWAVE_SECRET_KEY', '')
-            ),
+            'paystack_enabled': _paystack_keys_configured(),
+            'flutterwave_enabled': _flutterwave_keys_configured(),
             'csrf_token': get_token(request),
         })
 
@@ -1028,23 +1088,10 @@ def premium_checkout(request, mode=None):
         'user_email': request.user.email,
         'paystack_key': getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''),
         'flutterwave_key': getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', ''),
-        'paystack_enabled': bool(
-            getattr(settings, 'PAYSTACK_PUBLIC_KEY', '')
-            and getattr(settings, 'PAYSTACK_SECRET_KEY', '')
-        ),
-        'flutterwave_enabled': bool(
-            getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', '')
-            and getattr(settings, 'FLUTTERWAVE_SECRET_KEY', '')
-        ),
-        'payment_configured': bool(
-            (
-                getattr(settings, 'PAYSTACK_PUBLIC_KEY', '')
-                and getattr(settings, 'PAYSTACK_SECRET_KEY', '')
-            )
-            or (
-                getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', '')
-                and getattr(settings, 'FLUTTERWAVE_SECRET_KEY', '')
-            )
+        'paystack_enabled': _paystack_keys_configured(),
+        'flutterwave_enabled': _flutterwave_keys_configured(),
+        'payment_configured': (
+            _paystack_keys_configured() or _flutterwave_keys_configured()
         ),
         'csrf_token': get_token(request),
     })
@@ -1070,13 +1117,13 @@ def premium_success(request):
 def _provider_payment(provider, reference, transaction_id=''):
     if provider == 'paystack':
         secret = getattr(settings, 'PAYSTACK_SECRET_KEY', '')
-        if not secret:
+        if not _paystack_keys_configured():
             return None
         url = f"https://api.paystack.co/transaction/verify/{quote(reference, safe='')}"
         headers = {'Authorization': f'Bearer {secret}'}
     else:
         secret = getattr(settings, 'FLUTTERWAVE_SECRET_KEY', '')
-        if not secret or not transaction_id.isdigit():
+        if not _flutterwave_keys_configured() or not transaction_id.isdigit():
             return None
         url = f"https://api.flutterwave.com/v3/transactions/{transaction_id}/verify"
         headers = {'Authorization': f'Bearer {secret}'}
@@ -1347,13 +1394,21 @@ def _call_payload(call):
     )
     config = SiteConfiguration.get_solo()
     rate = getattr(call, 'rate_per_minute', None) or getattr(config, 'call_rate_per_minute', 20) or 20
-    max_seconds = 86400 if is_unlimited else ((caller_coins // rate) * 60)
+    max_seconds = (
+        FREE_SEX_CALL_DURATION_SECONDS
+        if call.is_free_trial_call
+        else 86400 if is_unlimited else (((caller_coins + call.coins_spent) // rate) * 60)
+    )
 
     elapsed_seconds = 0
     if call.started_at and call.status == 'connected':
         elapsed_seconds = max(0, int((timezone.now() - call.started_at).total_seconds()))
 
-    remaining_seconds = 86400 if is_unlimited else max(0, max_seconds - elapsed_seconds)
+    remaining_seconds = (
+        max(0, max_seconds - elapsed_seconds)
+        if call.is_free_trial_call or not is_unlimited
+        else 86400
+    )
     grace_period = getattr(config, 'grace_period_seconds', 20)
 
     return {
@@ -1391,6 +1446,12 @@ def _call_payload(call):
         'grace_period_seconds': grace_period,
         'coins_spent': getattr(call, 'coins_spent', 0),
         'duration_seconds': getattr(call, 'duration_seconds', 0),
+        'is_free_trial_call': call.is_free_trial_call,
+        'free_trial_complete': bool(
+            call.is_free_trial_call
+            and call.status == 'ended'
+            and call.duration_seconds >= FREE_SEX_CALL_DURATION_SECONDS
+        ),
         'grace_period_applied': bool(getattr(call, 'duration_seconds', 0) < grace_period and call.status in ('ended', 'declined')),
     }
 
@@ -1413,12 +1474,30 @@ def _can_use_sex_call(profile_or_user):
         return True
     if user and user.is_superuser:
         return True
+    if not profile.has_used_free_sex_call:
+        return True
     config = SiteConfiguration.get_solo()
     min_coins = getattr(config, 'call_rate_per_minute', 20) or 20
     return bool(
         profile.is_sex_call_premium
         or profile.coin_balance >= min_coins
     )
+
+
+def _has_paid_dating_premium(profile):
+    if not profile or not profile.dating_premium_expiry:
+        return False
+    if profile.dating_premium_expiry <= timezone.now():
+        return False
+    if (
+        profile.free_trial_mode == 'DATING'
+        and profile.free_trial_expires_at
+        and profile.has_free_trial_access('DATING')
+        and profile.dating_premium_expiry
+        <= profile.free_trial_expires_at + timedelta(seconds=1)
+    ):
+        return False
+    return True
 
 
 @login_required
@@ -1433,10 +1512,26 @@ def call_initiate_api(request):
         return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
 
     caller_profile = Profile.objects.filter(user=request.user).first()
+    active_mode = request.session.get(
+        'active_connection_mode',
+        caller_profile.relationship_mode if caller_profile else None,
+    )
+    if (
+        not caller_profile
+        or active_mode != 'SEX_CALL'
+        or caller_profile.relationship_mode != 'SEX_CALL'
+    ):
+        return JsonResponse({
+            'status': 'error',
+            'message': 'sex_call_mode_required',
+            'detail': 'Video calls are available only in Sex Call mode.',
+        }, status=403)
+
     config = SiteConfiguration.get_solo()
     min_coins = getattr(config, 'call_rate_per_minute', 20) or 20
     if not caller_profile or (settings.SEX_CALL_BALANCE_GATING_ENABLED and (
         not request.user.is_superuser
+        and caller_profile.has_used_free_sex_call
         and not caller_profile.is_sex_call_premium
         and caller_profile.coin_balance < min_coins
     )):
@@ -1459,6 +1554,12 @@ def call_initiate_api(request):
         return JsonResponse({'status': 'error', 'message': 'invalid_receiver'}, status=400)
 
     receiver_profile = Profile.objects.filter(user=receiver).first()
+    if not receiver_profile or receiver_profile.relationship_mode != 'SEX_CALL':
+        return JsonResponse({
+            'status': 'error',
+            'message': 'sex_call_mode_required',
+            'detail': 'Video calls are available only between Sex Call members.',
+        }, status=403)
     if receiver_profile and getattr(receiver_profile, 'is_dnd', False):
         return JsonResponse({
             'status': 'error',
@@ -1518,6 +1619,7 @@ def call_initiate_api(request):
             receiver=receiver,
             status='ringing',
             rate_per_minute=min_coins,
+            is_free_trial_call=not caller_profile.has_used_free_sex_call,
         )
     return JsonResponse({
         'status': 'success',
@@ -1598,6 +1700,7 @@ def call_respond_api(request, room_id):
                 not caller_profile
                 or (settings.SEX_CALL_BALANCE_GATING_ENABLED and (
                     not call.caller.is_superuser
+                    and not call.is_free_trial_call
                     and not caller_profile.is_sex_call_premium
                     and caller_profile.coin_balance < call_rate
                 ))
@@ -1611,13 +1714,21 @@ def call_respond_api(request, room_id):
             call.started_at = now
             call.connected_at = now
             call.last_heartbeat_at = now
+            if call.is_free_trial_call and caller_profile:
+                caller_profile.has_used_free_sex_call = True
+                caller_profile.save(update_fields=['has_used_free_sex_call'])
 
             # Billing Starts Only After Pickup:
             # Deduct the first minute's rate upon connection
             site_config = SiteConfiguration.get_solo()
             rate = getattr(call, 'rate_per_minute', site_config.call_rate_per_minute) or site_config.call_rate_per_minute
             is_unlimited = bool(caller_profile and (caller_profile.user.is_superuser or caller_profile.is_sex_call_premium))
-            if settings.SEX_CALL_BALANCE_GATING_ENABLED and not is_unlimited and caller_profile:
+            if (
+                settings.SEX_CALL_BALANCE_GATING_ENABLED
+                and not call.is_free_trial_call
+                and not is_unlimited
+                and caller_profile
+            ):
                 deposit = min(caller_profile.coin_balance, rate)
                 caller_profile.coin_balance = max(0, caller_profile.coin_balance - deposit)
                 caller_profile.save(update_fields=['coin_balance'])
@@ -1670,7 +1781,7 @@ def _finalize_call_end(call, user):
             0,
             int((call.ended_at - call.started_at).total_seconds()),
         )
-        if not settings.SEX_CALL_BALANCE_GATING_ENABLED:
+        if call.is_free_trial_call or not settings.SEX_CALL_BALANCE_GATING_ENABLED:
             call.save(update_fields=['status', 'ended_at', 'duration_seconds'])
             return call
         caller_profile = Profile.objects.select_for_update().filter(
@@ -1861,6 +1972,16 @@ def call_moderation_flag_api(request, room_id):
 
 @login_required
 @require_GET
+def call_ice_servers_api(request):
+    response = JsonResponse({
+        'ice_servers': _call_ice_servers(request.user.pk),
+    })
+    response['Cache-Control'] = 'private, no-store'
+    return response
+
+
+@login_required
+@require_GET
 def call_signals_api(request, room_id):
     call = get_object_or_404(
         CallSession.objects.select_related('caller', 'receiver'),
@@ -2017,15 +2138,35 @@ def call_heartbeat_api(request, room_id):
     call.save(update_fields=['last_heartbeat_at'])
     if not call.started_at:
         return JsonResponse({'status': 'ok', 'call': _call_payload(call)})
+    elapsed = max(0, int((timezone.now() - call.started_at).total_seconds()))
+    if call.is_free_trial_call:
+        if elapsed >= FREE_SEX_CALL_DURATION_SECONDS:
+            with transaction.atomic():
+                call = CallSession.objects.select_for_update().get(pk=call.pk)
+                if call.status in ('connected', 'active'):
+                    call.status = 'ended'
+                    call.ended_at = timezone.now()
+                    call.duration_seconds = FREE_SEX_CALL_DURATION_SECONDS
+                    call.save(update_fields=['status', 'ended_at', 'duration_seconds'])
+            return JsonResponse({
+                'status': 'ended',
+                'reason': 'free_trial_complete',
+                'message': 'Your free three-minute call has ended. Add coins to start another call.',
+                'call': _call_payload(call),
+            })
+        return JsonResponse({'status': 'ok', 'call': _call_payload(call)})
     if not settings.SEX_CALL_BALANCE_GATING_ENABLED:
         return JsonResponse({'status': 'ok', 'call': _call_payload(call)})
 
-    elapsed = max(0, int((timezone.now() - call.started_at).total_seconds()))
     caller_profile = Profile.objects.filter(user_id=call.caller_id).first()
     is_unlimited = bool(caller_profile and (caller_profile.user.is_superuser or caller_profile.is_sex_call_premium))
     site_config = SiteConfiguration.get_solo()
     rate = getattr(call, 'rate_per_minute', site_config.call_rate_per_minute) or site_config.call_rate_per_minute
-    max_sec = 86400 if is_unlimited else ((caller_profile.coin_balance // rate) * 60 if caller_profile else 0)
+    max_sec = (
+        86400
+        if is_unlimited
+        else (((caller_profile.coin_balance + call.coins_spent) // rate) * 60 if caller_profile else 0)
+    )
 
     # If caller exceeded their available coins (after the grace period)
     if not is_unlimited and elapsed >= max_sec and elapsed >= site_config.grace_period_seconds:
@@ -2041,10 +2182,10 @@ def call_heartbeat_api(request, room_id):
                     coins_to_take = caller_p.coin_balance
                     caller_p.coin_balance = 0
                     caller_p.save(update_fields=['coin_balance'])
-                    call.coins_spent = coins_to_take
+                    call.coins_spent += coins_to_take
 
                     commission = Decimal(str(site_config.host_commission_percentage)) / Decimal('100')
-                    diamonds = int(Decimal(coins_to_take) * commission)
+                    diamonds = int(Decimal(call.coins_spent) * commission)
                     if diamonds > 0:
                         receiver_p.earned_diamonds += diamonds
                         receiver_p.save(update_fields=['earned_diamonds'])
@@ -2056,13 +2197,29 @@ def call_heartbeat_api(request, room_id):
                             description=f'Earned {diamonds} diamonds from video call with {call.caller.username}',
                         )
 
-                    CoinTransaction.objects.create(
+                    deduction = CoinTransaction.objects.filter(
                         user=call.caller,
-                        amount=-coins_to_take,
                         transaction_type='CALL_DEDUCTION',
                         call=call,
-                        description=f'Coins depleted: {coins_to_take} coins deducted for {call.duration_seconds}s video call.',
-                    )
+                    ).first()
+                    if deduction:
+                        deduction.amount = -call.coins_spent
+                        deduction.description = (
+                            f'Coins depleted: {call.coins_spent} coins deducted '
+                            f'for {call.duration_seconds}s video call.'
+                        )
+                        deduction.save(update_fields=['amount', 'description'])
+                    elif call.coins_spent:
+                        CoinTransaction.objects.create(
+                            user=call.caller,
+                            amount=-call.coins_spent,
+                            transaction_type='CALL_DEDUCTION',
+                            call=call,
+                            description=(
+                                f'Coins depleted: {call.coins_spent} coins deducted '
+                                f'for {call.duration_seconds}s video call.'
+                            ),
+                        )
                 call.save(update_fields=['status', 'ended_at', 'duration_seconds', 'coins_spent'])
         return JsonResponse({
             'status': 'depleted',
@@ -2258,7 +2415,7 @@ def wallet_balance_api(request):
 @login_required
 @require_POST
 def wallet_visit_rewards_api(request):
-    """Idempotently grant first-visit and daily rewards for the current day."""
+    """Grant the one-time welcome reward; daily check-ins are explicitly claimed."""
     profile = Profile.objects.filter(user=request.user).first()
     if not profile:
         return JsonResponse(
@@ -2267,12 +2424,8 @@ def wallet_visit_rewards_api(request):
         )
 
     today = timezone.localdate()
-    yesterday = today - timedelta(days=1)
     site_config = SiteConfiguration.get_solo()
     welcome_coins = getattr(site_config, 'welcome_bonus_coins', 30) or 30
-    daily_coins = getattr(site_config, 'daily_checkin_coins', 5) or 5
-    d7_coins = getattr(site_config, 'day_7_bonus_coins', 10) or 10
-    d7_diamonds = getattr(site_config, 'day_7_bonus_diamonds', 20) or 20
 
     with transaction.atomic():
         profile = Profile.objects.select_for_update().get(pk=profile.pk)
@@ -2283,17 +2436,6 @@ def wallet_visit_rewards_api(request):
                 transaction_type='WELCOME_BONUS',
             ).exists()
         )
-        daily_awarded = not (
-            profile.last_checkin_date == today
-            or CoinTransaction.objects.filter(
-                user=request.user,
-                transaction_type='DAILY_CHECKIN',
-                created_at__date=today,
-            ).exists()
-        )
-        diamonds_awarded = 0
-        daily_amount = 0
-
         if welcome_awarded:
             profile.coin_balance += welcome_coins
             profile.has_claimed_welcome = True
@@ -2304,41 +2446,9 @@ def wallet_visit_rewards_api(request):
                 description=f'Newcomer Joining Reward (+{welcome_coins} Coins)',
             )
 
-        if daily_awarded:
-            if profile.last_checkin_date == yesterday and profile.checkin_streak > 0:
-                profile.checkin_streak = (profile.checkin_streak % 7) + 1
-            else:
-                profile.checkin_streak = 1
-            daily_amount = (
-                d7_coins if profile.checkin_streak == 7 else daily_coins
-            )
-            if profile.checkin_streak == 7:
-                diamonds_awarded = d7_diamonds
-            profile.coin_balance += daily_amount
-            profile.earned_diamonds += diamonds_awarded
-            profile.last_checkin_date = today
-            description = (
-                f'Day {profile.checkin_streak} Daily Check-In '
-                f'(+{daily_amount} Coins)'
-            )
-            if diamonds_awarded:
-                description = (
-                    f'Day 7 Streak Grand Prize (+{daily_amount} Coins, '
-                    f'+{diamonds_awarded} Diamonds)'
-                )
-            CoinTransaction.objects.create(
-                user=request.user,
-                amount=daily_amount,
-                transaction_type='DAILY_CHECKIN',
-                description=description,
-            )
-
-        if welcome_awarded or daily_awarded:
+        if welcome_awarded:
             profile.save(update_fields=[
                 'coin_balance',
-                'earned_diamonds',
-                'checkin_streak',
-                'last_checkin_date',
                 'has_claimed_welcome',
             ])
             wallet, _ = CoinWallet.objects.select_for_update().get_or_create(
@@ -2351,12 +2461,19 @@ def wallet_visit_rewards_api(request):
     return JsonResponse({
         'status': 'success',
         'welcome_awarded': welcome_coins if welcome_awarded else 0,
-        'daily_awarded': daily_amount,
-        'diamonds_awarded': diamonds_awarded,
+        'daily_awarded': 0,
+        'diamonds_awarded': 0,
         'coin_balance': profile.coin_balance,
         'earned_diamonds': profile.earned_diamonds,
         'has_claimed_welcome': profile.has_claimed_welcome,
-        'has_checked_in_today': profile.last_checkin_date == today,
+        'has_checked_in_today': bool(
+            profile.last_checkin_date == today
+            or CoinTransaction.objects.filter(
+                user=request.user,
+                transaction_type='DAILY_CHECKIN',
+                created_at__date=today,
+            ).exists()
+        ),
         'checkin_streak': profile.checkin_streak,
         'cycle_day': profile.checkin_streak or 1,
     })
@@ -2678,6 +2795,24 @@ def quick_call_match_api(request):
                 'status': 'error',
                 'message': 'sex_call_profile_required',
             }, status=403)
+        call_rate = site_config.call_rate_per_minute or 20
+        is_free_trial_call = not caller_profile.has_used_free_sex_call
+        is_unlimited = bool(
+            request.user.is_superuser or caller_profile.is_sex_call_premium
+        )
+        if (
+            settings.SEX_CALL_BALANCE_GATING_ENABLED
+            and not is_free_trial_call
+            and not is_unlimited
+            and caller_profile.coin_balance < call_rate
+        ):
+            return JsonResponse({
+                'status': 'error',
+                'message': 'insufficient_coins',
+                'detail': f'You need at least {call_rate} coins to start a video call.',
+                'coin_balance': caller_profile.coin_balance,
+                'required_coins': call_rate,
+            }, status=402)
         requested_gender = data.get('preferred_gender')
         if requested_gender not in ('M', 'F', 'E'):
             requested_gender = caller_profile.preferred_gender or 'E'
@@ -2800,10 +2935,16 @@ def quick_call_match_api(request):
             started_at=now,
             connected_at=now,
             last_heartbeat_at=now,
+            is_free_trial_call=is_free_trial_call,
         )
+        if is_free_trial_call:
+            caller_profile.has_used_free_sex_call = True
+            caller_profile.save(update_fields=('has_used_free_sex_call',))
         deposit = (
             min(caller_profile.coin_balance, call.rate_per_minute)
             if settings.SEX_CALL_BALANCE_GATING_ENABLED
+            and not is_free_trial_call
+            and not is_unlimited
             else 0
         )
         if deposit:
@@ -2977,14 +3118,8 @@ def coin_packages_api(request):
         } for p in packages],
         'paystack_public_key': getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''),
         'flutterwave_public_key': getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', ''),
-        'paystack_enabled': bool(
-            getattr(settings, 'PAYSTACK_PUBLIC_KEY', '')
-            and getattr(settings, 'PAYSTACK_SECRET_KEY', '')
-        ),
-        'flutterwave_enabled': bool(
-            getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', '')
-            and getattr(settings, 'FLUTTERWAVE_SECRET_KEY', '')
-        ),
+        'paystack_enabled': _paystack_keys_configured(),
+        'flutterwave_enabled': _flutterwave_keys_configured(),
         'user_email': request.user.email if request.user.is_authenticated else '',
     })
 
@@ -3174,6 +3309,16 @@ STICKER_PACKS = [
 
 def _build_chat_context(request, conversation, match, other_user, other_profile, current_profile):
     site_config = SiteConfiguration.get_solo()
+    can_video_call = bool(
+        request.session.get(
+            'active_connection_mode',
+            current_profile.relationship_mode if current_profile else 'DATING',
+        ) == 'SEX_CALL'
+        and match.mode == 'SEX_CALL'
+        and other_profile
+        and other_profile.relationship_mode == 'SEX_CALL'
+        and _can_use_sex_call(current_profile)
+    )
     gifts = list(GiftItem.objects.filter(is_active=True).order_by('order', 'coin_cost'))
     gift_list = [{
         'slug': g.slug,
@@ -3211,8 +3356,9 @@ def _build_chat_context(request, conversation, match, other_user, other_profile,
         "Hello, how are you? 😍",
         "How old are you?",
         "Nice to meet you ✨",
-        "Are you free for a call? 📹",
     ]
+    if can_video_call:
+        quick_icebreakers.append("Are you free for a call? 📹")
 
     return {
         'conversation': conversation,
@@ -3222,7 +3368,7 @@ def _build_chat_context(request, conversation, match, other_user, other_profile,
         'other_avatar': other_avatar,
         'is_other_online': is_online,
         'current_profile': current_profile,
-        'can_video_call': _can_use_sex_call(current_profile),
+        'can_video_call': can_video_call,
         'site_config': site_config,
         'call_rate_per_minute': site_config.call_rate_per_minute,
         'user_coin_balance': current_profile.coin_balance if current_profile else 100,
@@ -3230,6 +3376,11 @@ def _build_chat_context(request, conversation, match, other_user, other_profile,
         'sticker_packs': STICKER_PACKS,
         'languages': languages,
         'quick_icebreakers': quick_icebreakers,
+        'can_send_messages': (
+            match.mode != 'DATING'
+            or _has_paid_dating_premium(current_profile)
+        ),
+        'dating_premium_url': f"{reverse('premium_landing')}?product=DATING",
         'other_numeric_id': 317000000 + other_user.pk,
         'messages_url': reverse('conversation_messages_api', args=[conversation.pk]),
         'send_url': reverse('conversation_send_api', args=[conversation.pk]),
@@ -3284,9 +3435,10 @@ def chat_send_gift_api(request):
 
     conversation = None
     other_user = None
+    match = None
 
     if conversation_id:
-        conversation, _, other_user = _get_active_conversation(conversation_id, request.user)
+        conversation, match, other_user = _get_active_conversation(conversation_id, request.user)
     elif match_id:
         match = _get_active_match(match_id, request.user)
         conversation = _get_or_create_conversation(match)
@@ -3320,6 +3472,13 @@ def chat_send_gift_api(request):
     sender_profile = Profile.objects.filter(user=request.user).first()
     if not sender_profile:
         return JsonResponse({'status': 'error', 'message': 'profile_required'}, status=400)
+    if match and match.mode == 'DATING' and not _has_paid_dating_premium(sender_profile):
+        return JsonResponse({
+            'status': 'error',
+            'message': 'dating_premium_required',
+            'detail': 'Upgrade to Dating Premium to send messages and gifts.',
+            'premium_url': f"{reverse('premium_landing')}?product=DATING",
+        }, status=403)
 
     if sender_profile.coin_balance < gift_cost:
         return JsonResponse({
@@ -3469,9 +3628,16 @@ def conversation_messages_api(request, conversation_id):
 @login_required
 @require_POST
 def conversation_send_api(request, conversation_id):
-    conversation, _, other_user = _get_active_conversation(conversation_id, request.user)
+    conversation, match, other_user = _get_active_conversation(conversation_id, request.user)
     sender_profile = Profile.objects.filter(user=request.user).first()
     recipient_profile = Profile.objects.filter(user=other_user).first()
+    if match.mode == 'DATING' and not _has_paid_dating_premium(sender_profile):
+        return JsonResponse({
+            'status': 'error',
+            'message': 'dating_premium_required',
+            'detail': 'Upgrade to Dating Premium to send messages.',
+            'premium_url': f"{reverse('premium_landing')}?product=DATING",
+        }, status=403)
     if (
         not sender_profile
         or not recipient_profile
@@ -3620,7 +3786,15 @@ def conversations_api(request):
 
 @login_required
 def conversation_room(request, conversation_id):
-    conversation, match, other_user = _get_active_conversation(conversation_id, request.user)
+    try:
+        conversation, match, other_user = _get_active_conversation(conversation_id, request.user)
+    except Http404:
+        if Conversation.objects.filter(
+            pk=conversation_id,
+            participants=request.user,
+        ).exists():
+            return redirect(f"{reverse('messages_inbox')}?conversation_unavailable=1")
+        raise
     other_profile = Profile.objects.filter(user=other_user).first()
     current_profile = Profile.objects.filter(user=request.user).first()
     context = _build_chat_context(request, conversation, match, other_user, other_profile, current_profile)
@@ -3667,16 +3841,7 @@ def _award_referral_signup_rewards(referrer_id, referred_user):
         )
         referral.coins_awarded = coin_reward
 
-        referrals_per_connection = config.referrals_per_free_hookup
-        referral_count = Referral.objects.filter(referrer_id=referrer_id).count()
-        if referral_count % referrals_per_connection == 0:
-            referrer_profile.hookup_free_connections += 1
-            referrer_profile.save(update_fields=['hookup_free_connections'])
-            referral.free_hookup_connection_awarded = True
-        referral.save(update_fields=[
-            'coins_awarded',
-            'free_hookup_connection_awarded',
-        ])
+        referral.save(update_fields=['coins_awarded'])
 
 
 @ensure_csrf_cookie
@@ -3703,21 +3868,8 @@ def signup(request):
                 relationship_mode=mode,
                 has_claimed_welcome=True,
                 coin_balance=site_config.welcome_bonus_coins,
+                has_used_free_sex_call=(mode != 'SEX_CALL'),
             )
-            if site_config.free_trial_enabled:
-                now = timezone.now()
-                profile.free_trial_mode = mode
-                profile.free_trial_expires_at = now + timedelta(
-                    hours=site_config.free_trial_duration_hours,
-                )
-                profile.dating_premium_tier = 'GOLD'
-                profile.dating_premium_expiry = now + timedelta(days=1)
-                profile.save(update_fields=[
-                    'free_trial_mode',
-                    'free_trial_expires_at',
-                    'dating_premium_tier',
-                    'dating_premium_expiry',
-                ])
             if site_config.welcome_bonus_coins:
                 CoinTransaction.objects.create(
                     user=user,
@@ -3857,14 +4009,6 @@ def create_profile(request):
             _apply_profile_mode_switch(current_profile, chosen_mode, request.user)
         p.relationship_mode = chosen_mode
         trial_config = SiteConfiguration.get_solo()
-        if not p.free_trial_expires_at and trial_config.free_trial_enabled:
-            p.free_trial_mode = chosen_mode
-            p.free_trial_expires_at = timezone.now() + timedelta(
-                hours=trial_config.free_trial_duration_hours,
-            )
-            if not p.dating_premium_expiry or p.dating_premium_expiry < timezone.now():
-                p.dating_premium_tier = 'GOLD'
-                p.dating_premium_expiry = timezone.now() + timedelta(days=1)
         if not p.has_claimed_welcome:
             welcome_coins = trial_config.welcome_bonus_coins
             p.coin_balance = max(p.coin_balance, welcome_coins)
@@ -4271,6 +4415,7 @@ def paystack_webhook_api(request):
         reference=reference,
         amount_kobo=amount_kobo,
         currency=currency,
+        provider='paystack',
     )
     if not match:
         return HttpResponseBadRequest('Payment does not match the Hookup request')
@@ -4279,7 +4424,15 @@ def paystack_webhook_api(request):
     return HttpResponse(status=200)
 
 
-def _record_hookup_payment(*, match_id, payer_id, reference, amount_kobo, currency):
+def _record_hookup_payment(
+    *,
+    match_id,
+    payer_id,
+    reference,
+    amount_kobo,
+    currency,
+    provider,
+):
     try:
         match_id = uuid.UUID(str(match_id))
     except (TypeError, ValueError, AttributeError):
@@ -4290,6 +4443,7 @@ def _record_hookup_payment(*, match_id, payer_id, reference, amount_kobo, curren
         if (
             not match
             or match.status not in ('accepted', 'unlocked')
+            or provider not in ('paystack', 'flutterwave')
             or currency != 'NGN'
             or amount_kobo != int(match.connection_fee * 100)
         ):
@@ -4299,15 +4453,18 @@ def _record_hookup_payment(*, match_id, payer_id, reference, amount_kobo, curren
             payer_id = int(payer_id)
         except (TypeError, ValueError):
             return None
-        if payer_id not in (match.initiator_id, match.target_id):
+        if payer_id == match.initiator_id:
+            payer_field = 'initiator_paid'
+        elif payer_id == match.target_id:
+            payer_field = 'target_paid'
+        else:
             return None
 
-        payer_field = 'initiator_paid' if payer_id == match.initiator_id else 'target_paid'
         payment, created = PaymentTransaction.objects.get_or_create(
             reference=reference,
             defaults={
                 'user_id': payer_id,
-                'provider': 'paystack',
+                'provider': provider,
                 'product': 'HOOKUP_MATCH',
                 'plan_type': 'hookup_connection_fee',
                 'amount_kobo': amount_kobo,
@@ -4319,7 +4476,7 @@ def _record_hookup_payment(*, match_id, payer_id, reference, amount_kobo, curren
             or payment.product != 'HOOKUP_MATCH'
             or payment.amount_kobo != amount_kobo
             or payment.currency != currency
-            or payment.provider != 'paystack'
+            or payment.provider != provider
         ):
             return None
 
@@ -4445,7 +4602,7 @@ def hookup_discovery_view(request):
     for m in accepted_matches:
         m.is_initiator = (m.initiator_id == request.user.id)
         m.has_paid = m.initiator_paid if m.is_initiator else m.target_paid
-        m.has_referral_free = m.initiator_referral_free and m.is_initiator
+        m.partner_paid = m.target_paid if m.is_initiator else m.initiator_paid
 
     # Active unlocked 24-hr chats
     active_unlocked = list(
@@ -4475,7 +4632,9 @@ def hookup_discovery_view(request):
         'accepted_matches': accepted_matches,
         'active_unlocked': active_unlocked,
         'paystack_public_key': getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''),
-        'connection_fee': SiteConfiguration.get_solo().hookup_connection_fee,
+        'paystack_enabled': _paystack_keys_configured(),
+        'flutterwave_enabled': _flutterwave_keys_configured(),
+        'connection_fee': HookupSettings.get_solo().connection_fee,
     })
 
 
@@ -4532,23 +4691,16 @@ def hookup_request_api(request):
             return JsonResponse({'status': 'error', 'message': 'hookup_mode_required'}, status=403)
         if not target_profile or target_profile.relationship_mode != 'HOOKUP':
             return JsonResponse({'status': 'error', 'message': 'target_not_in_hookup_mode'}, status=400)
-        referral_free = initiator_profile.hookup_free_connections > 0
-        if referral_free:
-            initiator_profile.hookup_free_connections -= 1
-            initiator_profile.save(update_fields=['hookup_free_connections'])
         match = HookupMatch.objects.create(
             initiator=request.user,
             target=target_user,
             status='pending',
-            initiator_paid=referral_free,
-            initiator_referral_free=referral_free,
-            connection_fee=SiteConfiguration.get_solo().hookup_connection_fee,
+            connection_fee=HookupSettings.get_solo().connection_fee,
         )
     return JsonResponse({
         'status': 'success',
         'match_id': str(match.id),
         'message': f'Connection request sent to {target_user.username}!',
-        'referral_reward_used': referral_free,
     }, status=201)
 
 
@@ -4580,26 +4732,18 @@ def hookup_respond_api(request, match_id):
 
     if action == 'accept':
         match.status = 'accepted'
+        match.connection_fee = HookupSettings.get_solo().connection_fee
     elif action == 'decline':
         with transaction.atomic():
             match = HookupMatch.objects.select_for_update().get(pk=match.pk)
             if match.status != 'pending':
                 return JsonResponse({'status': 'error', 'message': 'request_not_pending'}, status=409)
             match.status = 'declined'
-            update_fields = ['status']
-            if match.initiator_referral_free and match.initiator_paid:
-                initiator_profile = Profile.objects.select_for_update().filter(
-                    user_id=match.initiator_id,
-                ).first()
-                if initiator_profile:
-                    initiator_profile.hookup_free_connections += 1
-                    initiator_profile.save(update_fields=['hookup_free_connections'])
-                match.initiator_referral_free = False
-                match.initiator_paid = False
-                update_fields.extend(['initiator_referral_free', 'initiator_paid'])
-            match.save(update_fields=update_fields)
+            match.save(update_fields=['status'])
     if action == 'accept':
-        match.save(update_fields=['status'])
+        update_fields = ['status']
+        update_fields.append('connection_fee')
+        match.save(update_fields=update_fields)
 
     return JsonResponse({
         'status': 'success',
@@ -4608,22 +4752,73 @@ def hookup_respond_api(request, match_id):
     })
 
 
+def _verify_flutterwave_hookup_transaction(transaction_id, reference):
+    if not _flutterwave_keys_configured():
+        return None, 'Flutterwave verification is not configured.', 503
+    if not transaction_id.isdigit():
+        return None, 'Invalid Flutterwave transaction ID.', 400
+
+    verify_request = Request(
+        f'https://api.flutterwave.com/v3/transactions/{transaction_id}/verify',
+        headers={'Authorization': f'******'},
+        method='GET',
+    )
+    try:
+        with urlopen(verify_request, timeout=10) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+    except HTTPError as exc:
+        logger.warning('Flutterwave verification returned HTTP %s.', exc.code)
+        return None, 'Flutterwave could not verify this payment.', 502
+    except (URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        logger.warning('Flutterwave verification failed: %s', exc)
+        return None, 'Flutterwave verification is temporarily unavailable.', 503
+
+    data = payload.get('data') if isinstance(payload, dict) else None
+    if (
+        not isinstance(data, dict)
+        or payload.get('status') != 'success'
+        or data.get('status') != 'successful'
+        or str(data.get('id')) != transaction_id
+        or data.get('tx_ref') != reference
+    ):
+        return None, 'Flutterwave could not verify this payment.', 400
+    return data, None, None
+
+
 @login_required
 @require_POST
 def hookup_initialize_payment_api(request, match_id):
     match = get_object_or_404(HookupMatch, pk=match_id)
     if request.user not in (match.initiator, match.target):
         return HttpResponseForbidden("Not authorized")
-    if match.status != 'accepted':
+    if match.status not in ('accepted', 'unlocked'):
         return JsonResponse({'status': 'error', 'message': 'request_not_accepted'}, status=409)
-    if (
-        request.user.pk == match.initiator_id and match.initiator_paid
-    ) or (
-        request.user.pk == match.initiator_id and match.initiator_referral_free
-    ) or (
-        request.user.pk == match.target_id and match.target_paid
-    ):
+    payer_has_paid = (
+        match.initiator_paid
+        if request.user.pk == match.initiator_id
+        else match.target_paid
+    )
+    if payer_has_paid:
         return JsonResponse({'status': 'error', 'message': 'fee_already_paid'}, status=409)
+
+    try:
+        data = json.loads(request.body or '{}')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
+    provider = data.get('provider', 'paystack')
+    if provider not in ('paystack', 'flutterwave'):
+        return JsonResponse({'status': 'error', 'message': 'invalid_payment_provider'}, status=400)
+
+    if provider == 'paystack':
+        public_key = getattr(settings, 'PAYSTACK_PUBLIC_KEY', '')
+        if not _paystack_keys_configured() or not public_key:
+            return JsonResponse({'status': 'error', 'message': 'payment_provider_unavailable'}, status=503)
+    else:
+        public_key = getattr(settings, 'FLUTTERWAVE_PUBLIC_KEY', '')
+        if not _flutterwave_keys_configured():
+            return JsonResponse({'status': 'error', 'message': 'payment_provider_unavailable'}, status=503)
 
     fee = match.connection_fee
     amount_kobo = int(fee * 100)
@@ -4635,8 +4830,9 @@ def hookup_initialize_payment_api(request, match_id):
         'amount': str(fee),
         'amount_kobo': amount_kobo,
         'reference': ref,
+        'provider': provider,
         'email': request.user.email or f"{request.user.username}@loveny.com",
-        'public_key': getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''),
+        'public_key': public_key,
         'metadata': {
             'match_id': str(match.id),
             'payer_id': request.user.id,
@@ -4676,7 +4872,7 @@ def hookup_verify_payment_api(request, match_id):
     match = get_object_or_404(HookupMatch, pk=match_id)
     if request.user not in (match.initiator, match.target):
         return HttpResponseForbidden("Not authorized")
-    if match.status != 'accepted':
+    if match.status not in ('accepted', 'unlocked'):
         return JsonResponse({'status': 'error', 'message': 'request_not_accepted'}, status=409)
 
     try:
@@ -4686,48 +4882,96 @@ def hookup_verify_payment_api(request, match_id):
     if not isinstance(data, dict):
         return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
 
+    provider = data.get('provider', 'paystack')
     reference = str(data.get('reference', '')).strip()
-    if not reference:
+    transaction_id = str(data.get('transaction_id', '')).strip()
+    if provider not in ('paystack', 'flutterwave') or not reference:
         return JsonResponse({'status': 'error', 'message': 'reference_required'}, status=400)
 
-    verified, verification_error, error_status = _verify_paystack_reference(reference)
-    if not verified:
-        return JsonResponse(
-            {'status': 'error', 'message': verification_error},
-            status=error_status,
-        )
-    payment_data = (
-        verified.get('data')
-        if isinstance(verified, dict) and verified.get('status') is True
-        else None
+    payer_has_paid = (
+        match.initiator_paid
+        if request.user.pk == match.initiator_id
+        else match.target_paid
     )
-    metadata = payment_data.get('metadata') if isinstance(payment_data, dict) else None
-    if not isinstance(metadata, dict):
-        metadata = {}
-    try:
-        payer_id = int(metadata.get('payer_id', metadata.get('user_id', 0)))
-    except (TypeError, ValueError):
-        payer_id = 0
+    if payer_has_paid:
+        return JsonResponse({'status': 'error', 'message': 'fee_already_paid'}, status=409)
 
-    if (
-        not isinstance(payment_data, dict)
-        or payment_data.get('status') != 'success'
-        or payment_data.get('reference') != reference
-        or metadata.get('match_id') != str(match.pk)
-        or metadata.get('product') != 'HOOKUP_MATCH'
-        or payer_id != request.user.pk
-        or payment_data.get('currency') != 'NGN'
-        or type(payment_data.get('amount')) is not int
-        or payment_data['amount'] != int(match.connection_fee * 100)
-    ):
+    if provider == 'paystack':
+        verified, verification_error, error_status = _verify_paystack_reference(reference)
+        if not verified:
+            return JsonResponse(
+                {'status': 'error', 'message': verification_error},
+                status=error_status,
+            )
+        payment_data = (
+            verified.get('data')
+            if isinstance(verified, dict) and verified.get('status') is True
+            else None
+        )
+        metadata = payment_data.get('metadata') if isinstance(payment_data, dict) else None
+        try:
+            payer_id = int(metadata.get('payer_id', metadata.get('user_id', 0)))
+        except (AttributeError, TypeError, ValueError):
+            payer_id = 0
+        amount_kobo = payment_data.get('amount') if isinstance(payment_data, dict) else None
+        currency = payment_data.get('currency') if isinstance(payment_data, dict) else None
+        payment_valid = (
+            isinstance(payment_data, dict)
+            and payment_data.get('status') == 'success'
+            and payment_data.get('reference') == reference
+            and metadata.get('match_id') == str(match.pk)
+            and metadata.get('product') == 'HOOKUP_MATCH'
+            and payer_id == request.user.pk
+            and currency == 'NGN'
+            and type(amount_kobo) is int
+            and amount_kobo == int(match.connection_fee * 100)
+        )
+    else:
+        payment_data, verification_error, error_status = _verify_flutterwave_hookup_transaction(
+            transaction_id,
+            reference,
+        )
+        if not payment_data:
+            return JsonResponse(
+                {'status': 'error', 'message': verification_error},
+                status=error_status,
+            )
+        metadata = payment_data.get('meta', payment_data.get('metadata'))
+        if isinstance(metadata, list):
+            metadata = {
+                item.get('metaname'): item.get('metavalue')
+                for item in metadata
+                if isinstance(item, dict)
+            }
+        if not isinstance(metadata, dict):
+            metadata = {}
+        try:
+            payer_id = int(metadata.get('payer_id', 0))
+            amount_naira = Decimal(str(payment_data.get('amount')))
+            amount_minor = amount_naira * 100
+            amount_kobo = int(amount_minor) if amount_minor == amount_minor.to_integral_value() else None
+        except (InvalidOperation, TypeError, ValueError):
+            payer_id = 0
+            amount_kobo = None
+        currency = payment_data.get('currency')
+        payment_valid = (
+            metadata.get('match_id') == str(match.pk)
+            and metadata.get('product') == 'HOOKUP_MATCH'
+            and payer_id == request.user.pk
+            and currency == 'NGN'
+            and amount_kobo == int(match.connection_fee * 100)
+        )
+
+    if not payment_valid:
         return JsonResponse({'status': 'error', 'message': 'payment_not_verified'}, status=400)
 
     match = _record_hookup_payment(
         match_id=match.pk,
         payer_id=payer_id,
         reference=reference,
-        amount_kobo=payment_data['amount'],
-        currency=payment_data['currency'],
+        amount_kobo=amount_kobo,
+        currency=currency,
+        provider=provider,
     )
     if not match:
         return JsonResponse({'status': 'error', 'message': 'payment_not_verified'}, status=400)

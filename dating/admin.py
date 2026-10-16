@@ -12,6 +12,7 @@ from .models import (
     CoinWallet,
     Conversation,
     GiftItem,
+    HookupSettings,
     HookupMatch,
     HookupMessage,
     Match,
@@ -282,14 +283,11 @@ class CallSignalAdmin(admin.ModelAdmin):
 @admin.register(SiteConfiguration)
 class SiteConfigurationAdmin(admin.ModelAdmin):
     fieldsets = (
-        ('Referral Rewards & New User Trial', {
+        ('Referral Rewards', {
             'fields': (
                 'referral_reward_coins',
-                'referrals_per_free_hookup',
-                'free_trial_enabled',
-                'free_trial_duration_hours',
             ),
-            'description': 'Set the one-time coin reward per new referral, successful referrals needed for a free Hookup connection, and selected-mode free-trial duration.',
+            'description': 'Set coins earned per successful referral.',
         }),
         ('Sex Call Video Economy', {
             'fields': (
@@ -325,10 +323,9 @@ class SiteConfigurationAdmin(admin.ModelAdmin):
             'fields': (
                 'mode_switch_fee',
                 'min_coins_for_video_call',
-                'hookup_connection_fee',
                 'default_user_coins',
             ),
-            'description': 'Control the minimum coins for calls, hookup connection fees, and default starter wallet balance.',
+            'description': 'Control the minimum coins for calls and default starter wallet balance.',
         }),
         ('System Status & Maintenance', {
             'fields': (
@@ -361,6 +358,23 @@ class SiteConfigurationAdmin(admin.ModelAdmin):
         return False
 
 
+@admin.register(HookupSettings)
+class HookupSettingsAdmin(admin.ModelAdmin):
+    fields = ('connection_fee',)
+
+    def has_add_permission(self, request):
+        return not HookupSettings.objects.exists()
+
+    def changelist_view(self, request, extra_context=None):
+        if HookupSettings.objects.exists():
+            from django.shortcuts import redirect
+            return redirect('admin:dating_hookupsettings_change', 1)
+        return super().changelist_view(request, extra_context=extra_context)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(GiftItem)
 class GiftItemAdmin(admin.ModelAdmin):
     list_display = ('name', 'icon', 'slug', 'coin_cost', 'is_active', 'order')
@@ -374,10 +388,10 @@ class GiftItemAdmin(admin.ModelAdmin):
 class HookupMatchAdmin(admin.ModelAdmin):
     list_display = (
         'id', 'initiator', 'target', 'status',
-        'initiator_paid', 'initiator_referral_free', 'target_paid', 'connection_fee',
+        'initiator_paid', 'target_paid', 'connection_fee',
         'created_at', 'expires_at',
     )
-    list_filter = ('status', 'initiator_paid', 'initiator_referral_free', 'target_paid')
+    list_filter = ('status', 'initiator_paid', 'target_paid')
     search_fields = ('id', 'initiator__username', 'target__username')
     readonly_fields = ('id', 'created_at', 'unlocked_at')
 
@@ -388,16 +402,14 @@ class ReferralAdmin(admin.ModelAdmin):
         'referrer',
         'referred_user',
         'coins_awarded',
-        'free_hookup_connection_awarded',
         'created_at',
     )
-    list_filter = ('free_hookup_connection_awarded', 'created_at')
+    list_filter = ('created_at',)
     search_fields = ('referrer__username', 'referred_user__username')
     readonly_fields = (
         'referrer',
         'referred_user',
         'coins_awarded',
-        'free_hookup_connection_awarded',
         'created_at',
     )
 

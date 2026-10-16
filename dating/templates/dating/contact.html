@@ -24,7 +24,16 @@
     </button>
     <script>
         document.getElementById('open-support-chat').addEventListener('click', function () {
-            document.getElementById('support-trigger-btn')?.click();
+            if (typeof window.lovenyOpenSupportChat === 'function') {
+                window.lovenyOpenSupportChat();
+                return;
+            }
+            const supportTrigger = document.getElementById('support-trigger-btn');
+            if (supportTrigger) {
+                supportTrigger.click();
+                return;
+            }
+            window.lovenyToast('Support chat is unavailable. Please refresh and try again.', 'error');
         });
     </script>
     {% else %}

@@ -105,7 +105,10 @@ class Profile(models.Model):
         help_text="Mode covered by this user's new-account free trial",
     )
     free_trial_expires_at = models.DateTimeField(null=True, blank=True)
-    hookup_free_connections = models.PositiveSmallIntegerField(default=0)
+    has_used_free_sex_call = models.BooleanField(
+        default=True,
+        help_text="Whether this account has used its one-time new-user free Sex Call",
+    )
     has_paid_mode_switch_fee = models.BooleanField(
         default=False,
         help_text="Whether this account has paid once to permanently unlock profile-mode switching",
@@ -482,6 +485,10 @@ class CallSession(models.Model):
     rate_per_minute = models.PositiveIntegerField(default=20, help_text="Coins per minute")
     coins_spent = models.PositiveIntegerField(default=0, help_text="Total coins deducted for this call")
     duration_seconds = models.PositiveIntegerField(default=0, help_text="Connected call duration in seconds")
+    is_free_trial_call = models.BooleanField(
+        default=False,
+        help_text="Whether this call uses the caller's one-time three-minute free call",
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     started_at = models.DateTimeField(null=True, blank=True)
     connected_at = models.DateTimeField(null=True, blank=True)
@@ -692,18 +699,9 @@ class SiteConfiguration(models.Model):
         default=20,
         help_text="Minimum coins required in wallet to initiate a video call",
     )
-    hookup_connection_fee = models.PositiveIntegerField(
-        default=1500,
-        help_text="Connection fee in NGN per participant for Hookup Matches",
-    )
     referral_reward_coins = models.PositiveIntegerField(
         default=100,
         help_text="Coins credited to the referrer for each successful new referral",
-    )
-    referrals_per_free_hookup = models.PositiveSmallIntegerField(
-        default=10,
-        validators=[MinValueValidator(1)],
-        help_text="Successful referrals required to earn one free Hookup connection",
     )
     free_trial_enabled = models.BooleanField(
         default=True,
@@ -784,6 +782,33 @@ class GiftItem(models.Model):
         return f"{self.icon} {self.name} ({self.coin_cost} Coins)"
 
 
+class HookupSettings(models.Model):
+    connection_fee = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('1500.00'),
+        validators=[MinValueValidator(Decimal('0.01'))],
+        help_text='NGN each participant must pay after accepting a Hookup request',
+    )
+
+    class Meta:
+        verbose_name = 'Hookup Settings'
+        verbose_name_plural = 'Hookup Settings'
+
+    def __str__(self):
+        return f'Hookup connection fee: ₦{self.connection_fee}'
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        kwargs.pop('force_insert', None)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls):
+        settings, _ = cls.objects.get_or_create(pk=1)
+        return settings
+
+
 class HookupMatch(models.Model):
     STATUS_CHOICES = (
         ('pending', 'Pending Acceptance'),
@@ -808,15 +833,11 @@ class HookupMatch(models.Model):
     target_notification_delivered_at = models.DateTimeField(null=True, blank=True)
     initiator_paid = models.BooleanField(default=False)
     target_paid = models.BooleanField(default=False)
-    initiator_referral_free = models.BooleanField(
-        default=False,
-        help_text="Initiator used a referral-earned free connection for their share",
-    )
     connection_fee = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         default=Decimal('1500.00'),
-        help_text="Dual-fiat connection fee in NGN per participant (₦1,500)",
+        help_text="NGN connection fee each participant must pay for this match",
     )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     unlocked_at = models.DateTimeField(null=True, blank=True)
@@ -954,7 +975,6 @@ class Referral(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     coins_awarded = models.PositiveIntegerField(default=0)
-    free_hookup_connection_awarded = models.BooleanField(default=False)
 
     class Meta:
         ordering = ('-created_at',)
