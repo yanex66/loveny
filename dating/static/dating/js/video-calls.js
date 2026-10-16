@@ -834,6 +834,13 @@
         statusTimer = null;
     }
 
+    function stopGatedSenderTracks() {
+        const localTracks = new Set(localStream?.getTracks() || []);
+        peer?.getSenders().forEach(sender => {
+            if (sender.track && !localTracks.has(sender.track)) sender.track.stop();
+        });
+    }
+
     function closeRoom() {
         stopPolling();
         stopCallTimer();
@@ -842,6 +849,7 @@
         if (peer) {
             peer.onicecandidate = null;
             peer.ontrack = null;
+            stopGatedSenderTracks();
             peer.close();
             peer = null;
         }
@@ -1081,9 +1089,16 @@
         peer = new RTCPeerConnection({iceServers: iceConfig.ice_servers});
         remoteStream = new MediaStream();
         const senders = new Map();
-        ['audio', 'video'].forEach(kind => {
-            senders.set(kind, peer.addTransceiver(kind, {direction: 'sendrecv'}).sender);
-        });
+        for (const kind of ['audio', 'video']) {
+            const sender = peer.addTransceiver(kind, {direction: 'sendrecv'}).sender;
+            senders.set(kind, sender);
+            const localTrack = localStream.getTracks().find(track => track.kind === kind);
+            if (localTrack) {
+                const gatedTrack = localTrack.clone();
+                gatedTrack.enabled = false;
+                await sender.replaceTrack(gatedTrack);
+            }
+        }
         if (window.CallPrivacy) {
             window.CallPrivacy.onCallSignal = (type, payload, id) => {
                 if (type === 'gift') consumeSignal({type, payload, id});
@@ -1091,7 +1106,10 @@
             window.CallPrivacy.setOnFeedsUnlocked(async () => {
                 for (const track of localStream.getTracks()) {
                     const sender = senders.get(track.kind);
-                    if (sender) await sender.replaceTrack(track);
+                    if (!sender) continue;
+                    const gatedTrack = sender.track;
+                    await sender.replaceTrack(track);
+                    if (gatedTrack && gatedTrack !== track) gatedTrack.stop();
                 }
                 if (peer && peer.connectionState === 'connected') startCallTimer();
             });

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Video Call with {{ other_user.username }} | LOVENY{% endblock %}
+{% block title %}Video Call with {{ other_display_name }} | LOVENY{% endblock %}
 
 {% block body_class %}hide-bottom-nav hide-floating-coin{% endblock %}
 
@@ -19,13 +19,13 @@
         <!-- Left: Host Avatar, Name, Age, Timer & Follow Button -->
         <div class="call-room-profile flex min-w-0 flex-1 items-center gap-3">
             <div class="relative">
-                <img id="host-avatar" src="{{ other_avatar }}" alt="{{ other_user.username }} profile photo" class="h-11 w-11 rounded-full border-2 border-pink-400 object-cover shadow-lg bg-slate-800">
+                <img id="host-avatar" src="{{ other_avatar }}" alt="{{ other_display_name }} profile photo" class="h-11 w-11 rounded-full border-2 border-pink-400 object-cover shadow-lg bg-slate-800">
                 <span class="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-amber-400 ring-2 ring-black" aria-label="Busy on a call"></span>
             </div>
             <div>
                 <div class="call-room-wallet flex shrink-0 items-center gap-2">
                     <span id="host-name-age" class="text-sm sm:text-base font-black text-white leading-tight drop-shadow">
-                        {{ other_user.first_name|default:other_user.username }}{% if other_profile.age %}, <span class="text-pink-300 font-bold">{{ other_profile.age }}</span>{% endif %}
+                        {{ other_display_name }}{% if other_profile.age %}, <span class="text-pink-300 font-bold">{{ other_profile.age }}</span>{% endif %}
                     </span>
                     <button type="button" id="follow-host-btn" data-is-following="{{ is_following|yesno:'true,false' }}" data-is-followed-by="{{ is_followed_by|yesno:'true,false' }}" data-is-matched="{{ is_matched|yesno:'true,false' }}" class="flex items-center gap-1 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-3 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-md hover:scale-105 active:scale-95 transition disabled:cursor-default disabled:opacity-80">
                         <span id="follow-icon">{% if is_matched %}♥{% elif is_following %}✓{% else %}+{% endif %}</span>
@@ -302,12 +302,20 @@
         return token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
     }
 
+    function stopGatedSenderTracks() {
+        const localTracks = new Set(localStream?.getTracks() || []);
+        peer?.getSenders().forEach(sender => {
+            if (sender.track && !localTracks.has(sender.track)) sender.track.stop();
+        });
+    }
+
     function leaveCallWithNotice(message, destination) {
         window.CallSpeechMonitor?.stop();
         if (signalTimer) clearInterval(signalTimer);
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         signalingSocket?.close();
         signalingSocket = null;
+        stopGatedSenderTracks();
         peer?.close();
         localStream?.getTracks().forEach(track => track.stop());
         window.CallPrivacy?.cleanup();
@@ -429,14 +437,24 @@
             peer = new RTCPeerConnection({iceServers: iceConfig.ice_servers});
             remoteStream = new MediaStream();
             const senders = new Map();
-            ['audio', 'video'].forEach(kind => {
-                senders.set(kind, peer.addTransceiver(kind, {direction: 'sendrecv'}).sender);
-            });
+            for (const kind of ['audio', 'video']) {
+                const sender = peer.addTransceiver(kind, {direction: 'sendrecv'}).sender;
+                senders.set(kind, sender);
+                const localTrack = localStream.getTracks().find(track => track.kind === kind);
+                if (localTrack) {
+                    const gatedTrack = localTrack.clone();
+                    gatedTrack.enabled = false;
+                    await sender.replaceTrack(gatedTrack);
+                }
+            }
             if (window.CallPrivacy) {
                 CallPrivacy.setOnFeedsUnlocked(async () => {
                     for (const track of localStream.getTracks()) {
                         const sender = senders.get(track.kind);
-                        if (sender) await sender.replaceTrack(track);
+                        if (!sender) continue;
+                        const gatedTrack = sender.track;
+                        await sender.replaceTrack(track);
+                        if (gatedTrack && gatedTrack !== track) gatedTrack.stop();
                     }
                     if (hasRemoteMedia) enableRemoteAudioBtn.classList.remove('hidden');
                 });
@@ -526,6 +544,7 @@
             console.error('Could not initialize the secure video call.', error);
             setCallFeedback(error.message || 'Could not start the call. Check camera and microphone permissions.');
             window.CallSpeechMonitor?.stop();
+            stopGatedSenderTracks();
             peer?.close();
             localStream?.getTracks().forEach(track => track.stop());
             window.CallPrivacy?.cleanup();
@@ -823,6 +842,7 @@
                 headers: {'X-CSRFToken': csrfToken()},
             }).catch(endError => console.error('Could not end the call.', endError));
         }
+        stopGatedSenderTracks();
         peer?.close();
         localStream?.getTracks().forEach(track => track.stop());
         window.CallPrivacy?.cleanup();

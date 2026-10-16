@@ -3146,6 +3146,8 @@ class DatingPlatformTests(TestCase):
         self.assertEqual(self.alice_profile.relationship_mode, 'DATING')
 
     def test_call_room_page_access_and_controls(self):
+        self.bob.first_name = 'Member'
+        self.bob.save(update_fields=['first_name'])
         call = CallSession.objects.create(
             caller=self.alice,
             receiver=self.bob,
@@ -3167,6 +3169,8 @@ class DatingPlatformTests(TestCase):
             )
             res_alice = self.client.get(reverse('call_room_page', args=[call.room_id]))
             self.assertEqual(res_alice.status_code, 200)
+            self.assertContains(res_alice, 'Video Call with bob')
+            self.assertContains(res_alice, 'bob profile photo')
             self.assertContains(res_alice, f'src="{avatar.image.url}"')
         self.assertContains(res_alice, 'floating-chat-container')
         self.assertContains(res_alice, 'local-video')

@@ -1380,6 +1380,13 @@ def _profile_avatar_url(profile):
     return f"https://api.dicebear.com/7.x/avataaars/svg?seed={quote(username)}"
 
 
+def _call_display_name(user):
+    first_name = (user.first_name or '').strip()
+    if first_name and first_name.casefold() != 'member':
+        return first_name
+    return user.username
+
+
 def _call_payload(call):
     caller_profile = Profile.objects.filter(user_id=call.caller_id).first()
     receiver_profile = Profile.objects.filter(user_id=call.receiver_id).first()
@@ -1415,7 +1422,7 @@ def _call_payload(call):
         'room_id': str(call.room_id),
         'status': call.status,
         'caller_id': call.caller_id,
-        'caller_name': call.caller.first_name or call.caller.username,
+        'caller_name': _call_display_name(call.caller),
         'caller_photo': caller_photo_url,
         'caller_follows_receiver': Swipe.objects.filter(
             swiper_id=call.caller_id,
@@ -1423,7 +1430,7 @@ def _call_payload(call):
             type='LIKE',
         ).exists(),
         'receiver_id': call.receiver_id,
-        'receiver_name': call.receiver.first_name or call.receiver.username,
+        'receiver_name': _call_display_name(call.receiver),
         'receiver_photo': receiver_photo_url,
         'receiver_follows_caller': Swipe.objects.filter(
             swiper_id=call.receiver_id,
@@ -4348,6 +4355,7 @@ def call_room_page(request, room_id):
         'call': call,
         'room_id': str(call.room_id),
         'other_user': other_user,
+        'other_display_name': _call_display_name(other_user),
         'other_profile': other_profile,
         'other_avatar': other_payload.get('image_url', ''),
         'other_age': getattr(other_profile, 'age', 22) if other_profile else 22,
