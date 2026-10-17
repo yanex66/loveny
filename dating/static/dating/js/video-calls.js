@@ -72,6 +72,7 @@
     let pendingCandidates = [];
     let cameraFacing = 'user';
     let isCaller = false;
+    let partnerIsNotSendingVideo = false;
     let incomingRoomId = null;
 
     // Wallet State
@@ -834,11 +835,17 @@
         statusTimer = null;
     }
 
-    function stopGatedSenderTracks() {
-        const localTracks = new Set(localStream?.getTracks() || []);
-        peer?.getSenders().forEach(sender => {
-            if (sender.track && !localTracks.has(sender.track)) sender.track.stop();
-        });
+    async function setOutboundMediaActive(senders, active) {
+        for (const sender of senders.values()) {
+            const parameters = sender.getParameters();
+            if (!parameters.encodings?.length) {
+                throw new Error('Secure video-call media gating is unavailable in this browser.');
+            }
+            parameters.encodings.forEach(encoding => {
+                encoding.active = active;
+            });
+            await sender.setParameters(parameters);
+        }
     }
 
     function closeRoom() {
@@ -849,7 +856,6 @@
         if (peer) {
             peer.onicecandidate = null;
             peer.ontrack = null;
-            stopGatedSenderTracks();
             peer.close();
             peer = null;
         }
@@ -867,6 +873,7 @@
         exitPipMode();
         if (roomOverlay) roomOverlay.classList.add('hidden');
         activeCall = null;
+        partnerIsNotSendingVideo = false;
         pendingCandidates = [];
         lastSignalId = 0;
         fetchWallet();
@@ -895,6 +902,11 @@
                 console.warn('Could not apply remote ICE candidate.', error);
             }
         }
+    }
+
+    function getRemoteVideoDirection(sdp) {
+        const videoSection = (sdp || '').split(/(?=^m=)/m).find(section => section.startsWith('m=video '));
+        return videoSection?.match(/^a=(sendrecv|sendonly|recvonly|inactive)$/m)?.[1] || 'sendrecv';
     }
 
     async function consumeSignal(signal) {
@@ -968,14 +980,39 @@
             if (signal.type === 'offer' && !isCaller && !peer.remoteDescription) {
                 await peer.setRemoteDescription(new RTCSessionDescription(signal.payload));
                 await flushCandidates();
+                const transceivers = peer.getTransceivers();
+                for (const kind of ['audio', 'video']) {
+                    const transceiver = transceivers.find(item => item.receiver.track.kind === kind);
+                    if (!transceiver?.sender.track || transceiver.sender.track.readyState !== 'live') {
+                        throw new Error(`A live local ${kind} sender is unavailable for the call answer.`);
+                    }
+                    transceiver.direction = 'sendrecv';
+                }
                 const answer = await peer.createAnswer();
+                console.info('Generated callee SDP answer:', answer.sdp);
                 await peer.setLocalDescription(answer);
+                const answerSdp = peer.localDescription?.sdp || answer.sdp;
+                console.info('Callee local SDP direction:', getRemoteVideoDirection(answerSdp));
+                if (getRemoteVideoDirection(answerSdp) !== 'sendrecv') {
+                    console.error('Callee SDP answer is not sendrecv for video.', {
+                        offerDirection: getRemoteVideoDirection(signal.payload?.sdp),
+                        answerDirection: getRemoteVideoDirection(answerSdp),
+                    });
+                }
                 await sendSignal('answer', peer.localDescription.toJSON());
                 if (feedback) feedback.textContent = 'Connecting with partner…';
             } else if (signal.type === 'answer' && isCaller && !peer.remoteDescription) {
+                console.info('Caller received SDP answer:', signal.payload?.sdp);
                 await peer.setRemoteDescription(new RTCSessionDescription(signal.payload));
                 await flushCandidates();
-                if (feedback) feedback.textContent = 'Call connected';
+                partnerIsNotSendingVideo = ['recvonly', 'inactive'].includes(
+                    getRemoteVideoDirection(signal.payload?.sdp),
+                );
+                if (partnerIsNotSendingVideo && feedback) {
+                    feedback.textContent = 'Your partner’s app is not sending video. Ask them to refresh LOVENY and rejoin the call.';
+                    console.warn('Call partner negotiated receive-only video.');
+                }
+                if (feedback && !partnerIsNotSendingVideo) feedback.textContent = 'Call connected';
                 startCallTimer();
             } else if (signal.type === 'candidate') {
                 const candidate = new RTCIceCandidate(signal.payload);
@@ -1090,29 +1127,28 @@
         remoteStream = new MediaStream();
         const senders = new Map();
         for (const kind of ['audio', 'video']) {
-            const sender = peer.addTransceiver(kind, {direction: 'sendrecv'}).sender;
-            senders.set(kind, sender);
-            const localTrack = localStream.getTracks().find(track => track.kind === kind);
-            if (localTrack) {
-                const gatedTrack = localTrack.clone();
-                gatedTrack.enabled = false;
-                await sender.replaceTrack(gatedTrack);
+            const track = localStream.getTracks().find(item => item.kind === kind);
+            if (!track || track.readyState !== 'live') {
+                throw new Error(`A live local ${kind} track is required to join this call.`);
             }
+            const transceiver = peer.addTransceiver(track, {
+                direction: 'sendrecv',
+                streams: [localStream],
+            });
+            transceiver.direction = 'sendrecv';
+            senders.set(kind, transceiver.sender);
         }
+        await setOutboundMediaActive(senders, false);
         if (window.CallPrivacy) {
             window.CallPrivacy.onCallSignal = (type, payload, id) => {
                 if (type === 'gift') consumeSignal({type, payload, id});
             };
             window.CallPrivacy.setOnFeedsUnlocked(async () => {
-                for (const track of localStream.getTracks()) {
-                    const sender = senders.get(track.kind);
-                    if (!sender) continue;
-                    const gatedTrack = sender.track;
-                    await sender.replaceTrack(track);
-                    if (gatedTrack && gatedTrack !== track) gatedTrack.stop();
-                }
+                await setOutboundMediaActive(senders, true);
                 if (peer && peer.connectionState === 'connected') startCallTimer();
             });
+        } else {
+            await setOutboundMediaActive(senders, true);
         }
         peer.onicecandidate = event => {
             if (event.candidate) sendSignal('candidate', event.candidate.toJSON());
@@ -1141,6 +1177,7 @@
                 }
                 if (event.track.kind === 'video') {
                     event.track.addEventListener('unmute', () => {
+                        partnerIsNotSendingVideo = false;
                         if (feedback) feedback.textContent = 'Partner video is live.';
                     });
                     event.track.addEventListener('mute', () => {
@@ -1161,7 +1198,9 @@
         };
         peer.onconnectionstatechange = () => {
             if (peer && peer.connectionState === 'connected') {
-                if (feedback && !remoteStream?.getVideoTracks().some(track => track.readyState === 'live' && !track.muted)) {
+                if (feedback && partnerIsNotSendingVideo) {
+                    feedback.textContent = 'Your partner’s app is not sending video. Ask them to refresh LOVENY and rejoin the call.';
+                } else if (feedback && !remoteStream?.getVideoTracks().some(track => track.readyState === 'live' && !track.muted)) {
                     feedback.textContent = 'Call connected. Waiting for your partner’s video…';
                 }
                 startCallTimer();

@@ -254,20 +254,7 @@
                     video.classList.add('privacy-clear');
                 }
             });
-            if (
-                this.handshakeComplete &&
-                !isPrivacyLocked &&
-                this._pendingRemoteStream
-            ) {
-                const remote = this.getRemoteVideo();
-                if (remote) {
-                    remote.srcObject = this._pendingRemoteStream;
-                    remote.play().catch(error => {
-                        console.warn('Remote video playback requires interaction.', error);
-                    });
-                    this._pendingRemoteStream = null;
-                }
-            }
+            this.attachVerifiedRemoteStream();
 
             if (this.focusLocked || this.captureLocked) {
                 this.showBlurCard(
@@ -449,6 +436,17 @@
         setRemoteStream(stream) {
             this._pendingRemoteStream = stream;
             this.refreshPrivacyState();
+        },
+
+        attachVerifiedRemoteStream() {
+            if (!this.handshakeComplete || !this._pendingRemoteStream) return;
+            const remote = this.getRemoteVideo();
+            if (!remote) return;
+            remote.srcObject = this._pendingRemoteStream;
+            remote.play().catch(error => {
+                console.warn('Remote video playback requires interaction.', error);
+            });
+            this._pendingRemoteStream = null;
         },
 
         showBlurCard(title, message) {

@@ -241,6 +241,7 @@
     let localStream = null;
     let remoteStream = null;
     let hasRemoteMedia = false;
+    let partnerIsNotSendingVideo = false;
     let pendingCandidates = [];
     let callTerminating = false;
 
@@ -256,6 +257,11 @@
             call_answer: 'answer',
             ice_candidate: 'candidate',
         })[type] || type;
+    }
+
+    function getRemoteVideoDirection(sdp) {
+        const videoSection = (sdp || '').split(/(?=^m=)/m).find(section => section.startsWith('m=video '));
+        return videoSection?.match(/^a=(sendrecv|sendonly|recvonly|inactive)$/m)?.[1] || 'sendrecv';
     }
 
     // Room DOM Elements
@@ -302,11 +308,17 @@
         return token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
     }
 
-    function stopGatedSenderTracks() {
-        const localTracks = new Set(localStream?.getTracks() || []);
-        peer?.getSenders().forEach(sender => {
-            if (sender.track && !localTracks.has(sender.track)) sender.track.stop();
-        });
+    async function setOutboundMediaActive(senders, active) {
+        for (const sender of senders.values()) {
+            const parameters = sender.getParameters();
+            if (!parameters.encodings?.length) {
+                throw new Error('Secure video-call media gating is unavailable in this browser.');
+            }
+            parameters.encodings.forEach(encoding => {
+                encoding.active = active;
+            });
+            await sender.setParameters(parameters);
+        }
     }
 
     function leaveCallWithNotice(message, destination) {
@@ -315,7 +327,6 @@
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         signalingSocket?.close();
         signalingSocket = null;
-        stopGatedSenderTracks();
         peer?.close();
         localStream?.getTracks().forEach(track => track.stop());
         window.CallPrivacy?.cleanup();
@@ -438,26 +449,25 @@
             remoteStream = new MediaStream();
             const senders = new Map();
             for (const kind of ['audio', 'video']) {
-                const sender = peer.addTransceiver(kind, {direction: 'sendrecv'}).sender;
-                senders.set(kind, sender);
-                const localTrack = localStream.getTracks().find(track => track.kind === kind);
-                if (localTrack) {
-                    const gatedTrack = localTrack.clone();
-                    gatedTrack.enabled = false;
-                    await sender.replaceTrack(gatedTrack);
+                const track = localStream.getTracks().find(item => item.kind === kind);
+                if (!track || track.readyState !== 'live') {
+                    throw new Error(`A live local ${kind} track is required to join this call.`);
                 }
+                const transceiver = peer.addTransceiver(track, {
+                    direction: 'sendrecv',
+                    streams: [localStream],
+                });
+                transceiver.direction = 'sendrecv';
+                senders.set(kind, transceiver.sender);
             }
+            await setOutboundMediaActive(senders, false);
             if (window.CallPrivacy) {
                 CallPrivacy.setOnFeedsUnlocked(async () => {
-                    for (const track of localStream.getTracks()) {
-                        const sender = senders.get(track.kind);
-                        if (!sender) continue;
-                        const gatedTrack = sender.track;
-                        await sender.replaceTrack(track);
-                        if (gatedTrack && gatedTrack !== track) gatedTrack.stop();
-                    }
+                    await setOutboundMediaActive(senders, true);
                     if (hasRemoteMedia) enableRemoteAudioBtn.classList.remove('hidden');
                 });
+            } else {
+                await setOutboundMediaActive(senders, true);
             }
             peer.onicecandidate = event => {
                 if (event.candidate) {
@@ -485,6 +495,7 @@
                 }
                 if (event.track.kind === 'video') {
                     event.track.addEventListener('unmute', () => {
+                        partnerIsNotSendingVideo = false;
                         setCallFeedback('Partner video is live.', false);
                     });
                     event.track.addEventListener('mute', () => {
@@ -512,7 +523,9 @@
                         track => track.readyState === 'live' && !track.muted,
                     );
                     setCallFeedback(
-                        hasLiveVideo
+                        partnerIsNotSendingVideo
+                            ? 'Your partner’s app is not sending video. Ask them to refresh LOVENY and rejoin the call.'
+                            : hasLiveVideo
                             ? 'Partner video is live.'
                             : 'Connected. Waiting for your partner’s video…',
                         !hasLiveVideo,
@@ -544,7 +557,6 @@
             console.error('Could not initialize the secure video call.', error);
             setCallFeedback(error.message || 'Could not start the call. Check camera and microphone permissions.');
             window.CallSpeechMonitor?.stop();
-            stopGatedSenderTracks();
             peer?.close();
             localStream?.getTracks().forEach(track => track.stop());
             window.CallPrivacy?.cleanup();
@@ -671,11 +683,37 @@
         if (signal.type === 'offer' && !peer.remoteDescription && !isCaller) {
             await peer.setRemoteDescription(new RTCSessionDescription(signal.payload));
             await flushCandidates();
-            await peer.setLocalDescription(await peer.createAnswer());
+            const transceivers = peer.getTransceivers();
+            for (const kind of ['audio', 'video']) {
+                const transceiver = transceivers.find(item => item.receiver.track.kind === kind);
+                if (!transceiver?.sender.track || transceiver.sender.track.readyState !== 'live') {
+                    throw new Error(`A live local ${kind} sender is unavailable for the call answer.`);
+                }
+                transceiver.direction = 'sendrecv';
+            }
+            const answer = await peer.createAnswer();
+            console.info('Generated callee SDP answer:', answer.sdp);
+            await peer.setLocalDescription(answer);
+            const answerSdp = peer.localDescription?.sdp || answer.sdp;
+            console.info('Callee local SDP direction:', getRemoteVideoDirection(answerSdp));
+            if (getRemoteVideoDirection(answerSdp) !== 'sendrecv') {
+                console.error('Callee SDP answer is not sendrecv for video.', {
+                    offerDirection: getRemoteVideoDirection(signal.payload?.sdp),
+                    answerDirection: getRemoteVideoDirection(answerSdp),
+                });
+            }
             await sendSignal('answer', peer.localDescription.toJSON());
         } else if (signal.type === 'answer' && isCaller && !peer.remoteDescription) {
+            console.info('Caller received SDP answer:', signal.payload?.sdp);
             await peer.setRemoteDescription(new RTCSessionDescription(signal.payload));
             await flushCandidates();
+            partnerIsNotSendingVideo = ['recvonly', 'inactive'].includes(
+                getRemoteVideoDirection(signal.payload?.sdp),
+            );
+            if (partnerIsNotSendingVideo) {
+                setCallFeedback('Your partner’s app is not sending video. Ask them to refresh LOVENY and rejoin the call.');
+                console.warn('Call partner negotiated receive-only video.');
+            }
         } else if (signal.type === 'candidate') {
             const candidate = new RTCIceCandidate(signal.payload);
             if (peer.remoteDescription) await peer.addIceCandidate(candidate);
@@ -842,7 +880,6 @@
                 headers: {'X-CSRFToken': csrfToken()},
             }).catch(endError => console.error('Could not end the call.', endError));
         }
-        stopGatedSenderTracks();
         peer?.close();
         localStream?.getTracks().forEach(track => track.stop());
         window.CallPrivacy?.cleanup();
