@@ -240,6 +240,7 @@
     let heartbeatTimer = null;
     let localStream = null;
     let remoteStream = null;
+    let callSenders = new Map();
     let hasRemoteMedia = false;
     let partnerIsNotSendingVideo = false;
     let pendingCandidates = [];
@@ -447,7 +448,7 @@
             }
             peer = new RTCPeerConnection({iceServers: iceConfig.ice_servers});
             remoteStream = new MediaStream();
-            const senders = new Map();
+            callSenders = new Map();
             for (const kind of ['audio', 'video']) {
                 const track = localStream.getTracks().find(item => item.kind === kind);
                 if (!track || track.readyState !== 'live') {
@@ -458,16 +459,13 @@
                     streams: [localStream],
                 });
                 transceiver.direction = 'sendrecv';
-                senders.set(kind, transceiver.sender);
+                callSenders.set(kind, transceiver.sender);
             }
-            await setOutboundMediaActive(senders, false);
             if (window.CallPrivacy) {
                 CallPrivacy.setOnFeedsUnlocked(async () => {
-                    await setOutboundMediaActive(senders, true);
+                    await setOutboundMediaActive(callSenders, true);
                     if (hasRemoteMedia) enableRemoteAudioBtn.classList.remove('hidden');
                 });
-            } else {
-                await setOutboundMediaActive(senders, true);
             }
             peer.onicecandidate = event => {
                 if (event.candidate) {
@@ -546,7 +544,9 @@
 
             await connectSignalingSocket();
             if (isCaller) {
-                await peer.setLocalDescription(await peer.createOffer());
+                const offer = await peer.createOffer();
+                if (window.CallPrivacy) await setOutboundMediaActive(callSenders, false);
+                await peer.setLocalDescription(offer);
                 await sendSignal('offer', peer.localDescription.toJSON());
             }
             signalTimer = window.setInterval(pollSignals, 1000);
@@ -693,6 +693,7 @@
             }
             const answer = await peer.createAnswer();
             console.info('Generated callee SDP answer:', answer.sdp);
+            if (window.CallPrivacy) await setOutboundMediaActive(callSenders, false);
             await peer.setLocalDescription(answer);
             const answerSdp = peer.localDescription?.sdp || answer.sdp;
             console.info('Callee local SDP direction:', getRemoteVideoDirection(answerSdp));

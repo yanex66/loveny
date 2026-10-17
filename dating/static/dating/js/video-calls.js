@@ -62,6 +62,7 @@
     let peer = null;
     let localStream = null;
     let remoteStream = null;
+    let callSenders = new Map();
     let lastSignalId = 0;
     const processedCallSignals = new Set();
     let signalingTimer = null;
@@ -874,6 +875,7 @@
         if (roomOverlay) roomOverlay.classList.add('hidden');
         activeCall = null;
         partnerIsNotSendingVideo = false;
+        callSenders = new Map();
         pendingCandidates = [];
         lastSignalId = 0;
         fetchWallet();
@@ -990,6 +992,7 @@
                 }
                 const answer = await peer.createAnswer();
                 console.info('Generated callee SDP answer:', answer.sdp);
+                if (window.CallPrivacy) await setOutboundMediaActive(callSenders, false);
                 await peer.setLocalDescription(answer);
                 const answerSdp = peer.localDescription?.sdp || answer.sdp;
                 console.info('Callee local SDP direction:', getRemoteVideoDirection(answerSdp));
@@ -1125,7 +1128,7 @@
         }
         peer = new RTCPeerConnection({iceServers: iceConfig.ice_servers});
         remoteStream = new MediaStream();
-        const senders = new Map();
+        callSenders = new Map();
         for (const kind of ['audio', 'video']) {
             const track = localStream.getTracks().find(item => item.kind === kind);
             if (!track || track.readyState !== 'live') {
@@ -1136,19 +1139,16 @@
                 streams: [localStream],
             });
             transceiver.direction = 'sendrecv';
-            senders.set(kind, transceiver.sender);
+            callSenders.set(kind, transceiver.sender);
         }
-        await setOutboundMediaActive(senders, false);
         if (window.CallPrivacy) {
             window.CallPrivacy.onCallSignal = (type, payload, id) => {
                 if (type === 'gift') consumeSignal({type, payload, id});
             };
             window.CallPrivacy.setOnFeedsUnlocked(async () => {
-                await setOutboundMediaActive(senders, true);
+                await setOutboundMediaActive(callSenders, true);
                 if (peer && peer.connectionState === 'connected') startCallTimer();
             });
-        } else {
-            await setOutboundMediaActive(senders, true);
         }
         peer.onicecandidate = event => {
             if (event.candidate) sendSignal('candidate', event.candidate.toJSON());
@@ -1256,6 +1256,7 @@
             playOutgoingRing();
             await createPeer();
             const offer = await peer.createOffer();
+            if (window.CallPrivacy) await setOutboundMediaActive(callSenders, false);
             await peer.setLocalDescription(offer);
             await sendSignal('offer', peer.localDescription.toJSON());
             startPolling();
@@ -1491,6 +1492,7 @@
                 playOutgoingRing();
                 await createPeer();
                 const offer = await peer.createOffer();
+                if (window.CallPrivacy) await setOutboundMediaActive(callSenders, false);
                 await peer.setLocalDescription(offer);
                 await sendSignal('offer', peer.localDescription.toJSON());
                 startPolling();

@@ -254,7 +254,7 @@
                     video.classList.add('privacy-clear');
                 }
             });
-            this.attachVerifiedRemoteStream();
+            this.attachRemoteStream();
 
             if (this.focusLocked || this.captureLocked) {
                 this.showBlurCard(
@@ -435,11 +435,11 @@
 
         setRemoteStream(stream) {
             this._pendingRemoteStream = stream;
-            this.refreshPrivacyState();
+            this.attachRemoteStream();
         },
 
-        attachVerifiedRemoteStream() {
-            if (!this.handshakeComplete || !this._pendingRemoteStream) return;
+        attachRemoteStream() {
+            if (!this._pendingRemoteStream) return;
             const remote = this.getRemoteVideo();
             if (!remote) return;
             remote.srcObject = this._pendingRemoteStream;

@@ -3185,6 +3185,26 @@ class DatingPlatformTests(TestCase):
         self.assertContains(res_alice, "direction: 'sendrecv'")
         self.assertContains(res_alice, 'Generated callee SDP answer:')
         self.assertContains(res_alice, 'remoteVideo.play().catch')
+        room_html = res_alice.content.decode()
+        callee_offer_index = room_html.index(
+            "if (signal.type === 'offer' && !peer.remoteDescription && !isCaller)",
+        )
+        answer_index = room_html.index(
+            "const answer = await peer.createAnswer();",
+            callee_offer_index,
+        )
+        suspend_senders_index = room_html.index(
+            "await setOutboundMediaActive(callSenders, false);",
+            callee_offer_index,
+        )
+        self.assertLess(
+            answer_index,
+            suspend_senders_index,
+        )
+        self.assertLess(
+            room_html.index("peer.addTransceiver(track, {"),
+            answer_index,
+        )
         self.assertContains(res_alice, 'Enable partner audio')
         self.assertContains(res_alice, 'call-feedback')
         self.assertContains(res_alice, 'Speech monitoring is active for call-safety checks')
