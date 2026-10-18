@@ -7,7 +7,11 @@ from django.contrib.auth.models import AnonymousUser
 from django.db.models import Q
 
 from .models import CallSession, HookupMatch
-from .services.call_signals import normalize_call_signal_type, record_call_signal
+from .services.call_signals import (
+    normalize_call_signal_type,
+    record_call_signal,
+    validate_call_chat_payload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,23 +87,45 @@ class CallSignalingConsumer(AsyncJsonWebsocketConsumer):
             if peer_id is None:
                 await self.send_json({'type': 'error', 'message': 'call_not_found'})
                 return
-            await self.channel_layer.group_send(self.group_name, {
-                'type': 'call.event',
-                'recipient_id': peer_id,
-                'signal_type': 'end_call',
-                'payload': payload,
-            })
+            try:
+                await self.channel_layer.group_send(self.group_name, {
+                    'type': 'call.event',
+                    'recipient_id': peer_id,
+                    'signal_type': 'end_call',
+                    'payload': payload,
+                })
+            except Exception:
+                logger.exception('Could not broadcast WebSocket call end event.')
+                await self.send_json({
+                    'type': 'error',
+                    'message': 'signal_delivery_failed',
+                })
             return
         if signal_type not in {
             'offer',
             'answer',
             'candidate',
+            'chat',
             'face_verified',
             'privacy_blur_engaged',
             'privacy_blur_lifted',
         } or not isinstance(payload, dict) or len(json.dumps(payload)) > 20000:
             await self.send_json({'type': 'error', 'message': 'invalid_signal'})
             return
+        if signal_type == 'chat':
+            validation_error = await database_sync_to_async(validate_call_chat_payload)(
+                self.room_id,
+                self.user,
+                payload,
+            )
+            if validation_error:
+                status_code, message = validation_error
+                await self.send_json({
+                    'type': 'error',
+                    'status': status_code,
+                    'message': message,
+                })
+                return
 
         signal, events = await database_sync_to_async(record_call_signal)(
             self.room_id,
@@ -125,6 +151,12 @@ class CallSignalingConsumer(AsyncJsonWebsocketConsumer):
                     'Could not broadcast persisted WebRTC signal %s; polling can deliver it.',
                     signal.pk,
                 )
+                await self.send_json({
+                    'type': 'error',
+                    'message': 'signal_delivery_failed',
+                    'signal_id': signal.pk,
+                })
+                return
 
     @database_sync_to_async
     def is_call_active(self):

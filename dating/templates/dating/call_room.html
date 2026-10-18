@@ -439,6 +439,7 @@
                 if (!track || track.readyState !== 'live') {
                     throw new Error(`A live local ${kind} track is required to join this call.`);
                 }
+                track.enabled = true;
                 const transceiver = peer.addTransceiver(track, {
                     direction: 'sendrecv',
                     streams: [localStream],
@@ -722,6 +723,10 @@
         signalingSocket.addEventListener('message', event => {
             try {
                 const signal = JSON.parse(event.data);
+                if (signal.type === 'error') {
+                    window.lovenyToast(signal.message || 'Call signaling failed.', 'error');
+                    return;
+                }
                 if (signal.type && signal.payload) consumeSignal(signal);
             } catch (error) {
                 console.warn('Could not read WebSocket call signal.', error);
@@ -763,21 +768,7 @@
         chatInput.value = '';
 
         try {
-            const response = await fetch(`/api/calls/${roomId}/signals/send/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken(),
-                },
-                body: JSON.stringify({
-                    signal_type: 'chat',
-                    payload: { text, username: currentUsername }
-                }),
-            });
-            const result = await response.json();
-            if (!response.ok) {
-                throw new Error(result.message || 'Could not send your message.');
-            }
+            await sendSignal('chat', {text, username: currentUsername});
             appendChatMessage(currentUsername, text);
         } catch (err) {
             window.lovenyToast(err.message || 'Could not send your message.', 'error');

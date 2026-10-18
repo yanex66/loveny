@@ -1134,6 +1134,7 @@
             if (!track || track.readyState !== 'live') {
                 throw new Error(`A live local ${kind} track is required to join this call.`);
             }
+            track.enabled = true;
             const transceiver = peer.addTransceiver(track, {
                 direction: 'sendrecv',
                 streams: [localStream],
@@ -1259,7 +1260,6 @@
             playOutgoingRing();
             await createPeer();
             const offer = await peer.createOffer();
-            if (window.CallPrivacy) await setOutboundMediaActive(callSenders, false);
             await peer.setLocalDescription(offer);
             await sendSignal('offer', peer.localDescription.toJSON());
             startPolling();
@@ -1495,7 +1495,6 @@
                 playOutgoingRing();
                 await createPeer();
                 const offer = await peer.createOffer();
-                if (window.CallPrivacy) await setOutboundMediaActive(callSenders, false);
                 await peer.setLocalDescription(offer);
                 await sendSignal('offer', peer.localDescription.toJSON());
                 startPolling();

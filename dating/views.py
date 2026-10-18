@@ -59,7 +59,11 @@ from .models import (
 )
 from .services.content_filter import ContentFilter
 from .utils import detect_contact_leak
-from .services.call_signals import normalize_call_signal_type, record_call_signal
+from .services.call_signals import (
+    normalize_call_signal_type,
+    record_call_signal,
+    validate_call_chat_payload,
+)
 from .forms import (
     LoginForm,
     SignUpForm,
@@ -2029,13 +2033,16 @@ def call_status_api(request, room_id):
 @require_POST
 def call_signal_send_api(request, room_id):
     try:
-        data = json.loads(request.body)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+        data = request.data if hasattr(request, 'data') else json.loads(request.body or '{}')
+    except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError):
         return JsonResponse({'status': 'error', 'message': 'invalid_json'}, status=400)
     if not isinstance(data, dict):
         return JsonResponse({'status': 'error', 'message': 'invalid_request'}, status=400)
-    signal_type = normalize_call_signal_type(data.get('type') or data.get('signal_type'))
-    payload = data.get('payload')
+    raw_signal_type = data.get('type') or data.get('signal_type')
+    if not raw_signal_type:
+        return JsonResponse({'status': 'error', 'message': 'Missing signal type'}, status=400)
+    signal_type = normalize_call_signal_type(raw_signal_type)
+    payload = data.get('payload') or {}
     allowed_signals = (
         'offer', 'answer', 'candidate', 'gift', 'chat', 'follow',
         'face_verified', 'speech_monitor_ready',
@@ -2046,32 +2053,18 @@ def call_signal_send_api(request, room_id):
         return JsonResponse({'status': 'error', 'message': 'invalid_signal'}, status=400)
     if len(json.dumps(payload)) > 20000:
         return JsonResponse({'status': 'error', 'message': 'signal_too_large'}, status=400)
-
     call = get_object_or_404(CallSession.objects.select_related('caller', 'receiver'), room_id=room_id)
     _call_participants(call, request.user)
     if call.status not in ('ringing', 'connected', 'active'):
         return JsonResponse({'status': 'error', 'message': 'call_not_active'}, status=409)
     if signal_type == 'chat':
-        text = payload.get('text')
-        if not isinstance(text, str) or not text.strip() or len(text) > 140:
+        validation_error = validate_call_chat_payload(call.room_id, request.user, payload)
+        if validation_error:
+            status_code, message = validation_error
             return JsonResponse(
-                {'status': 'error', 'message': 'invalid_call_message'},
-                status=400,
+                {'status': 'error', 'message': message},
+                status=status_code,
             )
-        is_contact_leak, _ = ContentFilter.inspect(text)
-        if is_contact_leak:
-            Profile.objects.filter(user=request.user).update(
-                off_platform_attempts=F('off_platform_attempts') + 1,
-            )
-            logger.warning(
-                'Off-platform contact leak blocked in call chat: user=%s call=%s',
-                request.user.pk,
-                call.room_id,
-            )
-            return JsonResponse({
-                'status': 'error',
-                'message': 'Sharing contact details outside LOVENY is not allowed.',
-            }, status=400)
     if signal_type == 'offer' and request.user.pk != call.caller_id:
         return JsonResponse({'status': 'error', 'message': 'caller_must_send_offer'}, status=403)
     if signal_type == 'answer' and (
@@ -2082,21 +2075,26 @@ def call_signal_send_api(request, room_id):
         with transaction.atomic():
             call = CallSession.objects.select_for_update().get(pk=call.pk)
             _finalize_call_end(call, request.user)
-        channel_layer = get_channel_layer()
-        if channel_layer:
-            try:
-                peer_id = call.receiver_id if request.user.pk == call.caller_id else call.caller_id
-                async_to_sync(channel_layer.group_send)(
-                    f'call_{call.room_id.hex}',
-                    {
-                        'type': 'call.event',
-                        'recipient_id': peer_id,
-                        'signal_type': 'end_call',
-                        'payload': payload,
-                    },
-                )
-            except Exception:
-                logger.exception('Could not broadcast WebRTC call end event.')
+        try:
+            channel_layer = get_channel_layer()
+            if not channel_layer:
+                raise RuntimeError('Call signaling channel layer is unavailable.')
+            peer_id = call.receiver_id if request.user.pk == call.caller_id else call.caller_id
+            async_to_sync(channel_layer.group_send)(
+                f'call_{call.room_id.hex}',
+                {
+                    'type': 'call.event',
+                    'recipient_id': peer_id,
+                    'signal_type': 'end_call',
+                    'payload': payload,
+                },
+            )
+        except Exception:
+            logger.exception('Could not broadcast WebRTC call end event.')
+            return JsonResponse(
+                {'status': 'error', 'message': 'signal_delivery_failed'},
+                status=503,
+            )
         return JsonResponse({'status': 'success', 'call': _call_payload(call)})
     events = []
     signal, events = record_call_signal(
@@ -2108,25 +2106,34 @@ def call_signal_send_api(request, room_id):
     if signal is None:
         return JsonResponse({'status': 'error', 'message': 'call_not_active'}, status=409)
 
-    channel_layer = get_channel_layer()
-    if channel_layer:
+    try:
+        channel_layer = get_channel_layer()
+        if not channel_layer:
+            raise RuntimeError('Call signaling channel layer is unavailable.')
         for event in events:
-            try:
-                async_to_sync(channel_layer.group_send)(
-                    f'call_{call.room_id.hex}',
-                    {
-                        'type': 'call.event',
-                        'recipient_id': event['recipient_id'],
-                        'signal_type': event['type'],
-                        'payload': event['payload'],
-                        'signal_id': signal.pk,
-                    },
-                )
-            except Exception:
-                logger.exception(
-                    'Could not broadcast persisted WebRTC signal %s; polling can deliver it.',
-                    signal.pk,
-                )
+            async_to_sync(channel_layer.group_send)(
+                f'call_{call.room_id.hex}',
+                {
+                    'type': 'call.event',
+                    'recipient_id': event['recipient_id'],
+                    'signal_type': event['type'],
+                    'payload': event['payload'],
+                    'signal_id': signal.pk,
+                },
+            )
+    except Exception:
+        logger.exception(
+            'Could not broadcast persisted WebRTC signal %s; polling can deliver it.',
+            signal.pk,
+        )
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': 'signal_delivery_failed',
+                'signal_id': signal.pk,
+            },
+            status=503,
+        )
 
     return JsonResponse({'status': 'success', 'id': signal.pk}, status=201)
 

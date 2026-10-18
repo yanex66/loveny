@@ -1,7 +1,15 @@
+import logging
+
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
-from dating.models import CallSession, CallSignal
+from dating.models import CallSession, CallSignal, Profile
+
+from .content_filter import ContentFilter
+
+
+logger = logging.getLogger(__name__)
 
 SIGNAL_TYPE_ALIASES = {
     'call_offer': 'offer',
@@ -14,6 +22,26 @@ def normalize_call_signal_type(signal_type):
     if not isinstance(signal_type, str):
         return signal_type
     return SIGNAL_TYPE_ALIASES.get(signal_type, signal_type)
+
+
+def validate_call_chat_payload(room_id, user, payload):
+    text = payload.get('text')
+    if not isinstance(text, str) or not text.strip() or len(text) > 140:
+        return 400, 'invalid_call_message'
+
+    is_contact_leak, _ = ContentFilter.inspect(text)
+    if is_contact_leak:
+        Profile.objects.filter(user=user).update(
+            off_platform_attempts=F('off_platform_attempts') + 1,
+        )
+        logger.warning(
+            'Off-platform contact leak blocked in call chat: user=%s call=%s',
+            user.pk,
+            room_id,
+        )
+        return 400, 'Sharing contact details outside LOVENY is not allowed.'
+
+    return None
 
 
 def record_call_signal(room_id, user, signal_type, payload):

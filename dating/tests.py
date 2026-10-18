@@ -2810,6 +2810,13 @@ class DatingPlatformTests(TestCase):
                 answer = await bob_socket.receive_json_from()
                 self.assertEqual(answer['type'], 'answer')
                 self.assertEqual(answer['payload']['sdp'], 'test-answer')
+                await alice_socket.send_json_to({
+                    'type': 'chat',
+                    'payload': {'text': 'Hello from the call.', 'username': self.alice.username},
+                })
+                chat_message = await bob_socket.receive_json_from()
+                self.assertEqual(chat_message['type'], 'chat')
+                self.assertEqual(chat_message['payload']['text'], 'Hello from the call.')
                 await bob_socket.send_json_to({
                     'type': 'end_call',
                     'payload': {'reason': 'test'},
@@ -3343,6 +3350,40 @@ class DatingPlatformTests(TestCase):
             },
         )
         self.assertEqual(allowed.status_code, 201)
+        self.assertTrue(call.signals.filter(signal_type='chat').exists())
+
+    def test_call_signal_endpoint_handles_invalid_payload_and_broadcast_failure(self):
+        call = CallSession.objects.create(
+            caller=self.alice,
+            receiver=self.bob,
+            status='connected',
+        )
+        self.client.force_login(self.alice)
+        endpoint = reverse('call_signal_send_api', args=[call.room_id])
+
+        invalid_json = self.client.post(endpoint, data='{', content_type='application/json')
+        self.assertEqual(invalid_json.status_code, 400)
+        self.assertEqual(invalid_json.json()['message'], 'invalid_json')
+
+        missing_type = self.post_json(endpoint, {'payload': {'text': 'Hello'}})
+        self.assertEqual(missing_type.status_code, 400)
+        self.assertEqual(missing_type.json()['message'], 'Missing signal type')
+
+        with (
+            patch(
+                'dating.views.get_channel_layer',
+                return_value=SimpleNamespace(group_send=lambda *args: None),
+            ),
+            patch('dating.views.async_to_sync') as async_to_sync_mock,
+        ):
+            async_to_sync_mock.return_value.side_effect = RuntimeError('channel layer unavailable')
+            failed_delivery = self.post_json(
+                endpoint,
+                {'type': 'chat', 'payload': {'text': 'Hello', 'username': self.alice.username}},
+            )
+
+        self.assertEqual(failed_delivery.status_code, 503)
+        self.assertEqual(failed_delivery.json()['message'], 'signal_delivery_failed')
         self.assertTrue(call.signals.filter(signal_type='chat').exists())
 
     def test_live_call_speech_moderation_detects_spoken_number_words(self):
