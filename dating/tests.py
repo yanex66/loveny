@@ -3215,6 +3215,21 @@ class DatingPlatformTests(TestCase):
             callee_answer_flow.index("transceiver.sender.track.enabled = true;"),
             callee_answer_flow.index("const answer = await peer.createAnswer();"),
         )
+        self.assertLess(
+            callee_answer_flow.index("videoTransceiver.direction = 'sendrecv';"),
+            callee_answer_flow.index("const answer = await peer.createAnswer();"),
+        )
+        self.assertIn(
+            "const fixedSdp = ensureVideoAnswerCanSend(answer.sdp, signal.payload?.sdp);",
+            callee_answer_flow,
+        )
+        self.assertIn("function getRemoteVideoDirection(sdp)", room_html)
+        shared_call_js = (
+            settings.BASE_DIR / 'dating' / 'static' / 'dating' / 'js' / 'video-calls.js'
+        ).read_text(encoding='utf-8')
+        self.assertIn("function ensureVideoAnswerCanSend(answerSdp, offerSdp)", shared_call_js)
+        self.assertIn("videoTransceiver.direction = 'sendrecv';", shared_call_js)
+        self.assertIn("remoteVideo.srcObject = remoteStream;", shared_call_js)
         self.assertIn("remoteVideo.srcObject = remoteStream;", room_html)
         self.assertIn("remoteVideo.muted = true;", room_html)
         self.assertContains(res_alice, 'Enable partner audio')

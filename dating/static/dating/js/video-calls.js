@@ -907,8 +907,40 @@
     }
 
     function getRemoteVideoDirection(sdp) {
-        const videoSection = (sdp || '').split(/(?=^m=)/m).find(section => section.startsWith('m=video '));
-        return videoSection?.match(/^a=(sendrecv|sendonly|recvonly|inactive)$/m)?.[1] || 'sendrecv';
+        if (!sdp) return 'sendrecv';
+        const lines = sdp.split(/\r?\n/);
+        const videoStart = lines.findIndex(line => line.startsWith('m=video '));
+        if (videoStart < 0) return 'sendrecv';
+        const videoEnd = lines.findIndex((line, index) => index > videoStart && line.startsWith('m='));
+        const videoLines = lines.slice(videoStart, videoEnd < 0 ? undefined : videoEnd);
+        const videoDirection = videoLines.find(line => /^a=(sendrecv|sendonly|recvonly|inactive)$/.test(line));
+        if (videoDirection) return videoDirection.slice(2);
+        const firstMediaIndex = lines.findIndex(line => line.startsWith('m='));
+        const sessionDirection = lines
+            .slice(0, firstMediaIndex < 0 ? lines.length : firstMediaIndex)
+            .find(line => /^a=(sendrecv|sendonly|recvonly|inactive)$/.test(line));
+        return sessionDirection ? sessionDirection.slice(2) : 'sendrecv';
+    }
+
+    function ensureVideoAnswerCanSend(answerSdp, offerSdp) {
+        const offerDirection = getRemoteVideoDirection(offerSdp);
+        if (!['sendrecv', 'recvonly'].includes(offerDirection)) return answerSdp;
+        const expectedDirection = offerDirection === 'recvonly' ? 'sendonly' : 'sendrecv';
+        const lines = answerSdp.split(/\r?\n/);
+        const videoStart = lines.findIndex(line => line.startsWith('m=video '));
+        if (videoStart < 0) return answerSdp;
+        const videoEnd = lines.findIndex((line, index) => index > videoStart && line.startsWith('m='));
+        const end = videoEnd < 0 ? lines.length : videoEnd;
+        const directionIndex = lines.findIndex((line, index) =>
+            index >= videoStart && index < end && /^a=(sendrecv|sendonly|recvonly|inactive)$/.test(line),
+        );
+        const currentDirection = getRemoteVideoDirection(answerSdp);
+        if (['recvonly', 'inactive'].includes(currentDirection)) {
+            if (directionIndex >= 0) lines[directionIndex] = `a=${expectedDirection}`;
+            else lines.splice(videoStart + 1, 0, `a=${expectedDirection}`);
+            return lines.join(answerSdp.includes('\r\n') ? '\r\n' : '\n');
+        }
+        return answerSdp;
     }
 
     async function consumeSignal(signal) {
@@ -991,15 +1023,30 @@
                     transceiver.sender.track.enabled = true;
                     transceiver.direction = 'sendrecv';
                 }
+                const videoTransceiver = peer.getTransceivers().find(
+                    transceiver => transceiver.receiver.track.kind === 'video',
+                );
+                if (!videoTransceiver?.sender.track || videoTransceiver.sender.track.readyState !== 'live') {
+                    throw new Error('A live local video sender is unavailable for the call answer.');
+                }
+                videoTransceiver.sender.track.enabled = true;
+                videoTransceiver.direction = 'sendrecv';
                 const answer = await peer.createAnswer();
                 console.info('Generated callee SDP answer:', answer.sdp);
-                await peer.setLocalDescription(answer);
-                const answerSdp = peer.localDescription?.sdp || answer.sdp;
-                console.info('Callee local SDP direction:', getRemoteVideoDirection(answerSdp));
-                if (getRemoteVideoDirection(answerSdp) !== 'sendrecv') {
+                const fixedSdp = ensureVideoAnswerCanSend(answer.sdp, signal.payload?.sdp);
+                const finalAnswer = new RTCSessionDescription({type: 'answer', sdp: fixedSdp});
+                await peer.setLocalDescription(finalAnswer);
+                const answerSdp = peer.localDescription?.sdp || fixedSdp;
+                const offerVideoDirection = getRemoteVideoDirection(signal.payload?.sdp);
+                const answerVideoDirection = getRemoteVideoDirection(answerSdp);
+                console.info('Callee local SDP direction:', answerVideoDirection);
+                if (
+                    ['sendrecv', 'recvonly'].includes(offerVideoDirection)
+                    && ['recvonly', 'inactive'].includes(answerVideoDirection)
+                ) {
                     console.error('Callee SDP answer is not sendrecv for video.', {
-                        offerDirection: getRemoteVideoDirection(signal.payload?.sdp),
-                        answerDirection: getRemoteVideoDirection(answerSdp),
+                        offerDirection: offerVideoDirection,
+                        answerDirection: answerVideoDirection,
                     });
                 }
                 await sendSignal('answer', peer.localDescription.toJSON());
@@ -1010,6 +1057,8 @@
                 await flushCandidates();
                 partnerIsNotSendingVideo = ['recvonly', 'inactive'].includes(
                     getRemoteVideoDirection(signal.payload?.sdp),
+                ) && !remoteStream?.getVideoTracks().some(
+                    track => track.readyState === 'live' && !track.muted,
                 );
                 if (partnerIsNotSendingVideo && feedback) {
                     feedback.textContent = 'Your partner’s app is not sending video. Ask them to refresh LOVENY and rejoin the call.';
@@ -1194,6 +1243,7 @@
             const hasLiveVideo = remoteStream?.getVideoTracks().some(
                 track => track.readyState === 'live' && !track.muted,
             );
+            if (hasLiveVideo) partnerIsNotSendingVideo = false;
             if (feedback) {
                 feedback.textContent = hasLiveVideo
                     ? 'Partner video is live.'
