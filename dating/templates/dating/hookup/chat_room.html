@@ -7,7 +7,14 @@
 
 {% block content %}
 {% block floating_coin_pill %}{% endblock %}
-<main class="flex flex-col h-[100dvh] max-w-lg mx-auto bg-[#10071f] text-white relative overflow-hidden" role="main" aria-label="24-Hour Hookup Chat">
+<main id="hookup-chat-config"
+      data-match-id="{{ match.id }}"
+      data-user-id="{{ request.user.pk }}"
+      data-expires-at="{{ match.expires_at|date:'c' }}"
+      data-expired="{{ is_expired|yesno:'true,false' }}"
+      data-message-count="{{ messages|length }}"
+      class="flex flex-col h-[100dvh] max-w-lg mx-auto bg-[#10071f] text-white relative overflow-hidden"
+      role="main" aria-label="24-Hour Hookup Chat">
     <!-- Top Header -->
     <header class="flex items-center justify-between px-4 py-3 bg-[#180b2e] border-b border-purple-900/40 z-20 shadow-md">
         <div class="flex items-center gap-3">
@@ -96,10 +103,11 @@
 
 <script>
 (() => {
-    const matchId = '{{ match.id }}';
-    const currentUserId = {{ request.user.pk }};
-    const expiresAt = new Date('{{ match.expires_at|date:"c" }}').getTime();
-    let isExpired = {% if is_expired %}true{% else %}false{% endif %};
+    const chatConfig = document.getElementById('hookup-chat-config');
+    const matchId = chatConfig.dataset.matchId;
+    const currentUserId = Number(chatConfig.dataset.userId) || null;
+    const expiresAt = new Date(chatConfig.dataset.expiresAt).getTime();
+    let isExpired = chatConfig.dataset.expired === 'true';
     let timerInterval = null;
 
     const container = document.getElementById('messages-container');
@@ -245,7 +253,7 @@
     }
 
     // Polling for incoming messages
-    let lastMsgCount = {{ messages|length }};
+    let lastMsgCount = Number(chatConfig.dataset.messageCount) || 0;
     async function pollMessages() {
         if (isExpired || document.hidden) return;
         try {

@@ -333,7 +333,7 @@
     </style>
     {% block extra_head %}{% endblock %}
 </head>
-<body class="min-h-screen font-sans antialiased selection:bg-pink-500 selection:text-white {% block body_class %}bg-[#fff8fc] text-[#35162f]{% endblock %}">
+<body data-authenticated="{{ user.is_authenticated|yesno:'true,false' }}" class="min-h-screen font-sans antialiased selection:bg-pink-500 selection:text-white {% block body_class %}bg-[#fff8fc] text-[#35162f]{% endblock %}">
     <div class="device-frame w-full overflow-x-hidden {% if user.is_authenticated %}pb-36{% endif %}">
         {% if user_free_trial_active %}
         <div class="mx-4 mt-3 rounded-xl border border-emerald-300/40 bg-emerald-900 px-4 py-2 text-center text-xs font-bold text-white shadow-lg">
@@ -1308,11 +1308,12 @@
                 }
             }
 
-            {% if user.is_authenticated %}
+            const userIsAuthenticated = document.body.dataset.authenticated === 'true';
+            if (userIsAuthenticated) {
                 offerNotificationPermission();
                 setInterval(pollNotifications, 8000);
                 pollNotifications();
-            {% endif %}
+            }
         });
     </script>
 

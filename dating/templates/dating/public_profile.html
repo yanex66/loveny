@@ -20,6 +20,17 @@
 
 {% block content %}
 <div class="relative mx-auto min-h-screen w-full max-w-md overflow-hidden bg-slate-950 pb-52 font-sans text-white shadow-2xl">
+    <div id="public-profile-config" class="hidden"
+         data-target-user-id="{{ profile.user.id }}"
+         data-target-username="{{ profile.user.username }}"
+         data-csrf-token="{{ csrf_token }}"
+         data-is-matched="{{ is_matched|yesno:'true,false' }}"
+         data-can-video-call="{{ can_video_call|yesno:'true,false' }}"></div>
+    <div id="public-profile-photo-data" class="hidden">
+        {% for p in all_photos %}
+        <span data-photo-url="{{ p.image.url }}" data-is-video="{{ p.is_video|yesno:'true,false' }}"></span>
+        {% endfor %}
+    </div>
 
     <!-- Top Navigation Bar (Glass Overlay) -->
     <div class="absolute top-0 left-0 w-full z-30 p-4 flex justify-between items-center bg-gradient-to-b from-black/80 via-black/30 to-transparent pointer-events-none">
@@ -28,7 +39,7 @@
         </button>
         
         <div class="flex items-center gap-2 pointer-events-auto">
-            <button onclick="reportUser({{ profile.user.pk }})" aria-label="Report" class="h-10 w-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white border border-white/20 hover:bg-rose-500/80 transition shadow-lg">
+            <button id="report-profile-button" data-report-user-id="{{ profile.user.pk }}" aria-label="Report" class="h-10 w-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white border border-white/20 hover:bg-rose-500/80 transition shadow-lg">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" /></svg>
             </button>
             <button onclick="shareProfile()" aria-label="Share" class="h-10 w-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white border border-white/20 hover:bg-black/60 transition shadow-lg">
@@ -174,7 +185,7 @@
             <div class="flex gap-2.5 overflow-x-auto no-scrollbar pb-1 scroll-smooth">
                 {% for photo in all_photos %}
                 <div class="shrink-0 w-24 aspect-[3/4] rounded-2xl overflow-hidden bg-slate-800 border-2 {% if photo == main_photo %}border-pink-500 shadow-lg shadow-pink-500/20{% else %}border-white/10{% endif %} cursor-pointer hover:scale-105 transition-transform duration-200 relative group"
-                     onclick="openLightboxByIndex({{ forloop.counter0 }})">
+                     data-photo-index="{{ forloop.counter0 }}">
                     {% if photo.is_video %}
                     <video src="{{ photo.image.url }}" class="w-full h-full object-cover"></video>
                     <span class="absolute bottom-1 right-1 rounded-full bg-black/70 px-1 py-0.5 text-[8px] font-black text-white">▶</span>
@@ -215,8 +226,8 @@
         <!-- Sex Call action -->
         <button type="button"
                 id="instant-call-btn"
+                data-receiver-id="{{ profile.user.id }}"
                 {% if is_busy %}disabled{% endif %}
-                onclick="startDirectCall({{ profile.user.id }}, '{{ profile.user.username }}')"
                 class="w-full flex items-center justify-center gap-2 rounded-2xl {% if is_busy %}bg-slate-500 cursor-not-allowed{% else %}bg-gradient-to-r from-orange-500 via-rose-500 to-pink-600 active:scale-95 hover:scale-[1.01]{% endif %} py-4 text-white font-black text-sm uppercase tracking-wider shadow-2xl shadow-rose-500/40 border-2 border-white/20 transition"
                 title="{% if is_busy %}This member is busy on a call{% else %}Instant Video Call{% endif %}">
             <span class="text-xl">📹</span>
@@ -238,17 +249,19 @@
 
 <script>
 (() => {
-    const TARGET_USER_ID = {{ profile.user.id }};
-    const TARGET_USERNAME = "{{ profile.user.username }}";
-    const CSRF_TOKEN = "{{ csrf_token }}";
-    let isMatched = {{ is_matched|yesno:"true,false" }};
+    const profileConfig = document.getElementById('public-profile-config');
+    const TARGET_USER_ID = Number(profileConfig.dataset.targetUserId);
+    const TARGET_USERNAME = profileConfig.dataset.targetUsername;
+    const CSRF_TOKEN = profileConfig.dataset.csrfToken;
+    let isMatched = profileConfig.dataset.isMatched === 'true';
 
-    // Photos data list
-    const photos = [
-        {% for p in all_photos %}
-        { url: "{{ p.image.url }}", isVideo: {{ p.is_video|yesno:'true,false' }} },
-        {% endfor %}
-    ];
+    const photos = Array.from(
+        document.querySelectorAll('#public-profile-photo-data [data-photo-url]'),
+        photo => ({
+            url: photo.dataset.photoUrl,
+            isVideo: photo.dataset.isVideo === 'true',
+        }),
+    );
 
     let currentPhotoIndex = 0;
 
@@ -470,8 +483,9 @@
         }
     };
 
-    {% if can_video_call %}
+    const canVideoCall = profileConfig.dataset.canVideoCall === 'true';
     window.startDirectCall = receiverId => {
+        if (!canVideoCall) return;
         const btn = document.getElementById('instant-call-btn');
         if (!window.lovenyStartVideoCall) {
             window.lovenyToast('Video calling is unavailable. Please refresh and try again.', 'error');
@@ -481,7 +495,10 @@
         window.lovenyStartVideoCall(receiverId)
             .finally(() => btn.classList.remove('opacity-75'));
     };
-    {% endif %}
+    const instantCallButton = document.getElementById('instant-call-btn');
+    instantCallButton?.addEventListener('click', () => {
+        window.startDirectCall(Number(instantCallButton.dataset.receiverId));
+    });
 
     window.shareProfile = () => {
         if (navigator.share) {
@@ -512,7 +529,7 @@
         
         try {
             const token = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));
-            const csrf = token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
+            const csrf = token ? decodeURIComponent(token.split('=')[1]) : CSRF_TOKEN;
             
             const res = await fetch('/api/report/', {
                 method: 'POST',
@@ -536,6 +553,14 @@
             window.lovenyToast('Could not submit your report. Please try again.', 'error');
         }
     };
+    document.getElementById('report-profile-button')?.addEventListener('click', event => {
+        window.reportUser(Number(event.currentTarget.dataset.reportUserId));
+    });
+    document.querySelectorAll('[data-photo-index]').forEach(photo => {
+        photo.addEventListener('click', () => {
+            window.openLightboxByIndex(Number(photo.dataset.photoIndex));
+        });
+    });
 })();
 </script>
 {% endblock %}

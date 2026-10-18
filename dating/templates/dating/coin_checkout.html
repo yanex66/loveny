@@ -178,13 +178,20 @@
     </div>
 </main>
 
+<div id="coin-checkout-config" class="hidden"
+     data-selected-package-id="{{ selected_package.pk|default_if_none:'' }}"
+     data-selected-package-price="{{ selected_package.price|default_if_none:'' }}"
+     data-selected-package-coins="{{ selected_package.coins|default_if_none:'' }}"></div>
 <script src="https://js.paystack.co/v1/inline.js"></script>
 <script src="https://checkout.flutterwave.com/v3.js"></script>
 <script>
 (() => {
-    let selectedPackageId = {% if selected_package %}{{ selected_package.pk }}{% else %}null{% endif %};
-    let selectedPackagePrice = {% if selected_package %}{{ selected_package.price }}{% else %}0{% endif %};
-    let selectedPackageCoins = {% if selected_package %}{{ selected_package.coins }}{% else %}0{% endif %};
+    const checkoutConfig = document.getElementById('coin-checkout-config');
+    let selectedPackageId = checkoutConfig.dataset.selectedPackageId
+        ? Number(checkoutConfig.dataset.selectedPackageId)
+        : null;
+    let selectedPackagePrice = Number(checkoutConfig.dataset.selectedPackagePrice) || 0;
+    let selectedPackageCoins = Number(checkoutConfig.dataset.selectedPackageCoins) || 0;
 
     const packageCards = document.querySelectorAll('.package-card');
     const summaryTitle = document.getElementById('selected-summary-title');

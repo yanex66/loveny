@@ -68,7 +68,7 @@
 
     <section class="chat-room-section mx-auto flex max-w-4xl flex-col overflow-hidden rounded-3xl border border-purple-500/20 bg-[#140a27]/95 shadow-2xl backdrop-blur-2xl">
         
-        <!-- 1. TOP RECIPIENT CARD (Chamet/HiiClub Host Header) -->
+        <!-- 1. TOP RECIPIENT CARD (Host Header) -->
         <header class="chat-recipient-header flex items-center justify-between gap-2 border-b border-white/10 bg-[#1a0c33]/90 px-3 py-3 sm:px-5">
             <div class="chat-recipient-header__person flex items-center gap-3 min-w-0">
                 <!-- Back Button -->
@@ -174,7 +174,7 @@
 
         <p id="chat-status" class="min-h-4 px-5 text-[11px] text-rose-400" role="status"></p>
 
-        <!-- QUICK ICEBREAKER CHIPS (Horizontal Scrollable Row Above Input) -->
+        <!-- QUICK ICEBREAKER CHIPS -->
         {% if can_send_messages %}
         <div class="border-t border-white/5 bg-[#160b2d]/80 px-3 py-2 sm:px-4 overflow-x-auto no-scrollbar flex items-center gap-2">
             <span class="shrink-0 text-[10px] font-black uppercase tracking-wider text-pink-400 flex items-center gap-1">
@@ -191,7 +191,7 @@
         </div>
         {% endif %}
 
-        <!-- STICKER DRAWER (Collapsible) -->
+        <!-- STICKER DRAWER -->
         {% if can_send_messages %}
         <div id="sticker-drawer" class="hidden border-t border-white/10 bg-[#180c33] p-3.5 transition-all duration-300">
             <div class="mb-2.5 flex items-center justify-between">
@@ -211,7 +211,7 @@
             </div>
         </div>
 
-        <!-- VIRTUAL GIFTS DRAWER (Collapsible Slide-Up Sheet) -->
+        <!-- VIRTUAL GIFTS DRAWER -->
         <div id="gift-drawer" class="hidden border-t border-white/10 bg-[#1c0d3b] p-4 transition-all duration-300">
             <div class="mb-3 flex items-center justify-between">
                 <div class="flex items-center gap-2">
@@ -247,7 +247,7 @@
             <form id="chat-form" class="flex items-center gap-2">
                 {% csrf_token %}
                 
-                <!-- Emoji / Sticker Toggle Button (😊) -->
+                <!-- Emoji / Sticker Toggle Button -->
                 <button id="btn-toggle-stickers" type="button"
                         class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-purple-500/30 bg-purple-950/40 text-xl transition hover:bg-purple-800/40 hover:scale-105 active:scale-95"
                         title="Stickers & Emojis">
@@ -260,7 +260,7 @@
                        class="min-w-0 flex-1 rounded-2xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/40 outline-none transition focus:border-pink-500 focus:bg-white/10 focus:ring-2 focus:ring-pink-500/20"
                        placeholder="Type a message...">
 
-                <!-- Send Button (🚀 / Paper plane) -->
+                <!-- Send Button -->
                 <button id="send-button" type="submit"
                         class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-r from-pink-600 to-purple-600 text-lg font-black text-white shadow-lg shadow-pink-600/30 transition hover:brightness-110 active:scale-95"
                         title="Send Message">
@@ -268,12 +268,10 @@
                 </button>
             </form>
 
-            <!-- Secondary Icon Tray (Below Input) -->
+            <!-- Secondary Icon Tray -->
             <div class="flex items-center justify-between pt-1 border-t border-white/5">
                 <div class="flex items-center gap-2">
-
-
-                    <!-- Gift Box Button (🎁) -->
+                    <!-- Gift Box Button -->
                     <button id="btn-toggle-gifts" type="button"
                             class="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-pink-500/20 to-purple-500/20 hover:from-pink-500/30 hover:to-purple-500/30 border border-pink-500/30 px-3 py-1.5 text-xs font-black text-pink-300 transition active:scale-95"
                             title="Send Animated Gift">
@@ -283,9 +281,11 @@
                 </div>
 
                 {% if can_video_call %}
-                <!-- Direct Video Call Button (📹 20&#x1FA99;/min) -->
+                <!-- Direct Video Call Button -->
                 <button type="button"
-                        onclick="startDirectVideoCall({{ other_user.id }}, '{{ other_user.username }}')"
+                        id="btn-start-video-call"
+                        data-user-id="{{ other_user.id }}"
+                        data-username="{{ other_user.username|escapejs }}"
                         class="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 hover:from-rose-400 hover:to-pink-400 px-3.5 py-1.5 text-xs font-black text-white shadow-lg shadow-rose-500/25 active:scale-95 transition"
                         title="Start Instant Video Call">
                     <span class="text-base">📹</span>
@@ -307,7 +307,7 @@
 
     </section>
 
-    <!-- COIN TOP-UP MODAL (Slide-up modal) -->
+    <!-- COIN TOP-UP MODAL -->
     <div id="topup-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md opacity-0 pointer-events-none transition duration-300">
         <div class="w-full max-w-lg rounded-3xl border border-white/15 bg-[#18132d] p-6 shadow-2xl transition duration-300 scale-95" id="topup-modal-content">
             <div class="flex items-center justify-between border-b border-white/10 pb-4">
@@ -342,9 +342,9 @@
     const STICKERS_API_URL = "{{ stickers_api_url|escapejs }}";
     const PACKAGES_API_URL = "{{ coin_packages_api_url|escapejs }}";
     const WALLET_BALANCE_API_URL = "{{ wallet_balance_api_url|escapejs }}";
-    const CURRENT_USER_ID = {{ user.id }};
-    const CONVERSATION_ID = {{ conversation.id }};
-    const OTHER_USER_ID = {{ other_user.id }};
+    const CURRENT_USER_ID = Number("{{ user.id }}") || null;
+    const CONVERSATION_ID = Number("{{ conversation.id }}") || null;
+    const OTHER_USER_ID = Number("{{ other_user.id }}") || null;
     const OTHER_USERNAME = "{{ other_user.username|escapejs }}";
 
     const messageList = document.getElementById('chat-messages');
@@ -702,15 +702,22 @@
         }
     };
 
-    {% if can_video_call %}
-    window.startDirectVideoCall = function(receiverId) {
+    window.startDirectVideoCall = function(receiverId, receiverUsername) {
         if (window.lovenyStartVideoCall) {
-            window.lovenyStartVideoCall(receiverId);
+            window.lovenyStartVideoCall(receiverId, receiverUsername);
             return;
         }
         window.lovenyToast('Video calling is unavailable. Please refresh and try again.', 'error');
     };
-    {% endif %}
+
+    const btnStartVideoCall = document.getElementById('btn-start-video-call');
+    if (btnStartVideoCall) {
+        btnStartVideoCall.addEventListener('click', function() {
+            const receiverId = Number(this.dataset.userId);
+            const receiverUsername = this.dataset.username || OTHER_USERNAME;
+            startDirectVideoCall(receiverId, receiverUsername);
+        });
+    }
 
     // STICKER DRAWER HANDLING
     const btnToggleStickers = document.getElementById('btn-toggle-stickers');

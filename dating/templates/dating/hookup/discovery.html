@@ -238,14 +238,21 @@
     </section>
 </main>
 
+<div id="accepted-match-config" class="hidden">
+    {% for match in accepted_matches %}
+    <span data-match-id="{{ match.id }}"></span>
+    {% endfor %}
+</div>
+
 <!-- Action Script -->
 <script src="https://js.paystack.co/v1/inline.js"></script>
 <script src="https://checkout.flutterwave.com/v3.js"></script>
 <script>
 (() => {
-    const acceptedMatchIds = [
-        {% for match in accepted_matches %}'{{ match.id }}'{% if not forloop.last %},{% endif %}{% endfor %}
-    ];
+    const acceptedMatchIds = Array.from(
+        document.querySelectorAll('#accepted-match-config [data-match-id]'),
+        match => match.dataset.matchId,
+    );
 
     function csrfToken() {
         const token = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));

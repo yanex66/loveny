@@ -60,12 +60,13 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<div id="premium-checkout-config" class="hidden" data-plan-id="{{ plan.pk }}"></div>
 <script src="https://js.paystack.co/v1/inline.js"></script>
 <script src="https://checkout.flutterwave.com/v3.js"></script>
 <script>
     const USER_EMAIL = "{{ user_email|escapejs }}";
     const AMOUNT = Number("{{ plan.price }}");
-    const PLAN_ID = {{ plan.pk }};
+    const PLAN_ID = Number(document.getElementById('premium-checkout-config').dataset.planId);
     const PLAN_TYPE = "{{ plan_type|escapejs }}";
     const PRODUCT_TYPE = "{{ product_type }}";
     const PAYSTACK_KEY = "{{ paystack_key|escapejs }}";
