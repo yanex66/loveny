@@ -3184,27 +3184,32 @@ class DatingPlatformTests(TestCase):
         self.assertContains(res_alice, "peer.addTransceiver(track, {")
         self.assertContains(res_alice, "direction: 'sendrecv'")
         self.assertContains(res_alice, 'Generated callee SDP answer:')
+        self.assertContains(res_alice, "console.info('Generated callee SDP answer:', answer.sdp);")
         self.assertContains(res_alice, 'remoteVideo.play().catch')
         room_html = res_alice.content.decode()
         callee_offer_index = room_html.index(
             "if (signal.type === 'offer' && !peer.remoteDescription && !isCaller)",
         )
+        callee_answer_end = room_html.index(
+            "} else if (signal.type === 'answer' && isCaller",
+            callee_offer_index,
+        )
+        callee_answer_flow = room_html[callee_offer_index:callee_answer_end]
         answer_index = room_html.index(
             "const answer = await peer.createAnswer();",
             callee_offer_index,
         )
-        suspend_senders_index = room_html.index(
-            "await setOutboundMediaActive(callSenders, false);",
-            callee_offer_index,
-        )
-        self.assertLess(
-            answer_index,
-            suspend_senders_index,
-        )
+        self.assertNotIn("setOutboundMediaActive(callSenders, false)", callee_answer_flow)
         self.assertLess(
             room_html.index("peer.addTransceiver(track, {"),
             answer_index,
         )
+        self.assertLess(
+            callee_answer_flow.index("transceiver.sender.track.enabled = true;"),
+            callee_answer_flow.index("const answer = await peer.createAnswer();"),
+        )
+        self.assertIn("remoteVideo.srcObject = remoteStream;", room_html)
+        self.assertIn("remoteVideo.muted = true;", room_html)
         self.assertContains(res_alice, 'Enable partner audio')
         self.assertContains(res_alice, 'call-feedback')
         self.assertContains(res_alice, 'Speech monitoring is active for call-safety checks')

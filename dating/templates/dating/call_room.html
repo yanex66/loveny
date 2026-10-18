@@ -8,7 +8,7 @@
 {% block content %}
 <main class="fixed inset-0 z-50 bg-slate-950 text-white select-none overflow-hidden" role="main" aria-label="1-on-1 Video Call">
     <!-- Remote Full-Screen Video Background -->
-    <video id="remote-video" class="absolute inset-0 h-full w-full object-cover bg-slate-950" autoplay muted playsinline></video>
+    <video id="remote-video" class="absolute inset-0 h-full w-full object-cover bg-slate-950" autoplay playsinline></video>
     
     <!-- Top and Bottom Vignette Overlays -->
     <div class="absolute inset-x-0 top-0 h-44 bg-gradient-to-b from-black/85 via-black/35 to-transparent pointer-events-none"></div>
@@ -223,10 +223,10 @@
 <script src="{% static 'dating/js/call-speech-monitor.js' %}"></script>
 <script>
 (() => {
-    const roomId = '{{ room_id }}';
-    const currentUserId = {{ request.user.pk }};
+    const roomId = '{{ room_id|escapejs }}';
+    const currentUserId = Number('{{ request.user.pk }}') || null;
     const currentUsername = '{{ request.user.username|escapejs }}';
-    const isCaller = {{ is_caller|yesno:"true,false" }};
+    const isCaller = '{{ is_caller|yesno:"true,false" }}' === 'true';
     const localVideo = document.getElementById('local-video');
     const remoteVideo = document.getElementById('remote-video');
     const enableRemoteAudioBtn = document.getElementById('enable-remote-audio');
@@ -240,7 +240,6 @@
     let heartbeatTimer = null;
     let localStream = null;
     let remoteStream = null;
-    let callSenders = new Map();
     let hasRemoteMedia = false;
     let partnerIsNotSendingVideo = false;
     let pendingCandidates = [];
@@ -307,19 +306,6 @@
     function csrfToken() {
         const token = document.cookie.split('; ').find(item => item.startsWith('csrftoken='));
         return token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
-    }
-
-    async function setOutboundMediaActive(senders, active) {
-        for (const sender of senders.values()) {
-            const parameters = sender.getParameters();
-            if (!parameters.encodings?.length) {
-                throw new Error('Secure video-call media gating is unavailable in this browser.');
-            }
-            parameters.encodings.forEach(encoding => {
-                encoding.active = active;
-            });
-            await sender.setParameters(parameters);
-        }
     }
 
     function leaveCallWithNotice(message, destination) {
@@ -448,7 +434,6 @@
             }
             peer = new RTCPeerConnection({iceServers: iceConfig.ice_servers});
             remoteStream = new MediaStream();
-            callSenders = new Map();
             for (const kind of ['audio', 'video']) {
                 const track = localStream.getTracks().find(item => item.kind === kind);
                 if (!track || track.readyState !== 'live') {
@@ -459,19 +444,14 @@
                     streams: [localStream],
                 });
                 transceiver.direction = 'sendrecv';
-                callSenders.set(kind, transceiver.sender);
             }
-            if (window.CallPrivacy) {
-                CallPrivacy.setOnFeedsUnlocked(async () => {
-                    await setOutboundMediaActive(callSenders, true);
-                    if (hasRemoteMedia) enableRemoteAudioBtn.classList.remove('hidden');
-                });
-            }
+
             peer.onicecandidate = event => {
                 if (event.candidate) {
                     sendSignal('candidate', event.candidate.toJSON()).catch(console.error);
                 }
             };
+
             peer.ontrack = event => {
                 hasRemoteMedia = true;
                 const incomingTracks = [
@@ -483,14 +463,19 @@
                         remoteStream.addTrack(track);
                     }
                 });
+
+                // Attach directly to the main video element
+                remoteVideo.srcObject = remoteStream;
+                remoteVideo.play().catch(error => {
+                    console.warn('Playback requires user gesture or muted audio:', error);
+                    remoteVideo.muted = true;
+                    remoteVideo.play().catch(console.error);
+                });
+
                 if (window.CallPrivacy?.setRemoteStream) {
                     window.CallPrivacy.setRemoteStream(remoteStream);
-                } else {
-                    remoteVideo.srcObject = remoteStream;
-                    remoteVideo.play().catch(error => {
-                        console.warn('Remote video playback requires user interaction.', error);
-                    });
                 }
+
                 if (event.track.kind === 'video') {
                     event.track.addEventListener('unmute', () => {
                         partnerIsNotSendingVideo = false;
@@ -502,7 +487,7 @@
                         }
                     });
                 }
-                if (CallPrivacy.handshakeComplete) {
+                if (window.CallPrivacy?.handshakeComplete) {
                     enableRemoteAudioBtn.classList.remove('hidden');
                 }
                 const hasLiveVideo = remoteStream.getVideoTracks().some(
@@ -515,6 +500,7 @@
                     !hasLiveVideo,
                 );
             };
+
             peer.onconnectionstatechange = () => {
                 if (peer.connectionState === 'connected') {
                     const hasLiveVideo = remoteStream?.getVideoTracks().some(
@@ -524,8 +510,8 @@
                         partnerIsNotSendingVideo
                             ? 'Your partner’s app is not sending video. Ask them to refresh LOVENY and rejoin the call.'
                             : hasLiveVideo
-                            ? 'Partner video is live.'
-                            : 'Connected. Waiting for your partner’s video…',
+                                ? 'Partner video is live.'
+                                : 'Connected. Waiting for your partner’s video…',
                         !hasLiveVideo,
                     );
                     window.CallSpeechMonitor?.enableDetection();
@@ -545,7 +531,6 @@
             await connectSignalingSocket();
             if (isCaller) {
                 const offer = await peer.createOffer();
-                if (window.CallPrivacy) await setOutboundMediaActive(callSenders, false);
                 await peer.setLocalDescription(offer);
                 await sendSignal('offer', peer.localDescription.toJSON());
             }
@@ -689,23 +674,14 @@
                 if (!transceiver?.sender.track || transceiver.sender.track.readyState !== 'live') {
                     throw new Error(`A live local ${kind} sender is unavailable for the call answer.`);
                 }
+                transceiver.sender.track.enabled = true;
                 transceiver.direction = 'sendrecv';
             }
             const answer = await peer.createAnswer();
             console.info('Generated callee SDP answer:', answer.sdp);
-            if (window.CallPrivacy) await setOutboundMediaActive(callSenders, false);
             await peer.setLocalDescription(answer);
-            const answerSdp = peer.localDescription?.sdp || answer.sdp;
-            console.info('Callee local SDP direction:', getRemoteVideoDirection(answerSdp));
-            if (getRemoteVideoDirection(answerSdp) !== 'sendrecv') {
-                console.error('Callee SDP answer is not sendrecv for video.', {
-                    offerDirection: getRemoteVideoDirection(signal.payload?.sdp),
-                    answerDirection: getRemoteVideoDirection(answerSdp),
-                });
-            }
             await sendSignal('answer', peer.localDescription.toJSON());
         } else if (signal.type === 'answer' && isCaller && !peer.remoteDescription) {
-            console.info('Caller received SDP answer:', signal.payload?.sdp);
             await peer.setRemoteDescription(new RTCSessionDescription(signal.payload));
             await flushCandidates();
             partnerIsNotSendingVideo = ['recvonly', 'inactive'].includes(
@@ -713,7 +689,6 @@
             );
             if (partnerIsNotSendingVideo) {
                 setCallFeedback('Your partner’s app is not sending video. Ask them to refresh LOVENY and rejoin the call.');
-                console.warn('Call partner negotiated receive-only video.');
             }
         } else if (signal.type === 'candidate') {
             const candidate = new RTCIceCandidate(signal.payload);
@@ -777,12 +752,10 @@
         }
     }
 
-    // Toggle Gift Drawer
     giftBtn?.addEventListener('click', () => {
         giftDrawer.classList.toggle('hidden');
     });
 
-    // In-Call Chat submission
     chatForm?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const text = chatInput.value.trim();
@@ -825,7 +798,6 @@
         chatStream.scrollTop = chatStream.scrollHeight;
     }
 
-    // Gift buttons inside call
     document.querySelectorAll('.gift-send-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
             const gift = btn.dataset.gift;
@@ -862,7 +834,6 @@
         setTimeout(() => anim.remove(), 2500);
     }
 
-    // End call
     endBtn?.addEventListener('click', async () => {
         callTerminating = true;
         window.CallSpeechMonitor?.stop();
@@ -894,18 +865,6 @@
             track.enabled = !audioEnabled;
         });
 
-        enableRemoteAudioBtn?.addEventListener('click', async () => {
-            if (!remoteVideo?.srcObject) return;
-            remoteVideo.muted = false;
-            try {
-                await remoteVideo.play();
-                enableRemoteAudioBtn.classList.add('hidden');
-            } catch (error) {
-                remoteVideo.muted = true;
-                setCallFeedback('Partner video is connected. Tap Enable partner audio again to hear sound.');
-                console.warn('Remote audio playback requires a user gesture.', error);
-            }
-        });
         muteBtn.innerHTML = audioEnabled
             ? '<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1m7 8v4m-4 0h8"/><path d="m3 3 18 18"/></svg>'
             : '<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1m7 8v4m-4 0h8"/></svg>';
@@ -916,6 +875,18 @@
         muteBtn.setAttribute('title', audioEnabled ? 'Unmute audio' : 'Mute audio');
         if (audioEnabled) window.CallSpeechMonitor?.pause();
         else window.CallSpeechMonitor?.resume();
+    });
+
+    enableRemoteAudioBtn?.addEventListener('click', async () => {
+        if (!remoteVideo?.srcObject) return;
+        remoteVideo.muted = false;
+        try {
+            await remoteVideo.play();
+            enableRemoteAudioBtn.classList.add('hidden');
+        } catch (error) {
+            remoteVideo.muted = true;
+            setCallFeedback('Partner video is connected. Tap Enable partner audio again to hear sound.');
+        }
     });
 
     camBtn?.addEventListener('click', () => {
@@ -969,8 +940,10 @@
         try {
             const response = await fetch(`/api/calls/${roomId}/follow/`, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken()},
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken()
+                },
                 body: JSON.stringify({}),
             });
             const result = await response.json();

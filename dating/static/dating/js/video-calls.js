@@ -988,11 +988,11 @@
                     if (!transceiver?.sender.track || transceiver.sender.track.readyState !== 'live') {
                         throw new Error(`A live local ${kind} sender is unavailable for the call answer.`);
                     }
+                    transceiver.sender.track.enabled = true;
                     transceiver.direction = 'sendrecv';
                 }
                 const answer = await peer.createAnswer();
                 console.info('Generated callee SDP answer:', answer.sdp);
-                if (window.CallPrivacy) await setOutboundMediaActive(callSenders, false);
                 await peer.setLocalDescription(answer);
                 const answerSdp = peer.localDescription?.sdp || answer.sdp;
                 console.info('Callee local SDP direction:', getRemoteVideoDirection(answerSdp));
@@ -1164,13 +1164,16 @@
                         remoteStream.addTrack(track);
                     }
                 });
+                remoteVideo.srcObject = remoteStream;
+                remoteVideo.play().catch(error => {
+                    console.warn('Remote video playback requires interaction.', error);
+                    remoteVideo.muted = true;
+                    remoteVideo.play().catch(playError => {
+                        console.warn('Remote video playback is still blocked.', playError);
+                    });
+                });
                 if (window.CallPrivacy && activeCall) {
                     window.CallPrivacy.setRemoteStream(remoteStream);
-                } else {
-                    remoteVideo.srcObject = remoteStream;
-                    remoteVideo.play().catch(error => {
-                        console.warn('Remote video playback requires interaction.', error);
-                    });
                 }
                 if (event.track.kind === 'audio') {
                     enableCallAudioBtn?.classList.remove('hidden');
