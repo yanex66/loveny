@@ -21,19 +21,19 @@
             max-width: 100%;
             min-height: 44px;
             padding: 0.85rem;
-            border: 1px solid #f3c8df;
+            border: 1px solid #eadfdf;
             border-radius: 1rem;
             background: #fff;
-            color: #35162f;
+            color: #1a1a1a;
             font-size: 16px;
             box-sizing: border-box;
             transition: border-color 0.2s, box-shadow 0.2s;
         }
         input:focus, textarea:focus, select:focus {
-            border-color: #ec4899;
-            background: #fff7fb;
+            border-color: #722f37;
+            background: #fdfbfb;
             outline: none;
-            box-shadow: 0 0 15px rgba(236, 72, 153, 0.2);
+            box-shadow: 0 0 15px rgba(114, 47, 55, 0.16);
         }
         .tag-grid {
             grid-template-columns: repeat(auto-fill, minmax(min(100%, 112px), 1fr));
@@ -51,39 +51,39 @@
             justify-content: center;
             padding: 0.5rem 0.65rem;
             background: #fff;
-            border: 1px solid #fce7f3;
+            border: 1px solid #eadfdf;
             border-radius: 9999px;
             text-align: center;
-            color: #6b5870;
+            color: #6b6263;
             cursor: pointer;
             transition: all 0.2s;
         }
         .tag-grid input[type="checkbox"]:checked + label {
-            background: linear-gradient(to right, #ec4899, #fb7185);
+            background: linear-gradient(to right, #58111a, #722f37);
             border-color: transparent;
             color: white;
             font-weight: bold;
-            box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
+            box-shadow: 0 4px 12px rgba(88, 17, 26, 0.2);
         }
         .tag-grid input[type="checkbox"]:disabled + label {
             cursor: not-allowed;
             opacity: 0.45;
         }
-        select option { background: white; color: #35162f; }
+        select option { background: white; color: #1a1a1a; }
         button[type="submit"]:hover {
             background-image: none !important;
             background: #fff !important;
-            color: #35162f !important;
-            border-color: #f9a8d4 !important;
+            color: #1a1a1a !important;
+            border-color: #d4af37 !important;
         }
     </style>
 </head>
-<body class="bg-gradient-to-br from-rose-50 via-white to-orange-50 min-h-screen overflow-x-hidden py-6 sm:py-10 px-4 font-sans text-slate-900">
+<body class="min-h-screen overflow-x-hidden bg-[#f8f6f6] px-4 py-6 font-sans text-[#1a1a1a] sm:py-10">
 
-    <div class="device-frame max-w-[28rem] mx-auto bg-white rounded-3xl shadow-xl border border-pink-100 overflow-hidden">
-        <div class="p-5 sm:p-10 text-center bg-gradient-to-b from-rose-50 to-white">
+    <div class="device-frame mx-auto max-w-[28rem] overflow-hidden rounded-3xl border border-[#eadfdf] bg-white shadow-xl">
+        <div class="bg-gradient-to-b from-[#fbf7f7] to-white p-5 text-center sm:p-10">
             <img src="{% static 'dating/images/loveny-logo.png' %}" alt="LOVENY" class="mx-auto mb-4 h-12 w-auto max-w-full rounded-lg object-contain">
-            <h1 class="text-2xl font-black text-pink-700 tracking-tighter uppercase italic mb-2 sm:text-3xl">
+            <h1 class="mb-2 text-2xl font-black uppercase italic tracking-tighter text-[#722f37] sm:text-3xl">
                 Initialize Profile
             </h1>
             <p class="text-slate-500 font-medium">Step into the spotlight. Let's make it official.</p>
@@ -108,11 +108,11 @@
                 <input type="hidden" name="max_distance_km" value="100">
 
                 <div class="text-center">
-                    <label class="block text-xs font-black text-pink-500 uppercase tracking-widest mb-4">Main Identity Media</label>
-                    <div class="relative w-40 h-40 mx-auto rounded-3xl bg-rose-50 border-2 border-dashed border-pink-200 overflow-hidden group hover:border-pink-500 transition-all duration-500">
+                    <label class="mb-4 block text-xs font-black uppercase tracking-widest text-[#722f37]">Main Identity Media</label>
+                    <div class="group relative mx-auto h-40 w-40 overflow-hidden rounded-3xl border-2 border-dashed border-[#e6cbce] bg-[#fbf7f7] transition-all duration-500 hover:border-[#722f37]">
                         <input type="file" name="photo" id="main-photo-input" accept="image/*,video/*" class="absolute inset-0 opacity-0 cursor-pointer z-20" onchange="previewFile(this)">
                         
-                        <div id="preview-placeholder" class="w-full h-full flex flex-col items-center justify-center text-slate-400 group-hover:text-pink-600 transition">
+                        <div id="preview-placeholder" class="flex h-full w-full flex-col items-center justify-center text-slate-400 transition group-hover:text-[#722f37]">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4" />
                             </svg>
@@ -129,6 +129,11 @@
                         <label class="block text-[10px] font-black text-slate-500 uppercase mb-2 ml-1">Current Age</label>
                         {{ form.age }}
                     </div>
+                    <div>
+                        <label for="{{ form.whatsapp_number.id_for_label }}" class="block text-[10px] font-black text-slate-500 uppercase mb-2 ml-1">WhatsApp number</label>
+                        {{ form.whatsapp_number }}
+                        <p class="mt-1 text-xs text-slate-500">Only revealed to you and a mutual match after both of you unlock the contact.</p>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -142,8 +147,8 @@
                     </div>
                 </div>
 
-                <div class="p-5 sm:p-6 bg-rose-50 rounded-3xl border border-rose-100 space-y-4">
-                    <label class="block text-xs font-black text-pink-700 uppercase tracking-widest">Connection Style</label>
+                <div class="space-y-4 rounded-3xl border border-[#eadfdf] bg-[#fbf7f7] p-5 sm:p-6">
+                    <label class="block text-xs font-black uppercase tracking-widest text-[#722f37]">Connection Style</label>
                     <div><label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Primary mode</label>{{ form.relationship_mode }}</div>
                 </div>
 
@@ -156,7 +161,7 @@
                 <div>
                     <div class="flex items-center justify-between">
                         <label class="block text-xs font-black text-slate-500 uppercase mb-4 ml-1">Pick up to 5 interests</label>
-                        <span id="tag-count" class="text-xs font-bold text-pink-700"></span>
+                        <span id="tag-count" class="text-xs font-bold text-[#722f37]"></span>
                     </div>
                     <div class="grid gap-2 tag-grid">
                         {% for checkbox in form.tags %}
@@ -170,7 +175,7 @@
                     </div>
                 </div>
 
-                <button type="submit" class="w-full py-5 bg-gradient-to-r from-pink-600 to-rose-500 text-white font-black uppercase tracking-widest rounded-2xl shadow-[0_10px_30px_rgba(236,72,153,0.3)] transition-all duration-300 transform hover:-translate-y-1 active:scale-95">
+                <button type="submit" class="w-full transform rounded-2xl bg-gradient-to-r from-[#58111a] to-[#722f37] py-5 font-black uppercase tracking-widest text-white shadow-[0_10px_30px_rgba(88,17,26,0.2)] transition-all duration-300 hover:-translate-y-1 active:scale-95">
                     Launch My Profile
                 </button>
             </form>

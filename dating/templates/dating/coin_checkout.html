@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Buy Coins - Official Sex Call Token Shop | LOVENY{% endblock %}
+{% block title %}Buy Coins | LOVENY{% endblock %}
 
 {% block content %}
 <main class="min-h-screen bg-[#0a0514] text-white pb-36 select-none -mx-4 -mt-4 sm:-mx-6 sm:-mt-6 px-4 pt-6">
@@ -12,12 +12,12 @@
     <div class="relative max-w-4xl mx-auto">
         <!-- Top Navigation Header -->
         <header class="flex items-center justify-between pb-4 border-b border-white/10">
-            <a href="{% url 'sex_call_hub' %}" class="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 border border-white/15 text-pink-300 hover:bg-white/20 transition text-lg" aria-label="Back to Sex Call Hub">
+            <a href="{% url 'swipe_card' %}" class="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 border border-white/15 text-pink-300 hover:bg-white/20 transition text-lg" aria-label="Back to discovery">
                 ←
             </a>
             <div class="text-center">
                 <span class="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 via-rose-500 to-pink-500 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-slate-950 shadow-md">
-                    &#x1FA99; Official Sex Call Token Shop
+                    &#x1FA99; LOVENY Coin Store
                 </span>
             </div>
             <div class="w-10"></div>
@@ -29,7 +29,7 @@
                 Buy Coins
             </h1>
             <p class="text-xs sm:text-sm text-white/70 mt-1 max-w-md mx-auto">
-                Fuel 1-on-1 private video calls and send dazzling interactive gifts.
+                Buy coins to send gifts and enjoy platform perks.
             </p>
         </div>
 
@@ -67,7 +67,7 @@
                     <h2 class="text-xs font-black uppercase tracking-wider text-amber-300">Strictly Closed-Loop Economy</h2>
                 </div>
                 <p class="text-xs text-white/70 mb-3">
-                    LOVENY Sex Call mode operates exclusively on an in-app closed loop token system:
+                    LOVENY coins can be used for in-app gifts and platform features:
                 </p>
                 <ul class="text-xs text-white/60 space-y-2">
                     <li class="flex items-start gap-1.5">
@@ -76,7 +76,7 @@
                     </li>
                     <li class="flex items-start gap-1.5">
                         <span class="text-amber-400 font-bold">•</span>
-                        <span><strong class="text-white">Call &amp; Gift Usage:</strong> Coins are used solely to initiate live video calls and send animated virtual gifts.</span>
+                        <span><strong class="text-white">Gift Usage:</strong> Coins can be used to send animated virtual gifts.</span>
                     </li>
                     <li class="flex items-start gap-1.5">
                         <span class="text-cyan-400 font-bold">•</span>
@@ -275,7 +275,7 @@
                     if (coinEl && data.coin_balance !== undefined) {
                         coinEl.textContent = data.coin_balance;
                     }
-                    setTimeout(() => window.location.href = "{% url 'sex_call_hub' %}", 1500);
+                    setTimeout(() => window.location.href = "{% url 'swipe_card' %}", 1500);
                 } else {
                     statusMsg.className = 'mt-3 text-center text-xs font-bold text-rose-400';
                     statusMsg.textContent = 'Mock Verification error: ' + (data.message || 'Error');
@@ -324,7 +324,7 @@
                             coinEl.textContent = data.coin_balance;
                         }
                         setTimeout(() => {
-                            window.location.href = "{% url 'sex_call_hub' %}";
+                            window.location.href = "{% url 'swipe_card' %}";
                         }, 1500);
                     } else {
                         statusMsg.className = 'mt-3 text-center text-xs font-bold text-rose-400';
@@ -387,7 +387,7 @@
                     if (coinEl && data.coin_balance !== undefined) {
                         coinEl.textContent = data.coin_balance;
                     }
-                    setTimeout(() => window.location.href = "{% url 'sex_call_hub' %}", 1500);
+                    setTimeout(() => window.location.href = "{% url 'swipe_card' %}", 1500);
                 } else {
                     statusMsg.className = 'mt-3 text-center text-xs font-bold text-rose-400';
                     statusMsg.textContent = 'Mock Verification error: ' + (data.message || 'Error');
@@ -442,7 +442,7 @@
                             coinEl.textContent = responseData.coin_balance;
                         }
                         setTimeout(() => {
-                            window.location.href = "{% url 'sex_call_hub' %}";
+                            window.location.href = "{% url 'swipe_card' %}";
                         }, 1500);
                     } else {
                         statusMsg.className = 'mt-3 text-center text-xs font-bold text-rose-400';

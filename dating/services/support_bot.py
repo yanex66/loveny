@@ -10,7 +10,12 @@ from django.conf import settings
 from django.db.models import F
 from django.utils import timezone
 
-from dating.models import HookupSettings, SiteConfiguration, SupportKnowledgeBase
+from dating.models import (
+    ConnectionFeeSetting,
+    HookupSettings,
+    SiteConfiguration,
+    SupportKnowledgeBase,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,16 +34,10 @@ GREETING_RESPONSE = (
 SUPPORT_INSTRUCTIONS = (
     "You are LOVENY's in-app support assistant. Answer concisely in no more than "
     "2-3 sentences. Platform rules: after a Hookup request is accepted, both users must each "
-    "pay the configured cash connection fee through Paystack or Flutterwave to unlock the chat; "
-    "Dating matches are free, but sending messages requires paid Dating Premium; "
-    "new Sex Call accounts receive one free three-minute call, after which calls require coins or premium; "
-    "phone numbers, social handles, and off-platform contact links are prohibited; "
-    "video calls require a local 3-second face verification from both participants; "
-    "both participants must also have live speech monitoring active before feeds unlock. "
-    "The browser speech-recognition provider may process audio; LOVENY does not record calls "
-    "or retain full transcripts. Suspected contact sharing ends the call and suspends the "
-    "account pending admin review. Feeds are blocked while native screen capture is active. "
-    "Never claim a payment "
+    "pay the configured connection fee through Paystack or Flutterwave to unlock access; "
+    "mutual WhatsApp contact matches reveal each phone number only after both participants "
+    "have paid or used a match credit; "
+    "never claim a payment "
     "is complete unless Paystack confirms it. For refund requests, account bans or "
     "suspensions, or software bugs, append [ESCALATE_ADMIN]."
 )
@@ -55,7 +54,7 @@ def _category_for(question):
         return 'billing'
     if any(word in normalized for word in ('hookup', 'connection fee', '24-hour', '24 hour')):
         return 'hookup'
-    if any(word in normalized for word in ('face', 'verification', 'screen capture', 'recording', 'privacy')):
+    if any(word in normalized for word in ('verification', 'profile verification')):
         return 'verification'
     return 'general'
 
@@ -83,6 +82,16 @@ def _small_talk_response(question):
 
 def _known_platform_answer(question):
     normalized = normalize_query(question)
+    if any(term in normalized for term in ('whatsapp', 'contact number')) and any(
+        term in normalized for term in ('unlock', 'reveal', 'share', 'pay')
+    ):
+        fees = ConnectionFeeSetting.get_solo()
+        return (
+            'After a mutual match, both participants must each pay the fee for that connection mode '
+            'or use one match credit. Once both payments are complete, their WhatsApp contacts '
+            f'are revealed on the Matches page. Current fees are Dating ₦{fees.dating_fee}, '
+            f'Hookup ₦{fees.hookup_fee}, and Sex Call ₦{fees.sexcall_fee}.'
+        )
     payment_intent = any(phrase in normalized for phrase in (
         'want to pay',
         'need to pay',
@@ -107,9 +116,9 @@ def _known_platform_answer(question):
                 f'After an accepted Hookup request, both users must each pay ₦{config.connection_fee} '
                 f'through Paystack or Flutterwave before the 24-hour chat unlocks.'
             )
-        if any(term in normalized for term in ('coin', 'call minute', 'minutes', 'wallet')):
+        if any(term in normalized for term in ('coin', 'wallet')):
             return (
-                'To buy coins or call minutes, open the Coins shop from your coin balance, choose a package, '
+                'To buy coins, open the Coins shop from your coin balance, choose a package, '
                 'and complete checkout. Coins are added only after the payment provider verifies the payment.'
             )
         if any(term in normalized for term in ('premium', 'subscription', 'pass', 'dating access')):
@@ -119,19 +128,9 @@ def _known_platform_answer(question):
             )
         return (
             'I can guide you through payment for mode switching (Settings), a Hookup request (open the '
-            'pending request), coins or call minutes (Coins shop), or a Premium pass (Upgrade). Which '
+            'pending request), coins (Coins shop), or a Premium pass (Upgrade). Which '
             'one are you trying to pay for? LOVENY activates purchases only after the payment provider '
             'confirms them.'
-        )
-    if any(term in normalized for term in ('live call', 'video call', 'call audio', 'call speech')) and any(
-        term in normalized for term in ('monitor', 'record', 'contact', 'whatsapp', 'number', 'exchange', 'listen')
-    ):
-        return (
-            'LOVENY uses automated speech recognition during live calls to detect suspected '
-            'attempts to exchange phone numbers, social handles, or other contact details. '
-            'Your browser’s speech-recognition provider may process audio; LOVENY does not '
-            'record calls or retain full transcripts. A likely match ends the call and '
-            'immediately suspends the account pending admin review.'
         )
     if any(phrase in normalized for phrase in (
         'what can you do',
@@ -143,8 +142,8 @@ def _known_platform_answer(question):
         'how can you help me',
     )):
         return (
-            'I can help with account settings, changing modes, referrals, premium messaging, free Sex Calls, '
-            'Hookup requests and payments, video calls, and common app questions. '
+            'I can help with account settings, changing modes, referrals, contact matches, payments, '
+            'and common app questions. '
             'Tell me what you are trying to do, and I’ll point you to the right place.'
         )
     if any(word in normalized for word in ('mode', 'connection mode')) and any(
@@ -165,8 +164,8 @@ def _known_platform_answer(question):
         )
     if any(word in normalized for word in ('free trial', 'free access', 'trial')):
         return (
-            'New accounts do not receive a 24-hour premium trial. New Sex Call accounts get one '
-            'three-minute free call. Dating users can match for free, but need Dating Premium to message.'
+            'Contact matches are unlocked when both participants pay the mode fee or use a match credit. '
+            'You can review pending matches and their payment status on the Matches page.'
         )
     if ('request' in normalized or 'meet today' in normalized) and any(
         word in normalized for word in ('sent', 'receive', 'where', 'inbox', 'get')

@@ -3,13 +3,12 @@ from django import forms
 # Import VersionAdmin now that the package is installed
 from reversion.admin import VersionAdmin 
 from .models import (
-    CallGift,
-    CallSession,
-    CallSignal,
     ChatMessage,
     CoinPackage,
     CoinTransaction,
     CoinWallet,
+    ConnectionFeeSetting,
+    ContactMatch,
     Conversation,
     GiftItem,
     HookupSettings,
@@ -27,6 +26,19 @@ from .models import (
 )
 
 
+@admin.register(ConnectionFeeSetting)
+class ConnectionFeeSettingAdmin(admin.ModelAdmin):
+    fields = ('dating_fee', 'hookup_fee', 'sexcall_fee')
+
+
+@admin.register(ContactMatch)
+class ContactMatchAdmin(admin.ModelAdmin):
+    list_display = ('user_a', 'user_b', 'mode', 'user_a_paid', 'user_b_paid', 'is_unlocked', 'is_cancelled', 'created_at')
+    list_filter = ('mode', 'is_unlocked', 'is_cancelled')
+    search_fields = ('user_a__username', 'user_b__username')
+    readonly_fields = ('created_at', 'unlocked_at')
+
+
 class ProfileAdminForm(forms.ModelForm):
     PREMIUM_TIER_CATEGORIES = {
         'dating_premium_tier': 'DATING',
@@ -36,7 +48,7 @@ class ProfileAdminForm(forms.ModelForm):
 
     class Meta:
         model = Profile
-        exclude = ('premium_tier', 'premium_expiry', 'whatsapp_number')
+        exclude = ('premium_tier', 'premium_expiry')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -88,12 +100,12 @@ class ProfileAdmin(VersionAdmin): # Inherit from VersionAdmin
     form = ProfileAdminForm
     list_display = (
         'user', 'relationship_mode', 'coin_balance', 'earned_diamonds',
-        'is_host_ready', 'is_verified', 'is_vip', 'last_active',
+        'is_verified', 'is_vip', 'last_active',
     )
-    list_editable = ('is_verified', 'is_vip', 'is_host_ready')
+    list_editable = ('is_verified', 'is_vip')
     search_fields = ('user__username', 'bio')
     list_filter = (
-        'relationship_mode', 'is_host_ready', 'is_verified', 'is_vip', 'gender',
+        'relationship_mode', 'is_verified', 'is_vip', 'gender',
     )
     filter_horizontal = ('tags',) # Nicer interface for ManyToMany field
     inlines = [ProfilePhotoInline] # Include photo management inline
@@ -211,27 +223,10 @@ class CoinPackageAdmin(admin.ModelAdmin):
 
 @admin.register(CoinTransaction)
 class CoinTransactionAdmin(admin.ModelAdmin):
-    list_display = ('user', 'sender', 'recipient', 'transaction_type', 'amount', 'gift_type', 'call', 'created_at')
+    list_display = ('user', 'sender', 'recipient', 'transaction_type', 'amount', 'gift_type', 'created_at')
     list_filter = ('transaction_type', 'gift_type')
     search_fields = ('user__username', 'sender__username', 'recipient__username', 'description')
-    readonly_fields = ('user', 'sender', 'recipient', 'gift_type', 'transaction_type', 'amount', 'description', 'call', 'payment', 'created_at')
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
-
-
-@admin.register(CallGift)
-class CallGiftAdmin(admin.ModelAdmin):
-    list_display = ('call', 'sender', 'receiver', 'gift_type', 'coins_cost', 'created_at')
-    list_filter = ('gift_type',)
-    search_fields = ('sender__username', 'receiver__username', 'call__room_id')
-    readonly_fields = ('call', 'sender', 'receiver', 'gift_type', 'coins_cost', 'created_at')
+    readonly_fields = ('user', 'sender', 'recipient', 'gift_type', 'transaction_type', 'amount', 'description', 'payment', 'created_at')
 
     def has_add_permission(self, request):
         return False
@@ -259,27 +254,6 @@ class SubscriptionPlanAdmin(admin.ModelAdmin):
     ordering = ('category', 'duration_days')
 
 
-@admin.register(CallSession)
-class CallSessionAdmin(admin.ModelAdmin):
-    list_display = ('room_id', 'caller', 'receiver', 'status', 'rate_per_minute', 'duration_seconds', 'coins_spent', 'created_at', 'started_at', 'ended_at')
-    list_filter = ('status',)
-    search_fields = ('room_id', 'caller__username', 'receiver__username')
-    readonly_fields = ('room_id', 'caller', 'receiver', 'status', 'rate_per_minute', 'duration_seconds', 'coins_spent', 'created_at', 'started_at', 'ended_at')
-
-    def has_add_permission(self, request):
-        return False
-
-
-@admin.register(CallSignal)
-class CallSignalAdmin(admin.ModelAdmin):
-    list_display = ('call', 'sender', 'signal_type', 'created_at')
-    list_filter = ('signal_type',)
-    readonly_fields = ('call', 'sender', 'signal_type', 'payload', 'created_at')
-
-    def has_add_permission(self, request):
-        return False
-
-
 @admin.register(SiteConfiguration)
 class SiteConfigurationAdmin(admin.ModelAdmin):
     fieldsets = (
@@ -289,14 +263,12 @@ class SiteConfigurationAdmin(admin.ModelAdmin):
             ),
             'description': 'Set coins earned per successful referral.',
         }),
-        ('Sex Call Video Economy', {
+        ('Gift and Starter Economy', {
             'fields': (
-                'call_rate_per_minute',
-                'grace_period_seconds',
                 'host_commission_percentage',
                 'welcome_bonus_coins',
             ),
-            'description': 'Adjust live call pricing, free grace periods, and host diamond earnings in real-time.',
+            'description': 'Configure gift recipient earnings and the starter coin grant.',
         }),
         ('7-Day Daily Sign-In & Streak Rewards', {
             'fields': (
@@ -322,10 +294,9 @@ class SiteConfigurationAdmin(admin.ModelAdmin):
         ('Advanced Platform Controls', {
             'fields': (
                 'mode_switch_fee',
-                'min_coins_for_video_call',
                 'default_user_coins',
             ),
-            'description': 'Control the minimum coins for calls and default starter wallet balance.',
+            'description': 'Control the mode-switch fee and default starter wallet balance.',
         }),
         ('System Status & Maintenance', {
             'fields': (

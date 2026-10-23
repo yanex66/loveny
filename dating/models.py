@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.core.exceptions import ValidationError
-from django.db.models import Q
+from django.db.models import F, Q
 
 User = get_user_model() 
 
@@ -79,11 +79,11 @@ class Profile(models.Model):
 
     whatsapp_number = models.CharField(
         max_length=20,
-        unique=True,
-        null=True,
-        blank=True,
-        help_text='Private legacy contact field; not shown or used for external contact.',
+        blank=False,
+        default='',
+        help_text='Shared with your mutual match after both participants unlock the contact.',
     )
+    match_credits = models.PositiveIntegerField(default=0)
     first_date_idea = models.CharField(max_length=255, blank=True, help_text="My ideal first date is...")
     
     # Tags
@@ -94,7 +94,6 @@ class Profile(models.Model):
     show_in_discovery = models.BooleanField(default=True)
     incognito_mode = models.BooleanField(default=False, help_text="Hide profile unless you like someone first (Premium).")
     allow_messages = models.BooleanField(default=True)
-    is_dnd = models.BooleanField(default=False, help_text="When enabled, incoming video call rings and notifications are silenced.")
     last_checkin_date = models.DateField(null=True, blank=True, help_text="Last daily coin reward check-in date")
     checkin_streak = models.PositiveSmallIntegerField(default=0, help_text="Consecutive 7-day daily check-in streak (0 to 7)")
     has_claimed_welcome = models.BooleanField(default=False, help_text="Whether newcomer joining gift has been claimed")
@@ -105,10 +104,6 @@ class Profile(models.Model):
         help_text="Mode covered by this user's new-account free trial",
     )
     free_trial_expires_at = models.DateTimeField(null=True, blank=True)
-    has_used_free_sex_call = models.BooleanField(
-        default=True,
-        help_text="Whether this account has used its one-time new-user free Sex Call",
-    )
     has_paid_mode_switch_fee = models.BooleanField(
         default=False,
         help_text="Whether this account has paid once to permanently unlock profile-mode switching",
@@ -129,15 +124,8 @@ class Profile(models.Model):
     is_vip = models.BooleanField(default=False)
 
     # --- COIN & DIAMOND WALLET ---
-    coin_balance = models.PositiveIntegerField(default=0, help_text="Available coin balance for video calls & gifts")
-    earned_diamonds = models.PositiveIntegerField(default=0, help_text="Diamonds earned by hosts from received calls & gifts")
-    response_rate = models.PositiveSmallIntegerField(default=98, validators=[MinValueValidator(1), MaxValueValidator(100)], help_text="Host response rate %")
-    total_calls_completed = models.PositiveIntegerField(default=0, help_text="Completed video calls count")
-    is_host_ready = models.BooleanField(default=True, help_text="Ready to accept incoming video calls")
-
-    def can_call_with_coins(self):
-        config = SiteConfiguration.get_solo()
-        return self.coin_balance >= config.min_coins_for_video_call
+    coin_balance = models.PositiveIntegerField(default=0, help_text="Available coin balance for gifts")
+    earned_diamonds = models.PositiveIntegerField(default=0, help_text="Diamonds earned from received gifts")
 
     @property
     def verification_photo_count(self):
@@ -425,6 +413,7 @@ class PaymentTransaction(models.Model):
         ('SEX_CALL', 'Sex Call Premium'),
         ('COINS', 'Coin Pack'),
         ('HOOKUP_MATCH', 'Hookup Match Connection Fee'),
+        ('CONTACT_MATCH', 'WhatsApp Contact Match Unlock'),
         ('MODE_SWITCH', 'Connection Mode Switch'),
     )
 
@@ -458,106 +447,80 @@ class PaymentTransaction(models.Model):
         return f"{self.provider} payment {self.reference} for {self.user.username}"
 
 
-class CallSession(models.Model):
-    STATUS_CHOICES = (
-        ('initiated', 'Initiated'),
-        ('ringing', 'Ringing'),
-        ('connected', 'Connected'),
-        ('active', 'Active'),
-        ('ended', 'Ended'),
-        ('declined', 'Declined'),
-        ('missed', 'Missed'),
-        ('cancelled', 'Cancelled'),
-    )
-
-    caller = models.ForeignKey(
-        User,
-        related_name='outgoing_call_sessions',
-        on_delete=models.CASCADE,
-    )
-    receiver = models.ForeignKey(
-        User,
-        related_name='incoming_call_sessions',
-        on_delete=models.CASCADE,
-    )
-    room_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='initiated', db_index=True)
-    rate_per_minute = models.PositiveIntegerField(default=20, help_text="Coins per minute")
-    coins_spent = models.PositiveIntegerField(default=0, help_text="Total coins deducted for this call")
-    duration_seconds = models.PositiveIntegerField(default=0, help_text="Connected call duration in seconds")
-    is_free_trial_call = models.BooleanField(
-        default=False,
-        help_text="Whether this call uses the caller's one-time three-minute free call",
-    )
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    started_at = models.DateTimeField(null=True, blank=True)
-    connected_at = models.DateTimeField(null=True, blank=True)
-    last_heartbeat_at = models.DateTimeField(null=True, blank=True, db_index=True)
-    ended_at = models.DateTimeField(null=True, blank=True)
+class ConnectionFeeSetting(models.Model):
+    dating_fee = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1000.00'))
+    hookup_fee = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('2000.00'))
+    sexcall_fee = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1500.00'))
 
     class Meta:
-        indexes = [
-            models.Index(fields=('receiver', 'status', 'created_at')),
-            models.Index(fields=('caller', 'status', 'created_at')),
-        ]
+        verbose_name = 'Connection Fee Setting'
+        verbose_name_plural = 'Connection Fee Settings'
 
     def __str__(self):
-        return f'Call {self.room_id}: {self.caller} → {self.receiver} ({self.status})'
+        return 'Connection fees'
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        kwargs.pop('force_insert', None)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls):
+        setting, _ = cls.objects.get_or_create(pk=1)
+        return setting
 
 
-class SexCallQueue(models.Model):
-    user = models.OneToOneField(
-        User,
-        related_name='sex_call_search',
-        on_delete=models.CASCADE,
+class ContactMatch(models.Model):
+    MODE_CHOICES = (
+        ('DATING', 'Dating'),
+        ('HOOKUP', 'Hookup'),
+        ('SEXCALL', 'Sex Call'),
     )
+
+    user_a = models.ForeignKey(User, related_name='contact_matches_as_a', on_delete=models.CASCADE)
+    user_b = models.ForeignKey(User, related_name='contact_matches_as_b', on_delete=models.CASCADE)
+    mode = models.CharField(max_length=10, choices=MODE_CHOICES)
+    user_a_paid = models.BooleanField(default=False)
+    user_b_paid = models.BooleanField(default=False)
+    user_a_paid_with_credit = models.BooleanField(default=False)
+    user_b_paid_with_credit = models.BooleanField(default=False)
+    is_unlocked = models.BooleanField(default=False)
+    is_cancelled = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
-    last_ping_at = models.DateTimeField(default=timezone.now, db_index=True)
-    preferred_gender = models.CharField(max_length=1, blank=True, default='')
-
-    class Meta:
-        indexes = [
-            models.Index(fields=('last_ping_at', 'created_at')),
-        ]
-
-
-class CallGift(models.Model):
-    GIFT_CHOICES = (
-        ('rose', 'Rose 🌹'),
-        ('kiss', 'Kiss 💋'),
-        ('champagne', 'Champagne 🥂'),
-        ('crown', 'Crown 👑'),
-        ('car', 'Supercar 🏎️'),
-    )
-    GIFT_PRICES = {
-        'rose': 10,
-        'kiss': 25,
-        'champagne': 50,
-        'crown': 100,
-        'car': 300,
-    }
-
-    call = models.ForeignKey(CallSession, related_name='gifts', on_delete=models.CASCADE)
-    sender = models.ForeignKey(User, related_name='sent_call_gifts', on_delete=models.CASCADE)
-    receiver = models.ForeignKey(User, related_name='received_call_gifts', on_delete=models.CASCADE)
-    gift_type = models.CharField(max_length=20, choices=GIFT_CHOICES)
-    coins_cost = models.PositiveIntegerField()
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    unlocked_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ('-created_at',)
+        constraints = [
+            models.UniqueConstraint(
+                fields=('user_a', 'user_b'),
+                condition=Q(is_cancelled=False),
+                name='unique_active_contact_match_pair',
+            ),
+            models.CheckConstraint(condition=~Q(user_a=F('user_b')), name='contact_match_users_differ'),
+        ]
 
     def __str__(self):
-        return f"{self.sender.username} sent {self.gift_type} ({self.coins_cost} coins) in Call {self.call.room_id}"
+        return f'{self.user_a} ↔ {self.user_b} ({self.mode})'
+
+    def mark_paid(self, user, *, used_credit=False):
+        if user.pk == self.user_a_id:
+            self.user_a_paid = True
+            self.user_a_paid_with_credit = used_credit
+        elif user.pk == self.user_b_id:
+            self.user_b_paid = True
+            self.user_b_paid_with_credit = used_credit
+        else:
+            raise ValueError('Only a contact match participant can pay.')
+        if self.user_a_paid and self.user_b_paid:
+            self.is_unlocked = True
+            self.unlocked_at = timezone.now()
 
 
 class CoinTransaction(models.Model):
     TRANSACTION_TYPES = (
         ('PURCHASE', 'Coin Purchase'),
         ('WELCOME_BONUS', 'Welcome Bonus'),
-        ('CALL_DEDUCTION', 'Call Minute Deduction'),
-        ('CALL_EARNING', 'Host Call Diamond Earning'),
-        ('CALL_REFUND', 'Call Refund / Grace Period'),
         ('GIFT_SENT', 'Gift Sent'),
         ('GIFT_RECEIVED', 'Gift Received'),
         ('DIAMOND_CONVERSION', 'Diamond to Coin Exchange'),
@@ -573,7 +536,6 @@ class CoinTransaction(models.Model):
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
     description = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    call = models.ForeignKey(CallSession, null=True, blank=True, on_delete=models.SET_NULL, related_name='coin_transactions')
     payment = models.ForeignKey(PaymentTransaction, null=True, blank=True, on_delete=models.SET_NULL, related_name='coin_transactions')
 
     class Meta:
@@ -609,55 +571,15 @@ class CoinWallet(models.Model):
         return f"{self.user.username}'s Wallet: {self.coin_balance} coins"
 
 
-class CallSignal(models.Model):
-    SIGNAL_TYPES = (
-        ('offer', 'Offer'),
-        ('answer', 'Answer'),
-        ('candidate', 'ICE candidate'),
-        ('gift', 'In-call gift'),
-        ('chat', 'Live In-Call Chat'),
-        ('follow', 'Host Follow Event'),
-        ('face_verified', 'Face Verified'),
-        ('privacy_blur_engaged', 'Privacy Blur Engaged'),
-        ('privacy_blur_lifted', 'Privacy Blur Lifted'),
-        ('feeds_unlocked', 'Feeds Unlocked'),
-        ('contact_exchange_flagged', 'Contact Exchange Flagged'),
-        ('call_accepted', 'Call Accepted'),
-    )
-
-    call = models.ForeignKey(CallSession, related_name='signals', on_delete=models.CASCADE)
-    sender = models.ForeignKey(User, related_name='call_signals', on_delete=models.CASCADE)
-    signal_type = models.CharField(max_length=32, choices=SIGNAL_TYPES)
-    payload = models.JSONField()
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-
-    class Meta:
-        ordering = ('id',)
-        indexes = [
-            models.Index(fields=('call', 'id')),
-        ]
-
-    def __str__(self):
-        return f'{self.signal_type} for call {self.call.room_id}'
-
-
 class SiteConfiguration(models.Model):
     """
     Global system settings configurable directly in Admin.
     Singleton pattern - automatically retrieves or creates pk=1.
     """
-    call_rate_per_minute = models.PositiveIntegerField(
-        default=20,
-        help_text="Coins deducted per minute during Sex Calls",
-    )
-    grace_period_seconds = models.PositiveIntegerField(
-        default=20,
-        help_text="Calls ending under this duration are 100% free / 0 coins charged",
-    )
     host_commission_percentage = models.PositiveIntegerField(
         default=70,
         validators=[MinValueValidator(1), MaxValueValidator(100)],
-        help_text="Percentage of call coins and gifts awarded to hosts in diamonds (e.g. 70%)",
+        help_text="Percentage of gift coins awarded to recipients in diamonds (e.g. 70%)",
     )
     welcome_bonus_coins = models.PositiveIntegerField(
         default=30,
@@ -695,10 +617,6 @@ class SiteConfiguration(models.Model):
     )
     
     # --- Advanced Controls ---
-    min_coins_for_video_call = models.PositiveIntegerField(
-        default=20,
-        help_text="Minimum coins required in wallet to initiate a video call",
-    )
     referral_reward_coins = models.PositiveIntegerField(
         default=100,
         help_text="Coins credited to the referrer for each successful new referral",
@@ -751,7 +669,7 @@ class SiteConfiguration(models.Model):
         verbose_name_plural = 'Site Configuration'
 
     def __str__(self):
-        return f"LOVENY System Config (Rate: {self.call_rate_per_minute}🪙/min, Grace: {self.grace_period_seconds}s)"
+        return "LOVENY System Configuration"
 
     def save(self, *args, **kwargs):
         self.pk = 1

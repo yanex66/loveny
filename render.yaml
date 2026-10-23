@@ -5,7 +5,7 @@ services:
     plan: free
     region: ohio
     buildCommand: pip install -r requirements.txt && python manage.py migrate && python create_admin.py && python manage.py collectstatic --noinput --clear
-    startCommand: daphne -b 0.0.0.0 -p $PORT loveny_site.asgi:application
+    startCommand: gunicorn loveny_site.wsgi:application --bind 0.0.0.0:$PORT
     healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
@@ -27,10 +27,6 @@ services:
       - key: FLUTTERWAVE_SECRET_KEY
         sync: false
       - key: FLUTTERWAVE_PUBLIC_KEY
-        sync: false
-      - key: TURN_URLS
-        sync: false
-      - key: TURN_SHARED_SECRET
         sync: false
       - key: ADMIN_USERNAME
         sync: false

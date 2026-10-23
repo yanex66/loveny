@@ -84,7 +84,7 @@ class SupportKnowledgeBase(models.Model):
         ('general', 'General'),
         ('billing', 'Billing/Paystack'),
         ('hookup', 'Hookup Mode'),
-        ('verification', 'Face Verification/Privacy'),
+        ('verification', 'Profile Verification'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

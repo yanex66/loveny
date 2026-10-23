@@ -1,3 +1,5 @@
+import re
+
 from django import forms
 from django.contrib.auth import authenticate
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm, PasswordResetForm
@@ -208,11 +210,11 @@ class ProfileForm(forms.ModelForm):
             'max_age_pref',
             'location', 
             'max_distance_km',
+            'whatsapp_number',
             'job_title', 
             'bio', 
             'first_date_idea', 
             'tags',
-            'is_dnd',
         ]
         widgets = {
             # Enforce 18+ Rule in the UI
@@ -220,9 +222,14 @@ class ProfileForm(forms.ModelForm):
             'min_age_pref': forms.NumberInput(attrs={'min': '18', 'max': '99', 'class': 'form-input'}),
             'max_age_pref': forms.NumberInput(attrs={'min': '18', 'max': '99', 'class': 'form-input'}),
             'max_distance_km': forms.NumberInput(attrs={'min': '1', 'max': '500', 'class': 'form-input'}),
+            'whatsapp_number': forms.TextInput(attrs={
+                'type': 'tel',
+                'autocomplete': 'tel',
+                'placeholder': '+2348012345678',
+                'class': 'form-input',
+            }),
             'bio': forms.Textarea(attrs={'rows': 3, 'maxlength': '200', 'class': 'form-input'}),
             'tags': forms.CheckboxSelectMultiple(),
-            'is_dnd': forms.CheckboxInput(attrs={'class': 'form-checkbox h-5 w-5 text-pink-600 rounded focus:ring-pink-500'}),
         }
         labels = {
             'name': 'Name',
@@ -230,7 +237,7 @@ class ProfileForm(forms.ModelForm):
             'min_age_pref': 'Min Age Preference',
             'max_age_pref': 'Max Age Preference',
             'max_distance_km': 'Maximum distance (km)',
-            'is_dnd': 'Do Not Disturb (DND)',
+            'whatsapp_number': 'WhatsApp number (include country code)',
         }
 
     def __init__(self, *args, **kwargs):
@@ -270,6 +277,15 @@ class ProfileForm(forms.ModelForm):
         val = self.cleaned_data.get('max_distance_km')
         return val if val is not None else 100
 
+    def clean_whatsapp_number(self):
+        value = (self.cleaned_data.get('whatsapp_number') or '').strip()
+        if not re.fullmatch(r'\+?[\d\s().-]+', value):
+            raise forms.ValidationError('Enter a valid WhatsApp number with country code.')
+        digits = re.sub(r'\D', '', value)
+        if not 7 <= len(digits) <= 15:
+            raise forms.ValidationError('Enter a WhatsApp number containing 7 to 15 digits.')
+        return value
+
     def clean_tags(self):
         tags = self.cleaned_data.get('tags')
         if tags and hasattr(tags, 'count') and tags.count() > 5:
@@ -300,7 +316,7 @@ class ProfileCreationForm(ProfileForm):
         optional_fields = [
             'min_age_pref', 'max_age_pref', 'max_distance_km',
             'latitude', 'longitude', 'location', 'job_title',
-            'bio', 'first_date_idea', 'tags', 'is_dnd', 'more_photos', 'photo'
+            'bio', 'first_date_idea', 'tags', 'more_photos', 'photo'
         ]
         for field_name in optional_fields:
             if field_name in self.fields:
@@ -312,18 +328,6 @@ class ProfileCreationForm(ProfileForm):
             self.fields['max_age_pref'].initial = 50
         if 'max_distance_km' in self.fields:
             self.fields['max_distance_km'].initial = 100
-
-
-class SettingsForm(forms.ModelForm):
-    class Meta:
-        model = Profile
-        fields = ['is_dnd']
-        widgets = {
-            'is_dnd': forms.CheckboxInput(attrs={'class': 'form-checkbox h-5 w-5 text-pink-600 rounded focus:ring-pink-500 bg-slate-800 border-slate-700'}),
-        }
-        labels = {
-            'is_dnd': 'Do Not Disturb (DND)',
-        }
 
 
 class SafePasswordResetForm(PasswordResetForm):

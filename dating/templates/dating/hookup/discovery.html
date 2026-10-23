@@ -238,22 +238,11 @@
     </section>
 </main>
 
-<div id="accepted-match-config" class="hidden">
-    {% for match in accepted_matches %}
-    <span data-match-id="{{ match.id }}"></span>
-    {% endfor %}
-</div>
-
 <!-- Action Script -->
 <script src="https://js.paystack.co/v1/inline.js"></script>
 <script src="https://checkout.flutterwave.com/v3.js"></script>
 <script>
 (() => {
-    const acceptedMatchIds = Array.from(
-        document.querySelectorAll('#accepted-match-config [data-match-id]'),
-        match => match.dataset.matchId,
-    );
-
     function csrfToken() {
         const token = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));
         return token ? decodeURIComponent(token.split('=')[1]) : '{{ csrf_token }}';
@@ -344,18 +333,6 @@
             window.lovenyToast('Could not update the request. Please try again.', 'error');
         }
     };
-
-    acceptedMatchIds.forEach(matchId => {
-        const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const socket = new WebSocket(`${scheme}//${window.location.host}/ws/hookup/${matchId}/`);
-        socket.addEventListener('message', event => {
-            const message = JSON.parse(event.data);
-            if (message.type === 'match_unlocked' && message.match_id === matchId) {
-                window.location.assign(message.chat_url);
-            }
-        });
-        socket.addEventListener('error', () => socket.close());
-    });
 
     window.payHookupFee = async (matchId, provider) => {
         try {

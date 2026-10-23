@@ -6,15 +6,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <link rel="icon" type="image/png" href="{% static 'dating/images/loveny-logo.png' %}">
     <title>{% block title %}LOVENY{% endblock %}</title>
+    <script>
+        const winePalette = {
+            50: '#fbf7f7', 100: '#f2e7e8', 200: '#e6cbce', 300: '#d5a8ad',
+            400: '#bb7d85', 500: '#9b5660', 600: '#722f37', 700: '#58111a',
+            800: '#420c13', 900: '#30080d',
+        };
+        const champagnePalette = {
+            50: '#fffdf7', 100: '#fff6df', 200: '#f5e6b8', 300: '#e8c39e',
+            400: '#d4af37', 500: '#b89424', 600: '#9c7420', 700: '#785f15',
+            800: '#5e4a12', 900: '#44360f',
+        };
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        pink: winePalette,
+                        rose: winePalette,
+                        purple: winePalette,
+                        violet: winePalette,
+                        orange: champagnePalette,
+                        amber: champagnePalette,
+                        yellow: champagnePalette,
+                        cyan: champagnePalette,
+                    },
+                },
+            },
+        };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         :root {
             color-scheme: light;
-            --loveny-rose: #ec4899;
-            --loveny-coral: #fb7185;
-            --loveny-orange: #fb923c;
-            --loveny-ink: #35162f;
-            --loveny-muted: #80677d;
+            --loveny-rose: #722f37;
+            --loveny-coral: #d4af37;
+            --loveny-orange: #e8c39e;
+            --loveny-ink: #1a1a1a;
+            --loveny-muted: #6b6263;
         }
         html {
             width: 100%;
@@ -37,7 +65,7 @@
             overflow-x: clip;
             padding-top: env(safe-area-inset-top);
             padding-bottom: 6rem;
-            box-shadow: 0 0 48px rgba(53, 22, 47, 0.08);
+            box-shadow: 0 0 48px rgba(88, 17, 26, 0.08);
         }
         .device-frame :where(p, a, h1, h2, h3, h4, h5, h6, li, label, button) {
             overflow-wrap: anywhere;
@@ -84,14 +112,14 @@
             transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         .nav-active {
-            color: #be185d;
+            color: #722f37;
         }
         .bottom-tabs {
             border: 1px solid rgba(255, 255, 255, 0.8);
             background: rgba(255, 255, 255, 0.82);
             -webkit-backdrop-filter: blur(16px);
             backdrop-filter: blur(16px);
-            box-shadow: 0 10px 36px rgba(53, 22, 47, 0.14);
+            box-shadow: 0 10px 36px rgba(88, 17, 26, 0.12);
         }
         .bottom-tab {
             position: relative;
@@ -106,28 +134,28 @@
             width: 1.5rem;
             height: 0.2rem;
             border-radius: 9999px;
-            background: linear-gradient(90deg, #ec4899, #fb7185);
+            background: linear-gradient(90deg, #722f37, #d4af37);
             content: "";
             transform: translateX(-50%);
         }
         .bottom-tab.nav-active svg {
-            color: #be185d;
+            color: #722f37;
         }
         .bottom-tab.nav-active span {
-            color: #be185d;
+            color: #722f37;
         }
         .hookup-theme .bottom-tab {
-            color: #a855f7;
+            color: #d5a8ad;
         }
         .hookup-theme .bottom-tab.nav-active {
-            color: #ec4899;
+            color: #e8c39e;
         }
         .hookup-theme .bottom-tab.nav-active::before {
-            background: linear-gradient(90deg, #c084fc, #ec4899);
+            background: linear-gradient(90deg, #722f37, #d4af37);
         }
         .hookup-theme .bottom-tab.nav-active svg,
         .hookup-theme .bottom-tab.nav-active span {
-            color: #ec4899;
+            color: #e8c39e;
         }
         .bottom-nav-container {
             position: fixed;
@@ -140,14 +168,14 @@
         }
         .soft-card {
             background: rgba(255, 255, 255, 0.92);
-            border: 1px solid #fce7f3;
-            box-shadow: 0 24px 60px rgba(180, 48, 112, 0.1);
+            border: 1px solid #eadfdf;
+            box-shadow: 0 24px 60px rgba(88, 17, 26, 0.08);
         }
         .brand-gradient {
-            background-image: linear-gradient(115deg, #ec4899 0%, #fb7185 48%, #fb923c 100%);
+            background-image: linear-gradient(115deg, #58111a 0%, #722f37 58%, #d4af37 100%);
         }
         .brand-text {
-            background: linear-gradient(115deg, #db2777 0%, #f43f5e 52%, #ea580c 100%);
+            background: linear-gradient(115deg, #58111a 0%, #722f37 60%, #9c7420 100%);
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
@@ -158,9 +186,9 @@
         a[class*="brand-gradient"]:hover {
             background-image: none !important;
             background-color: #fff !important;
-            border-color: #f9a8d4 !important;
+            border-color: #d4af37 !important;
             color: var(--loveny-ink) !important;
-            box-shadow: 0 8px 22px rgba(190, 24, 93, 0.16);
+            box-shadow: 0 8px 22px rgba(88, 17, 26, 0.14);
         }
         button:not(:disabled):hover :is(span, svg),
         a[class*="bg-"]:hover :is(span, svg),
@@ -174,148 +202,6 @@
                 animation-iteration-count: 1 !important;
                 scroll-behavior: auto !important;
                 transition-duration: 0.01ms !important;
-            }
-        }
-        /* Picture-in-Picture (PiP) Floating Widget */
-        #video-call-room.call-pip-active {
-            position: fixed !important;
-            right: 1rem !important;
-            bottom: 5.5rem !important;
-            left: auto !important;
-            top: auto !important;
-            width: min(44vw, 168px) !important;
-            height: min(62vw, 238px) !important;
-            border-radius: 1.5rem !important;
-            border: 2px solid rgba(192, 132, 252, 0.85) !important;
-            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85), 0 0 24px rgba(168, 85, 247, 0.5) !important;
-            z-index: 135 !important;
-            cursor: grab;
-            touch-action: none;
-            transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), height 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-radius 0.25s ease, box-shadow 0.25s ease;
-        }
-        #video-call-room.call-pip-active:active {
-            cursor: grabbing;
-        }
-        #video-call-room.call-pip-active .pip-hidden-in-pip {
-            display: none !important;
-        }
-        #video-call-room:not(.call-pip-active) .pip-only-in-pip {
-            display: none !important;
-        }
-        #video-call-room.call-pip-active #remote-call-video {
-            border-radius: 1.35rem !important;
-        }
-        #video-call-room.call-pip-active #local-call-video {
-            width: 2.75rem !important;
-            height: 3.75rem !important;
-            right: 0.5rem !important;
-            bottom: 2.6rem !important;
-            border-radius: 0.5rem !important;
-            border-width: 1.5px !important;
-        }
-        @media (max-width: 640px) {
-            #call-top-hud {
-                align-items: flex-start !important;
-                gap: 0.4rem !important;
-                padding-left: 0.65rem !important;
-                padding-right: 0.65rem !important;
-            }
-            #call-top-hud > div:first-child {
-                flex: 1 1 0%;
-                min-width: 0;
-                gap: 0.4rem !important;
-            }
-            #call-top-hud > div:first-child > div:last-child {
-                min-width: 0;
-            }
-            #call-remote-host-title {
-                display: inline-block;
-                max-width: 25vw;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }
-            #call-hud-follow-btn {
-                flex: 0 0 auto;
-                padding-left: 0.5rem !important;
-                padding-right: 0.5rem !important;
-                font-size: 8px !important;
-                letter-spacing: 0.04em !important;
-            }
-            #call-top-hud > div:last-child {
-                flex: 0 0 auto;
-                gap: 0.25rem !important;
-                margin-top: 0.25rem;
-            }
-            #call-hud-coins-wrapper,
-            #call-hud-diamonds-wrapper {
-                gap: 0.2rem !important;
-                padding: 0.25rem 0.45rem !important;
-                font-size: 10px !important;
-            }
-            #call-feedback {
-                top: 5.75rem !important;
-                width: calc(100vw - 1.5rem);
-                max-width: 25rem !important;
-                white-space: normal;
-                border-radius: 0.9rem !important;
-                line-height: 1.35;
-            }
-            #call-safety-status {
-                top: 8rem !important;
-                left: 0.75rem !important;
-                right: 0.75rem !important;
-                width: fit-content;
-                max-width: calc(100vw - 1.5rem);
-                margin-left: auto;
-                margin-right: auto;
-            }
-            #call-floating-chat-container {
-                left: 0.75rem !important;
-                bottom: calc(10rem + env(safe-area-inset-bottom)) !important;
-                width: calc(100vw - 7.5rem) !important;
-                max-width: 15rem;
-            }
-            #call-floating-chat-stream {
-                max-height: 5rem !important;
-            }
-            #video-call-room > .absolute.right-4.bottom-36 {
-                right: 0.75rem !important;
-                bottom: calc(10.5rem + env(safe-area-inset-bottom)) !important;
-                width: 5.5rem !important;
-            }
-            #video-call-room > .absolute.inset-x-0.bottom-12 {
-                bottom: 0 !important;
-                padding-bottom: calc(0.75rem + env(safe-area-inset-bottom)) !important;
-            }
-            #video-call-room > .absolute.inset-x-0.bottom-12 > div {
-                gap: 0.45rem !important;
-                padding: 0.45rem 0.6rem !important;
-            }
-            #video-call-room > .absolute.inset-x-0.bottom-12 button {
-                width: 2.5rem !important;
-                height: 2.5rem !important;
-                flex: 0 0 auto;
-            }
-            #video-call-room > .absolute.inset-x-0.bottom-12 button#toggle-gifts {
-                width: 2.65rem !important;
-                height: 2.65rem !important;
-            }
-            #enable-call-audio {
-                bottom: calc(6.5rem + env(safe-area-inset-bottom)) !important;
-            }
-        }
-        @media (max-height: 520px) and (orientation: landscape) {
-            #call-floating-chat-container,
-            #call-safety-status {
-                display: none !important;
-            }
-            #video-call-room > .absolute.right-4.bottom-36 {
-                width: 4rem !important;
-                bottom: calc(5.5rem + env(safe-area-inset-bottom)) !important;
-            }
-            #video-call-room > .absolute.inset-x-0.bottom-12 {
-                padding-bottom: calc(0.35rem + env(safe-area-inset-bottom)) !important;
             }
         }
         /* Suppress duplicate/unwanted floating coin pill */
@@ -333,7 +219,7 @@
     </style>
     {% block extra_head %}{% endblock %}
 </head>
-<body data-authenticated="{{ user.is_authenticated|yesno:'true,false' }}" class="min-h-screen font-sans antialiased selection:bg-pink-500 selection:text-white {% block body_class %}bg-[#fff8fc] text-[#35162f]{% endblock %}">
+<body data-authenticated="{{ user.is_authenticated|yesno:'true,false' }}" class="min-h-screen font-sans antialiased selection:bg-[#722f37] selection:text-white {% block body_class %}bg-white text-[#1a1a1a]{% endblock %}">
     <div class="device-frame w-full overflow-x-hidden {% if user.is_authenticated %}pb-36{% endif %}">
         {% if user_free_trial_active %}
         <div class="mx-4 mt-3 rounded-xl border border-emerald-300/40 bg-emerald-900 px-4 py-2 text-center text-xs font-bold text-white shadow-lg">
@@ -345,39 +231,10 @@
     </div>
 
     {% if user.is_authenticated %}
-    <div id="call-config"
-         data-initiate-url="{% url 'call_initiate_api' %}"
-         data-incoming-url="{% url 'incoming_calls_api' %}"
-         data-ice-servers-url="{% url 'call_ice_servers_api' %}"
-         data-call-api-prefix="/api/calls/"
-         data-subscribe-url="{% url 'premium_landing' %}"
-         data-wallet-url="{% url 'wallet_balance_api' %}"
-         data-packages-url="{% url 'coin_packages_api' %}"
-         data-verify-url="{% url 'verify_payment' %}"
-         data-gifts-url="{% url 'gifts_api' %}"
-         data-config-url="{% url 'site_config_api' %}"
-         data-hosts-url="{% url 'online_hosts_api' %}"
-         data-quick-match-url="{% url 'quick_call_match_api' %}"
-         data-withdraw-url="{% url 'withdrawal_request_api' %}"
-         data-history-url="{% url 'wallet_history_api' %}"
-         data-visit-rewards-url="{% url 'wallet_visit_rewards_api' %}"
-         data-authenticated="{% if user.is_authenticated %}true{% else %}false{% endif %}"
-         data-claim-welcome-url="{% url 'claim_welcome_bonus_api' %}"
-         data-checkin-url="{% url 'daily_checkin_api' %}"
-         data-has-claimed-welcome="{% if user_has_claimed_welcome %}true{% else %}false{% endif %}"
-         data-has-checked-in-today="{% if user_has_checked_in_today %}true{% else %}false{% endif %}"
-         data-checkin-date="{{ user_checkin_date }}"
-         data-checkin-streak="{{ user_checkin_streak|default:0 }}"
-         data-cycle-day="{{ user_cycle_day|default:1 }}"
-         data-welcome-coins="{{ user_welcome_coins|default:30 }}"
-         data-user-id="{{ user.pk }}"
-         data-user-email="{{ user.email }}"
-         class="hidden"></div>
-
     {% block floating_coin_pill %}
     <!-- Floating Top Bar Coin Balance Pill -->
     <div id="floating-coin-pill-container" class="fixed top-3 right-4 z-40 flex items-center gap-2">
-        <button type="button" id="open-coin-store-btn" class="flex items-center gap-1.5 rounded-full border border-amber-300/80 bg-gradient-to-r from-amber-50 via-amber-400 to-yellow-300 px-3 py-1.5 text-xs font-black text-slate-950 shadow-md shadow-amber-500/25 transition-all hover:scale-105 active:scale-95" title="Open Sex Call Coin Store">
+        <button type="button" id="open-coin-store-btn" class="flex items-center gap-1.5 rounded-full border border-[#d4af37]/80 bg-gradient-to-r from-amber-50 via-amber-400 to-yellow-300 px-3 py-1.5 text-xs font-black text-slate-950 shadow-md shadow-amber-500/25 transition-all hover:scale-105 active:scale-95" title="Open Coin Store">
             <span class="text-sm">&#x1FA99;</span>
                 <span id="nav-coin-balance">--</span>
             <span class="hidden sm:inline text-[10px] uppercase tracking-wider text-amber-950/80 font-bold">Coins</span>
@@ -398,8 +255,8 @@
             <div class="flex items-center gap-3">
                 <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-300 text-2xl shadow-lg shadow-amber-500/30">&#x1FA99;</div>
                 <div>
-                    <h2 id="coin-store-title" class="text-xl font-black text-slate-900">Sex Call Coin Store</h2>
-                    <p class="text-xs text-slate-500 font-semibold">{{ site_config.call_rate_per_minute|default:20 }} coins/min · First {{ site_config.grace_period_seconds|default:20 }}s Free Guarantee</p>
+                    <h2 id="coin-store-title" class="text-xl font-black text-slate-900">LOVENY Coin Store</h2>
+                    <p class="text-xs text-slate-500 font-semibold">Buy coins to send gifts and enjoy platform perks.</p>
                 </div>
             </div>
 
@@ -423,7 +280,7 @@
             <div class="mt-3 flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 text-xs text-emerald-900">
                 <span class="text-base">🛡️</span>
                 <div>
-                    <strong class="font-bold">Worth-It Guarantee:</strong> Calls under {{ site_config.grace_period_seconds|default:20 }} seconds are completely free (0 coins spent). Receivers earn {{ site_config.host_commission_percentage|default:70 }}% in diamonds.
+                    Your coins are added securely after provider verification.
                 </div>
             </div>
 
@@ -441,14 +298,14 @@
             </a>
 
             <p class="mt-2 text-center text-[10px] text-slate-400">
-                Instant delivery via Paystack / Flutterwave · High-definition private WebRTC
+                Secure payment processing via Paystack / Flutterwave
             </p>
         </div>
     </div>
 
     <!-- Welcome Joining Reward Modal (First-time Newcomers) -->
     <div id="welcome-bonus-modal" class="fixed inset-0 z-[150] hidden items-center justify-center bg-slate-950/85 p-4 backdrop-blur-md transition-all duration-300" role="dialog" aria-modal="true" aria-labelledby="welcome-modal-title">
-        <div class="relative w-full max-w-sm overflow-hidden rounded-3xl border border-amber-400/40 bg-gradient-to-b from-[#251245] via-[#1a0c33] to-[#0f071e] p-6 text-center text-white shadow-2xl shadow-purple-950/80">
+        <div class="relative w-full max-w-sm overflow-hidden rounded-3xl border border-amber-400/40 bg-gradient-to-b from-[#722f37] via-[#58111a] to-[#30080d] p-6 text-center text-white shadow-2xl shadow-rose-900/80">
             <!-- Close Button -->
             <button type="button" onclick="closeWelcomeBonusModal()" class="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white transition text-sm font-bold" aria-label="Close">✕</button>
             
@@ -475,7 +332,7 @@
                     <span class="text-sm font-bold text-amber-200">Coins</span>
                 </div>
                 <p class="mt-2 text-xs text-purple-200/80 leading-relaxed">
-                    Claim your free newcomer starter pack now! Use them to start live 1-on-1 private video calls and send gifts instantly.
+                    Claim your free newcomer starter pack now! Use your coins to send gifts and enjoy platform perks.
                 </p>
             </div>
 
@@ -490,7 +347,7 @@
 
     <!-- 7-Day Daily Login Rewards Calendar Modal -->
     <div id="daily-checkin-modal" class="fixed inset-0 z-[150] hidden items-center justify-center bg-slate-950/85 p-4 backdrop-blur-md transition-all duration-300" role="dialog" aria-modal="true" aria-labelledby="daily-checkin-title">
-        <div class="relative w-full max-w-md overflow-hidden rounded-3xl border border-purple-500/30 bg-gradient-to-b from-[#22103f] via-[#160a2c] to-[#0c0517] p-5 sm:p-6 text-white shadow-2xl shadow-purple-950/80">
+        <div class="relative w-full max-w-md overflow-hidden rounded-3xl border border-purple-500/30 bg-gradient-to-b from-[#722f37] via-[#58111a] to-[#30080d] p-5 sm:p-6 text-white shadow-2xl shadow-rose-900/80">
             <!-- Close Button -->
             <button type="button" onclick="closeDailyCheckinModal()" class="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white transition text-sm font-bold" aria-label="Close">✕</button>
 
@@ -575,205 +432,12 @@
         </div>
     </div>
 
-    <div id="incoming-call-sheet" class="fixed inset-0 z-[120] hidden items-end justify-center bg-slate-950/60 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:items-center" role="dialog" aria-modal="true" aria-labelledby="incoming-call-title">
-        <section class="w-full max-w-sm animate-pulse rounded-[2rem] border border-white/70 bg-white p-6 text-center shadow-2xl">
-            <div class="mx-auto mb-4 h-24 w-24 overflow-hidden rounded-full border-4 border-emerald-100 bg-rose-50 shadow-lg">
-                <img id="incoming-caller-photo" src="{% static 'dating/images/profile-placeholder.svg' %}" alt="" class="h-full w-full object-cover">
-            </div>
-            <p class="text-xs font-bold uppercase tracking-[0.2em] text-emerald-600">Incoming video call</p>
-            <h2 id="incoming-call-title" class="mt-2 text-2xl font-bold text-slate-900">Someone is calling</h2>
-            <p class="mb-6 mt-1 text-sm text-slate-500">Answer when you're ready.</p>
-            <div class="grid grid-cols-2 gap-3">
-                <button type="button" id="accept-call" class="min-h-14 rounded-2xl bg-emerald-600 px-4 py-4 text-sm font-bold text-white shadow-lg">Accept</button>
-                <button type="button" id="decline-call" class="min-h-14 rounded-2xl bg-red-600 px-4 py-4 text-sm font-bold text-white shadow-lg">Decline</button>
-            </div>
-        </section>
-    </div>
-
-    <!-- Enhanced Video Call Room with Coin Telemetry, PiP, Floating Live Chat & Gifts -->
-    <div id="video-call-room" class="fixed inset-0 z-[130] hidden bg-slate-950 text-white select-none overflow-hidden" role="dialog" aria-modal="true" aria-label="Video call">
-        <video id="remote-call-video" class="absolute inset-0 h-full w-full object-cover bg-slate-950" autoplay muted playsinline></video>
-        <div class="pip-hidden-in-pip absolute inset-x-0 top-0 h-44 bg-gradient-to-b from-black/80 via-black/30 to-transparent pointer-events-none"></div>
-        <div class="pip-hidden-in-pip absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/85 via-black/40 to-transparent pointer-events-none"></div>
-        
-        <!-- Top Call HUD Bar: Host Profile, Timer, Follow Button, Live Wallet & Minimize -->
-        <div id="call-top-hud" class="pip-hidden-in-pip absolute inset-x-0 top-0 z-20 flex items-center justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] pointer-events-auto">
-            <!-- Left: Minimize to PiP, Host Avatar, Name, Age, Timer & Follow Button -->
-            <div class="flex items-center gap-2.5">
-                <!-- Minimize Button to Picture-in-Picture -->
-                <button type="button" id="call-minimize-btn" class="flex h-10 w-10 items-center justify-center rounded-2xl bg-black/60 border border-white/20 text-white hover:bg-white/20 active:scale-95 transition shadow-lg backdrop-blur-md" title="Minimize / Picture-in-Picture (browse other pages)">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                    </svg>
-                </button>
-
-                <div class="relative">
-                    <img id="call-remote-host-avatar" src="{% static 'dating/images/profile-placeholder.svg' %}" alt="" class="h-11 w-11 rounded-full border-2 border-pink-400 object-cover shadow-lg bg-slate-800">
-                    <span class="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-amber-400 ring-2 ring-black" aria-label="Busy on a call"></span>
-                </div>
-                <div>
-                    <div class="flex items-center gap-2">
-                        <span id="call-remote-host-title" class="text-sm sm:text-base font-black text-white leading-tight drop-shadow">Live Host</span>
-                        <button type="button" id="call-hud-follow-btn" class="flex items-center gap-1 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-3 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-md hover:scale-105 active:scale-95 transition">
-                            <span id="call-hud-follow-icon">+</span>
-                            <span id="call-hud-follow-label">Follow</span>
-                        </button>
-                    </div>
-                    <div class="flex items-center gap-2 mt-0.5">
-                        <div class="flex items-center gap-1 font-mono text-xs font-bold text-emerald-400">
-                            <span class="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
-                            <span id="call-timer-display">00:00</span>
-                        </div>
-                        <div id="call-billing-badge" class="rounded-full bg-black/50 border border-white/10 px-2 py-0.5 text-[10px] font-medium text-white/70">
-                            🛡️ {{ site_config.grace_period_seconds|default:20 }}s Free
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right: Browser PiP, Live Wallet & Quick Top-Up -->
-            <div class="flex items-center gap-2">
-                <!-- Native Browser PiP Trigger (if supported) -->
-                <button type="button" id="call-native-pip-btn" class="hidden sm:flex h-9 w-9 items-center justify-center rounded-2xl bg-black/60 border border-white/20 text-white hover:bg-white/20 active:scale-95 transition shadow-lg backdrop-blur-md" title="Pop out into floating browser window">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                    </svg>
-                </button>
-
-                <div id="call-hud-coins-wrapper" class="flex items-center gap-1.5 rounded-full border border-amber-300/40 bg-black/60 px-3 py-1 backdrop-blur-md text-amber-300 text-xs font-black shadow-lg">
-                    <span>&#x1FA99;</span>
-                    <span id="call-hud-coins">--</span>
-                </div>
-                <div id="call-hud-diamonds-wrapper" class="hidden items-center gap-1.5 rounded-full border border-cyan-300/40 bg-black/60 px-3 py-1 backdrop-blur-md text-cyan-300 text-xs font-black shadow-lg">
-                    <span>💎</span>
-                    <span id="call-hud-diamonds">0</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Center: Low Coins Warning Banner -->
-        <div id="call-low-coins-banner" class="pip-hidden-in-pip absolute left-1/2 top-20 z-20 hidden -translate-x-1/2 items-center gap-2 rounded-full border border-rose-400 bg-rose-600/95 px-4 py-1.5 text-xs font-bold text-white shadow-2xl backdrop-blur-md animate-pulse">
-            <span>⚠️</span>
-            <span>Low coins (<30s left)!</span>
-            <button type="button" id="call-banner-topup-btn" class="ml-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-rose-700">Top Up</button>
-        </div>
-
-        <!-- Call Status Feedback -->
-        <p id="call-feedback" class="pip-hidden-in-pip absolute left-1/2 top-24 z-10 -translate-x-1/2 rounded-full bg-black/60 px-4 py-1.5 text-center text-xs font-semibold backdrop-blur-md max-w-[80vw]" role="status" aria-live="polite"></p>
-        <p id="call-safety-status" class="pip-hidden-in-pip absolute inset-x-4 top-36 z-10 mx-auto max-w-xl rounded-xl border border-amber-300/40 bg-black/75 px-3 py-2 text-center text-[10px] leading-relaxed text-amber-100 backdrop-blur-md">
-            Speech monitoring is active for call-safety checks.
-        </p>
-
-        <!-- Floating Gift Celebration Overlay -->
-        <div id="call-gift-overlay" class="pip-hidden-in-pip absolute inset-0 z-40 pointer-events-none flex flex-col items-center justify-center overflow-hidden"></div>
-
-        <!-- FLOATING LIVE CHAT OVERLAY (Bottom-Left) -->
-        <div id="call-floating-chat-container" class="pip-hidden-in-pip absolute left-4 bottom-32 z-20 w-64 sm:w-80 flex flex-col justify-end pointer-events-auto">
-            <div id="call-floating-chat-stream" class="space-y-1.5 overflow-y-auto max-h-44 pr-2 pb-2 scrollbar-none flex flex-col justify-end"></div>
-            <form id="call-floating-chat-form" class="mt-1 flex items-center gap-1.5 rounded-full bg-black/50 border border-white/20 backdrop-blur-md px-3 py-1.5 shadow-xl">
-                <input type="text" id="call-floating-chat-input" placeholder="Say something spicy..." maxlength="140" autocomplete="off" class="w-full bg-transparent text-xs text-white placeholder-white/50 outline-none">
-                <button type="submit" class="rounded-full bg-pink-500/80 px-2.5 py-0.5 text-[10px] font-black uppercase text-white hover:bg-pink-500 transition">Send</button>
-            </form>
-        </div>
-
-        <!-- LOCAL SELF-VIEW (PiP in Bottom-Right Corner) -->
-        <div class="absolute right-4 bottom-36 z-20 aspect-[3/4] w-24 sm:w-32 rounded-2xl border-2 border-white/80 bg-slate-800 object-cover shadow-2xl overflow-hidden pointer-events-auto">
-            <video id="local-call-video" class="h-full w-full object-cover" autoplay muted playsinline></video>
-        </div>
-
-        <!-- In-Call Gift Drawer -->
-        <div id="call-gift-drawer" class="pip-hidden-in-pip absolute inset-x-0 bottom-24 z-30 hidden px-4 pointer-events-auto">
-            <div class="mx-auto max-w-sm rounded-3xl border border-white/20 bg-slate-950/90 p-4 shadow-2xl backdrop-blur-2xl">
-                <div class="flex items-center justify-between pb-2 border-b border-white/10">
-                    <span class="text-xs font-black uppercase tracking-wider text-pink-300">Send In-Call Gift 🎁</span>
-                    <div class="flex items-center gap-3">
-                        <span class="text-[11px] text-white/60">Host earns {{ site_config.host_commission_percentage|default:70 }}% 💎</span>
-                        <button type="button" id="close-call-gift-drawer" class="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-xl text-white hover:bg-white/20" aria-label="Close gift panel">&times;</button>
-                    </div>
-                </div>
-                <div id="gifts-grid-container" class="grid grid-cols-4 sm:grid-cols-5 gap-2 pt-3">
-                    <button type="button" class="gift-btn flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/10 p-2 transition hover:bg-pink-500/30 hover:scale-105 active:scale-95" data-gift-type="rose" data-cost="5">
-                        <span class="text-2xl">🌹</span>
-                        <span class="text-[10px] font-bold">Rose</span>
-                        <span class="text-[10px] font-black text-amber-300">5 &#x1FA99;</span>
-                    </button>
-                    <button type="button" class="gift-btn flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/10 p-2 transition hover:bg-pink-500/30 hover:scale-105 active:scale-95" data-gift-type="kiss" data-cost="25">
-                        <span class="text-2xl">💋</span>
-                        <span class="text-[10px] font-bold">Kiss</span>
-                        <span class="text-[10px] font-black text-amber-300">25 &#x1FA99;</span>
-                    </button>
-                    <button type="button" class="gift-btn flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/10 p-2 transition hover:bg-pink-500/30 hover:scale-105 active:scale-95" data-gift-type="champagne" data-cost="50">
-                        <span class="text-2xl">🥂</span>
-                        <span class="text-[10px] font-bold">Bubbly</span>
-                        <span class="text-[10px] font-black text-amber-300">50 &#x1FA99;</span>
-                    </button>
-                    <button type="button" class="gift-btn flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/10 p-2 transition hover:bg-pink-500/30 hover:scale-105 active:scale-95" data-gift-type="crown" data-cost="100">
-                        <span class="text-2xl">👑</span>
-                        <span class="text-[10px] font-bold">Crown</span>
-                        <span class="text-[10px] font-black text-amber-300">100 &#x1FA99;</span>
-                    </button>
-                    <button type="button" class="gift-btn flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/10 p-2 transition hover:bg-pink-500/30 hover:scale-105 active:scale-95" data-gift-type="car" data-cost="300">
-                        <span class="text-2xl">🏎️</span>
-                        <span class="text-[10px] font-bold">Supercar</span>
-                        <span class="text-[10px] font-black text-amber-300">300 &#x1FA99;</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Bottom Controls Bar -->
-        <div class="pip-hidden-in-pip absolute inset-x-0 bottom-12 z-20 flex justify-center pb-[max(1.5rem,env(safe-area-inset-bottom))] pointer-events-auto">
-            <div class="flex items-center gap-3 rounded-full border border-white/20 bg-slate-950/80 px-4 py-2.5 shadow-2xl backdrop-blur-xl">
-                <button type="button" id="mute-call" aria-label="Mute audio" title="Mute audio" class="h-11 w-11 rounded-full bg-white/15 text-white transition hover:bg-white/25">
-                    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1m7 8v4m-4 0h8"/></svg>
-                </button>
-                <button type="button" id="toggle-camera" aria-label="Turn camera off" title="Turn camera off" class="h-11 w-11 rounded-full bg-white/15 text-white transition hover:bg-white/25">
-                    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3z"/></svg>
-                </button>
-                <button type="button" id="flip-camera" aria-label="Flip camera" title="Flip camera" class="h-11 w-11 rounded-full bg-white/15 text-white transition hover:bg-white/25">
-                    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 7h-7l2-2m-2 2 2 2M4 17h7l-2 2m2-2-2-2"/></svg>
-                </button>
-                <button type="button" id="toggle-gifts" aria-label="Send gift" class="h-12 w-12 rounded-full bg-gradient-to-tr from-pink-600 via-rose-500 to-amber-400 text-xl font-bold text-white shadow-xl shadow-pink-500/40 transition hover:scale-110 active:scale-95">🎁</button>
-                <button type="button" id="end-call" aria-label="End call" class="h-11 w-11 rounded-full bg-red-600 text-xs font-black uppercase text-white shadow-lg shadow-red-600/40 transition hover:bg-red-700">End</button>
-            </div>
-        </div>
-        <button type="button" id="enable-call-audio" class="pip-hidden-in-pip absolute bottom-28 left-1/2 z-30 hidden -translate-x-1/2 rounded-full border border-white/20 bg-slate-950/90 px-4 py-2 text-xs font-bold text-white shadow-xl backdrop-blur-md">
-            Enable partner audio
-        </button>
-
-        <!-- Floating Mini PiP Overlay (Visible only when in PiP mode) -->
-        <div id="pip-mini-controls" class="pip-only-in-pip absolute inset-0 z-30 flex flex-col justify-between p-2.5 pointer-events-auto bg-gradient-to-b from-black/75 via-transparent to-black/85">
-            <!-- PiP Top Bar -->
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-1.5 rounded-full bg-black/75 backdrop-blur-md px-2 py-0.5 text-[10px] font-mono font-bold text-emerald-400 border border-white/15 shadow">
-                    <span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                    <span id="pip-timer-display">00:00</span>
-                </div>
-                <button type="button" id="pip-expand-btn" class="flex h-7 w-7 items-center justify-center rounded-full bg-purple-600/90 hover:bg-purple-500 text-white backdrop-blur-md transition active:scale-90 shadow-md border border-purple-400/50" title="Expand to Fullscreen">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                    </svg>
-                </button>
-            </div>
-
-            <!-- PiP Bottom Bar -->
-            <div class="flex items-center justify-between pt-1">
-                <button type="button" id="pip-mute-btn" class="flex h-7 w-7 items-center justify-center rounded-full bg-black/75 text-white border border-white/20 text-xs backdrop-blur-md hover:bg-black/90 active:scale-90 transition shadow" title="Mute audio">
-                    🎤
-                </button>
-                <span class="text-[9px] font-extrabold text-white/90 uppercase tracking-widest drop-shadow pointer-events-none">Tap to Open</span>
-                <button type="button" id="pip-end-btn" class="flex h-7 w-7 items-center justify-center rounded-full bg-rose-600 text-white text-xs font-black shadow-lg shadow-rose-600/50 hover:bg-rose-700 active:scale-90 transition" title="End Call">
-                    ✕
-                </button>
-            </div>
-        </div>
-    </div>
     <div class="bottom-nav-container">
         
-        <nav class="pointer-events-auto mx-auto flex max-w-sm items-center justify-around rounded-[1.75rem] px-3 py-3 {% if active_connection_mode == 'HOOKUP' %}bg-[#1c0f33]/90 border border-purple-800/40 backdrop-blur-xl shadow-2xl text-purple-300{% else %}bottom-tabs{% endif %}">
+        <nav class="pointer-events-auto mx-auto flex max-w-sm items-center justify-around rounded-[1.75rem] px-3 py-3 {% if active_connection_mode == 'HOOKUP' %}bg-[#58111a]/90 border border-rose-800/40 backdrop-blur-xl shadow-2xl text-rose-200{% else %}bottom-tabs{% endif %}">
             
             {% if active_connection_mode == 'SEX_CALL' %}
-            <a href="{% url 'sex_call_hub' %}" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'sex_call_hub' or request.resolver_match.url_name == 'swipe_card' %}nav-active{% endif %}">
+            <a href="{% url 'swipe_card' %}" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'swipe_card' %}nav-active{% endif %}">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
                 </svg>
@@ -810,12 +474,11 @@
                 <span class="text-[8px] font-black mt-1.5 tracking-[0.2em] uppercase">Requests</span>
             </a>
             {% elif active_connection_mode == 'SEX_CALL' %}
-            <a href="{% url 'sex_call_hub' %}" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'sex_call_hub' %}nav-active{% endif %}">
+            <a href="{% url 'match_list' %}" class="bottom-tab flex flex-col items-center group nav-icon {% if request.resolver_match.url_name == 'match_list' %}nav-active{% endif %}">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14v-4z" />
-                    <path d="M4 6a2 2 0 00-2 2v8a2 2 0 002 2h9a2 2 0 002-2V8a2 2 0 00-2-2H4z" />
+                    <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" />
                 </svg>
-                <span class="text-[8px] font-black mt-1.5 tracking-[0.2em] uppercase">Hosts</span>
+                <span class="text-[8px] font-black mt-1.5 tracking-[0.2em] uppercase">Match</span>
             </a>
             {% else %}
             <!-- Dating Mode -->
@@ -853,11 +516,6 @@
     {% if user.is_authenticated %}
     <script src="https://js.paystack.co/v1/inline.js" defer></script>
     <script src="https://checkout.flutterwave.com/v3.js" defer></script>
-    {% if request.resolver_match.url_name != 'call_room_page' %}
-    <script src="{% static 'dating/js/call-privacy.js' %}" defer></script>
-    <script src="{% static 'dating/js/call-speech-monitor.js' %}" defer></script>
-    <script src="{% static 'dating/js/video-calls.js' %}" defer></script>
-    {% endif %}
     {% endif %}
 
     <!-- Global Notification & Toast -->

@@ -115,7 +115,6 @@ CSRF_TRUSTED_ORIGINS = list(dict.fromkeys(CSRF_TRUSTED_ORIGINS))
 # Application definition
 
 INSTALLED_APPS = [
-    'channels',
     'jazzmin',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -130,24 +129,6 @@ INSTALLED_APPS = [
     'dating.mode_admin.sex_call_profiles.apps.SexCallProfilesAdminConfig',
 ]
 
-ASGI_APPLICATION = 'loveny_site.asgi.application'
-REDIS_URL = os.environ.get('REDIS_URL')
-if REDIS_URL:
-    CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels_redis.core.RedisChannelLayer',
-            'CONFIG': {'hosts': [REDIS_URL]},
-        },
-    }
-else:
-    CHANNEL_LAYERS = {
-        'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'},
-    }
-# Set to false only in QA environments to test calls without coin limits.
-SEX_CALL_BALANCE_GATING_ENABLED = os.environ.get(
-    'SEX_CALL_BALANCE_GATING_ENABLED',
-    'true',
-).strip().lower() not in {'0', 'false', 'no', 'off'}
 if CLOUDINARY_URL:
     INSTALLED_APPS[5:5] = ['cloudinary']
 
@@ -306,9 +287,6 @@ FLUTTERWAVE_PUBLIC_KEY = os.environ.get(
     '',
 ).strip()
 FLUTTERWAVE_SECRET_KEY = os.environ.get('FLUTTERWAVE_SECRET_KEY', '').strip()
-TURN_URLS = os.environ.get('TURN_URLS', '').strip()
-TURN_SHARED_SECRET = os.environ.get('TURN_SHARED_SECRET', '').strip()
-
 # AI MONITORING
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
@@ -372,10 +350,9 @@ JAZZMIN_SETTINGS = {
         'dating.SubscriptionPlan',
         'dating.PaymentTransaction',
         'dating.CoinTransaction',
-        'dating.CallSession',
-        'dating.CallGift',
+        'dating.ConnectionFeeSetting',
+        'dating.ContactMatch',
         'dating.GiftItem',
-        'dating.CallSignal',
         'dating.UserReport',
         'dating.UserBlock',
     ],
@@ -385,7 +362,7 @@ JAZZMIN_SETTINGS = {
         'dating.SiteConfiguration': 'fas fa-cogs',
         'dating_profiles.DatingProfile': 'fas fa-heart',
         'hookup_profiles.HookupProfile': 'fas fa-fire',
-        'sex_call_profiles.SexCallProfile': 'fas fa-video',
+        'sex_call_profiles.SexCallProfile': 'fas fa-comments',
         'dating.Profile': 'fas fa-user-circle',
         'dating.ProfilePhoto': 'fas fa-image',
         'dating.Match': 'fas fa-heart',
@@ -397,12 +374,11 @@ JAZZMIN_SETTINGS = {
         'dating.SubscriptionPlan': 'fas fa-crown',
         'dating.CoinPackage': 'fas fa-coins',
         'dating.PaymentTransaction': 'fas fa-file-invoice-dollar',
-        'dating.CallSession': 'fas fa-video',
-        'dating.CallGift': 'fas fa-gift',
+        'dating.ConnectionFeeSetting': 'fas fa-money-bill-wave',
+        'dating.ContactMatch': 'fas fa-address-book',
         'dating.GiftItem': 'fas fa-box-open',
         'dating.CoinTransaction': 'fas fa-exchange-alt',
         'dating.CoinWallet': 'fas fa-wallet',
-        'dating.CallSignal': 'fas fa-signal',
         'dating.UserReport': 'fas fa-flag',
         'dating.UserBlock': 'fas fa-ban',
     },

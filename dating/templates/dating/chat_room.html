@@ -148,7 +148,7 @@
             </div>
         </header>
 
-        <!-- QUICK HOST INFO BANNER (Pinned Below Header) -->
+        <!-- MATCH PROFILE INFO -->
         <div class="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 bg-[#170b2e]/90 px-3 py-2 text-xs text-white/75 sm:px-5">
             <div class="flex items-center gap-2 flex-wrap">
                 <span class="inline-flex items-center gap-1 rounded-full bg-sky-500/20 border border-sky-400/30 px-2 py-0.5 text-[10px] font-black text-sky-300">
@@ -160,10 +160,6 @@
                 <span class="rounded-full bg-purple-500/20 border border-purple-400/20 px-2 py-0.5 text-[10px] font-semibold text-purple-200">
                     🗣️ Languages: {{ languages|join:", " }}
                 </span>
-            </div>
-            <div class="flex items-center gap-1 text-[11px] font-black text-amber-300">
-                <span>📹</span>
-                <span>{{ call_rate_per_minute|default:20 }} &#x1FA99;/min</span>
             </div>
         </div>
 
@@ -280,18 +276,6 @@
                     </button>
                 </div>
 
-                {% if can_video_call %}
-                <!-- Direct Video Call Button -->
-                <button type="button"
-                        id="btn-start-video-call"
-                        data-user-id="{{ other_user.id }}"
-                        data-username="{{ other_user.username|escapejs }}"
-                        class="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 hover:from-rose-400 hover:to-pink-400 px-3.5 py-1.5 text-xs font-black text-white shadow-lg shadow-rose-500/25 active:scale-95 transition"
-                        title="Start Instant Video Call">
-                    <span class="text-base">📹</span>
-                    <span>Video Call ({{ call_rate_per_minute|default:20 }}&#x1FA99;/m)</span>
-                </button>
-                {% endif %}
             </div>
         </div>
         {% else %}
@@ -315,7 +299,7 @@
                     <span class="text-2xl">&#x1FA99;</span>
                     <div>
                         <h2 class="text-lg font-black text-white">Refill Your Coins</h2>
-                        <p class="text-xs text-slate-400">{% if can_video_call %}Never run out during private calls &amp; gifts{% else %}Keep the conversation and gifts going{% endif %}</p>
+                        <p class="text-xs text-slate-400">Keep the conversation and gifts going</p>
                     </div>
                 </div>
                 <button id="close-topup-modal" type="button" class="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-slate-400 hover:text-white">✕</button>
@@ -701,23 +685,6 @@
             window.location.href = "{% url 'match_list' %}";
         }
     };
-
-    window.startDirectVideoCall = function(receiverId, receiverUsername) {
-        if (window.lovenyStartVideoCall) {
-            window.lovenyStartVideoCall(receiverId, receiverUsername);
-            return;
-        }
-        window.lovenyToast('Video calling is unavailable. Please refresh and try again.', 'error');
-    };
-
-    const btnStartVideoCall = document.getElementById('btn-start-video-call');
-    if (btnStartVideoCall) {
-        btnStartVideoCall.addEventListener('click', function() {
-            const receiverId = Number(this.dataset.userId);
-            const receiverUsername = this.dataset.username || OTHER_USERNAME;
-            startDirectVideoCall(receiverId, receiverUsername);
-        });
-    }
 
     // STICKER DRAWER HANDLING
     const btnToggleStickers = document.getElementById('btn-toggle-stickers');

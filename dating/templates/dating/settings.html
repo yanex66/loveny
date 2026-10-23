@@ -33,59 +33,13 @@
 
     <div class="max-w-lg mx-auto px-4 py-6 sm:px-6 space-y-8">
         
-        <section>
-            <h2 class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 ml-1">Preferences & Availability</h2>
-            
-            <form method="post" class="space-y-4">
-                {% csrf_token %}
-                {% if form.non_field_errors %}
-                    <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{{ form.non_field_errors }}</div>
-                {% endif %}
-                {% if form.errors %}
-                    <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                        <p class="font-bold">Please review the highlighted settings.</p>
-                    </div>
-                {% endif %}
-                
-                <div class="soft-card rounded-3xl p-5 sm:p-7">
-                    <!-- Connection Mode Read-Only Pill Badge -->
-                    <div class="space-y-2 mb-6">
-                        <span class="block text-xs font-bold text-pink-700 uppercase tracking-widest">Connection mode</span>
-                        <div class="flex items-center pt-1">
-                            <span class="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2 text-xs font-black uppercase tracking-wider text-white shadow-md">
-                                <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                                Active Mode: {{ profile.get_relationship_mode_display|default:profile.relationship_mode }}
-                            </span>
-                        </div>
-                    </div>
-
-                    <!-- Do Not Disturb (DND) Toggle (Only User-Configurable Setting) -->
-                    <div class="rounded-2xl bg-rose-50/70 border border-rose-100 p-4">
-                        <label class="flex items-start gap-3 cursor-pointer">
-                            <div class="pt-0.5">
-                                {{ form.is_dnd }}
-                            </div>
-                            <div>
-                                <span class="block text-sm font-black text-slate-900 uppercase tracking-tight">Do Not Disturb (DND)</span>
-                                <span class="block text-xs text-slate-500 mt-1 leading-relaxed">When enabled, incoming video call rings and notifications are silenced.</span>
-                            </div>
-                        </label>
-                    </div>
-
-                    <button type="submit" class="w-full mt-7 py-4 brand-gradient text-white font-black uppercase tracking-widest rounded-2xl shadow-lg transition-transform hover:scale-[1.01]">
-                        Save Settings
-                    </button>
-                </div>
-            </form>
-        </section>
-
         <section id="mode-switch-panel"
                  data-intent-url="{% url 'create_mode_switch_payment_intent_api' %}"
                  data-cancel-url="{% url 'cancel_mode_switch_payment_intent_api' %}"
                  data-verify-url="{% url 'switch_profile_mode_api' %}"
                          data-dating-home="{% url 'swipe_card' %}"
                          data-hookup-home="{% url 'hookup_discovery' %}"
-                         data-sex-call-home="{% url 'sex_call_hub' %}"
+                         data-sex-call-home="{% url 'swipe_card' %}"
                          data-requested-mode="{{ requested_mode }}"
                  data-switching-unlocked="{{ mode_switch_unlocked|yesno:'true,false' }}">
             <h2 class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 ml-1">Change connection mode</h2>
